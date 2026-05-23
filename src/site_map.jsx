@@ -351,7 +351,17 @@ function buildSectionFromRect(allPoints, rect) {
 /* ------------------------------------------------------------------ */
 /*  Print styles                                                       */
 /* ------------------------------------------------------------------ */
-const PRINT_STYLES = `@media print { .no-print { display:none !important } @page { size:landscape; margin:8mm } }`;
+const PRINT_STYLES = `
+.print-only { display:none }
+@media print {
+  .no-print { display:none !important }
+  .print-only { display:flex !important }
+  @page { size:landscape; margin:8mm }
+  html, body { -webkit-print-color-adjust:exact; print-color-adjust:exact }
+  .sm-canvas { background:#ffffff !important }
+}`;
+const LOGO_URL = '/logo.webp';
+const BRAND_ORANGE2 = '#F97316';
 
 /* ------------------------------------------------------------------ */
 /*  Section2D renderer                                                 */
@@ -1021,8 +1031,12 @@ export default function SiteMap({ onExit }) {
   const zoomOut = () => setZoom(z => Math.max(z / 1.2, 0.1));
   const zoomReset = () => setZoom(1);
 
-  // Export PDF
-  const handleExport = () => window.print();
+  // Export PDF (branded print: logo header + tiled watermark via print-only DOM)
+  const [printStamp, setPrintStamp] = useState('');
+  const handleExport = () => {
+    setPrintStamp(new Date().toLocaleString());
+    setTimeout(() => window.print(), 60);
+  };
 
   // Toolbar button
   const TB = ({ label, active, onClick, bg, small }) => (
@@ -1048,6 +1062,39 @@ export default function SiteMap({ onExit }) {
     }}>
       {/* Print styles */}
       <style>{PRINT_STYLES}</style>
+
+      {/* Print-only logo watermark, tiled across the page */}
+      <div className="print-only" aria-hidden="true" style={{
+        position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: 'none',
+        overflow: 'hidden', flexWrap: 'wrap', alignContent: 'flex-start', opacity: 0.06,
+      }}>
+        {Array.from({ length: 70 }).map((_, i) => (
+          <img key={i} src={LOGO_URL} alt="" style={{ width: 150, height: 150, objectFit: 'contain', margin: 28 }} />
+        ))}
+      </div>
+
+      {/* Print-only branded header */}
+      <div className="print-only" style={{
+        alignItems: 'center', gap: 14, padding: '8px 14px 10px',
+        borderBottom: '3px solid ' + BRAND_ORANGE2, background: '#ffffff', position: 'relative', zIndex: 9999,
+      }}>
+        <img src={LOGO_URL} alt="SRC" style={{ width: 46, height: 46, objectFit: 'contain' }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: FONT_HEADING, fontSize: 24, letterSpacing: 1, color: '#14141c', lineHeight: 1 }}>SITE MAP <span style={{ color: BRAND_ORANGE2 }}>— CONSTRUCTION PROGRESS</span></div>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 10, letterSpacing: 2.5, color: BRAND_ORANGE2, textTransform: 'uppercase', marginTop: 2 }}>Sunrise Construction &amp; Development</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {[1, 2, 3, 4, 5].map(stage => (
+            <span key={stage} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: FONT_BODY, fontSize: 11, color: '#333' }}>
+              <span style={{ width: 11, height: 11, borderRadius: 2, background: STAGE_COLORS[stage] }} />{STAGE_LABELS[stage]}
+            </span>
+          ))}
+        </div>
+        <div style={{ textAlign: 'right', fontFamily: FONT_BODY, fontSize: 10, color: '#555', marginLeft: 12 }}>
+          <div>Exported: {printStamp}</div>
+          <div>{sections.length} sections · {sections.reduce((a, s) => a + totalCells(s), 0)} cells</div>
+        </div>
+      </div>
 
       {/* Toolbar */}
       <div className="no-print" style={{
@@ -1180,6 +1227,7 @@ export default function SiteMap({ onExit }) {
       {/* Canvas area */}
       <div
         ref={canvasRef}
+        className="sm-canvas"
         style={{
           flex: 1,
           position: 'relative',
