@@ -490,6 +490,7 @@ function Section2D({
 /*  Import Modal                                                       */
 /* ------------------------------------------------------------------ */
 function SmImportModal({ onClose, onAccept }) {
+  const mob = useIsMobile();
   const [file, setFile] = useState(null);
   const [srcCanvas, setSrcCanvas] = useState(null);
   const [points, setPoints] = useState([]);
@@ -639,10 +640,10 @@ function SmImportModal({ onClose, onAccept }) {
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: mob ? 'column' : 'row', overflow: 'hidden' }}>
           {/* Left: canvas area */}
           <div ref={containerRef} style={{
-            flex: 1, position: 'relative', overflow: 'auto',
+            flex: 1, position: 'relative', overflow: 'auto', minHeight: mob ? 0 : 'auto',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             backgroundColor: '#1e293b',
           }}>
@@ -667,14 +668,17 @@ function SmImportModal({ onClose, onAccept }) {
                 onPointerDown={handleCanvasDown}
                 onPointerMove={handleCanvasMove}
                 onPointerUp={handleCanvasUp}
-                style={{ cursor: 'crosshair' }}
+                style={{ cursor: 'crosshair', touchAction: 'none' }}
               />
             )}
           </div>
 
           {/* Right sidebar */}
           <div style={{
-            width: 280, borderLeft: '1px solid #334155',
+            width: mob ? 'auto' : 280, flexShrink: 0,
+            borderLeft: mob ? 'none' : '1px solid #334155',
+            borderTop: mob ? '1px solid #334155' : 'none',
+            maxHeight: mob ? '40vh' : 'none',
             padding: 16, overflowY: 'auto',
             display: 'flex', flexDirection: 'column', gap: 12,
           }}>
