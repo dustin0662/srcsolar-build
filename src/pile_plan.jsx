@@ -22,6 +22,17 @@ const STORE_ASSIGN = 'pile-plan-assign-v1';
 const STORE_META = 'pile-plan-meta-v1';
 const STORE_LOG = 'pile-plan-log-v1';
 const MAX_LOG = 200;
+const CLOUD_ENDPOINT = '/.netlify/functions/pileplan';
+
+function mergeLogs(a, b) {
+  const seen = new Set();
+  const out = [];
+  for (const e of [...(a || []), ...(b || [])]) {
+    if (e && e.id && !seen.has(e.id)) { seen.add(e.id); out.push(e); }
+  }
+  out.sort((x, y) => (y.ts || 0) - (x.ts || 0));
+  return out.slice(0, MAX_LOG);
+}
 
 const DEFAULT_TASKS = [
   { id: 't0', name: 'Pending', color: '#9ca3af', done: false },
@@ -221,6 +232,78 @@ export default function PilePlan({ onExit, portalUser }) {
     if (el && el.dataset && el.dataset.i != null) paintDot(+el.dataset.i);
   }, [paintDot]);
 
+  /* ----- cloud sync (Netlify Blobs) — shared across users/devices ----- */
+  const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
+  const lastModifiedRef = useRef(lastModified); useEffect(() => { lastModifiedRef.current = lastModified; }, [lastModified]);
+  const [cloudStatus, setCloudStatus] = useState('local'); // local | syncing | synced | offline
+  const syncedIdsRef = useRef(new Set());
+  const lastRevRef = useRef(-1);
+  const applyingRemoteRef = useRef(false);
+  const readyRef = useRef(false);
+  const pushTimerRef = useRef(null);
+
+  const applyRemote = useCallback((doc) => {
+    applyingRemoteRef.current = true;
+    if ((doc.lastModified || 0) > (lastModifiedRef.current || 0)) {
+      if (Array.isArray(doc.tasks) && doc.tasks.length) setTasks(doc.tasks.map((t) => ({ done: false, ...t })));
+      if (Array.isArray(doc.assign) && doc.assign.length === TOTAL) setAssign(doc.assign);
+      setLastModified(doc.lastModified);
+    }
+    if (Array.isArray(doc.log)) {
+      setLog((local) => mergeLogs(local, doc.log));
+      doc.log.forEach((e) => syncedIdsRef.current.add(e.id));
+    }
+    lastRevRef.current = doc.rev;
+    setTimeout(() => { applyingRemoteRef.current = false; }, 0);
+  }, [TOTAL]);
+
+  const pushCloud = useCallback(async () => {
+    const entries = logRef.current.filter((e) => !syncedIdsRef.current.has(e.id));
+    try {
+      setCloudStatus('syncing');
+      const r = await fetch(CLOUD_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tasks: tasksRef.current, assign: assignRef.current, lastModified: lastModifiedRef.current, entries }) });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const doc = await r.json();
+      entries.forEach((e) => syncedIdsRef.current.add(e.id));
+      lastRevRef.current = doc.rev;
+      if (Array.isArray(doc.log)) {
+        applyingRemoteRef.current = true;
+        setLog((local) => mergeLogs(local, doc.log));
+        doc.log.forEach((e) => syncedIdsRef.current.add(e.id));
+        setTimeout(() => { applyingRemoteRef.current = false; }, 0);
+      }
+      setCloudStatus('synced');
+    } catch (e) { setCloudStatus('offline'); }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const pull = async (initial) => {
+      try {
+        const r = await fetch(CLOUD_ENDPOINT, { cache: 'no-store' });
+        if (!r.ok) throw new Error('http ' + r.status);
+        const doc = await r.json();
+        if (!alive) return;
+        if (initial && (!doc || !Array.isArray(doc.tasks) || !doc.tasks.length)) {
+          readyRef.current = true; await pushCloud(); return;
+        }
+        if (doc.rev !== lastRevRef.current) applyRemote(doc);
+        setCloudStatus('synced'); readyRef.current = true;
+      } catch (e) {
+        if (alive && initial) { setCloudStatus('offline'); readyRef.current = true; }
+      }
+    };
+    pull(true);
+    const id = setInterval(() => pull(false), 6000);
+    return () => { alive = false; clearInterval(id); };
+  }, [applyRemote, pushCloud]);
+
+  useEffect(() => {
+    if (!readyRef.current || applyingRemoteRef.current) return;
+    clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => { pushCloud(); }, 1000);
+  }, [tasks, assign, log, pushCloud]);
+
   /* ----- pan / zoom ----- */
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const viewRef = useRef(view); useEffect(() => { viewRef.current = view; }, [view]);
@@ -360,6 +443,9 @@ export default function PilePlan({ onExit, portalUser }) {
           <div style={{ height: '100%', width: overall + '%', background: '#22c55e', transition: 'width .2s' }} />
         </div>
         <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>Last modified: {fmtDate(lastModified)}</div>
+        <div style={{ fontSize: 11, marginTop: 2, color: cloudStatus === 'synced' ? '#22c55e' : cloudStatus === 'offline' ? '#f59e0b' : '#64748b' }}>
+          {cloudStatus === 'synced' ? '● Synced to cloud (shared)' : cloudStatus === 'syncing' ? '● Syncing…' : cloudStatus === 'offline' ? '● Offline — saved on this device' : '● Connecting…'}
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
