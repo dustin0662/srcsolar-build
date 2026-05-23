@@ -343,6 +343,19 @@ export default function PilePlan({ onExit, portalUser }) {
     setHistoryOpen(false);
   };
 
+  /* ----- revisions ----- */
+  const snapshot = (note) => ({ id: 'r' + Date.now(), ts: Date.now(), note: note || '', overall, tasks: tasks.map((t) => ({ ...t })), assign: assign.slice() });
+  const saveRevision = (note) => setRevisions((rs) => [snapshot(note), ...rs].slice(0, MAX_REVS));
+  const restoreRevision = (rev) => {
+    if (!window.confirm('Restore this revision from ' + fmtDate(rev.ts) + '? Current unsaved state will be replaced.')) return;
+    setTasks(rev.tasks.map((t) => ({ done: false, ...t })));
+    setAssign(rev.assign.slice());
+    setActiveId(rev.tasks[0] ? rev.tasks[0].id : 't0');
+    setHistoryOpen(false);
+  };
+  const handleExport = () => { exportPDF(tasks, assign, lastModified); saveRevision('Auto-saved on export'); };
+  const exportRevision = (rev) => exportPDF(rev.tasks.map((t) => ({ done: false, ...t })), rev.assign, rev.ts);
+
   /* ----- dots ----- */
   const dotEls = useMemo(() => DOTS.map((d, i) => (
     <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={colorById[assign[i]] || '#9ca3af'} stroke="#0f172a" strokeWidth={0.4} />
