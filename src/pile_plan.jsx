@@ -20,8 +20,8 @@ const FONT_BODY = "'Barlow Condensed', sans-serif";
 const STORE_TASKS = 'pile-plan-tasks-v1';
 const STORE_ASSIGN = 'pile-plan-assign-v1';
 const STORE_META = 'pile-plan-meta-v1';
-const STORE_REVS = 'pile-plan-revs-v1';
-const MAX_REVS = 25;
+const STORE_LOG = 'pile-plan-log-v1';
+const MAX_LOG = 200;
 
 const DEFAULT_TASKS = [
   { id: 't0', name: 'Pending', color: '#9ca3af', done: false },
@@ -59,6 +59,21 @@ function overallPct(counts, tasks, total) {
   return done / total * 100;
 }
 
+/* compact encode/decode of the per-pile assignment for log snapshots */
+function encAssign(assign, tasks) {
+  const idx = {}; tasks.forEach((t, i) => { idx[t.id] = i; });
+  const at = (a) => (idx[a] !== undefined ? idx[a] : 0);
+  if (tasks.length <= 36) return { m: 'c', d: assign.map((a) => at(a).toString(36)).join('') };
+  return { m: 'a', d: assign.map(at) };
+}
+function decAssign(enc, tasks) {
+  const fb = tasks[0] ? tasks[0].id : 't0';
+  if (!enc) return [];
+  const pick = (i) => (tasks[i] ? tasks[i].id : fb);
+  if (enc.m === 'c') return enc.d.split('').map((ch) => pick(parseInt(ch, 36)));
+  return enc.d.map(pick);
+}
+
 /* render the dot field to a PNG data URL for embedding in the PDF */
 function renderMapDataURL(assign, colorById) {
   const scale = 2.2, pad = 8;
@@ -79,7 +94,7 @@ function renderMapDataURL(assign, colorById) {
 }
 
 /* build + download the PDF */
-function exportPDF(tasks, assign, lastModified) {
+function exportPDF(tasks, assign, stampTs, byUser) {
   const total = assign.length;
   const counts = computeCounts(assign, tasks);
   const colorById = {}; tasks.forEach((t) => { colorById[t.id] = t.color; });
@@ -93,7 +108,8 @@ function exportPDF(tasks, assign, lastModified) {
 
   let y = M + 38;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
-  doc.text('Last modified:  ' + fmtDate(lastModified), M, y); y += 14;
+  doc.text('Last modified:  ' + fmtDate(stampTs), M, y); y += 14;
+  if (byUser) { doc.text('By:  ' + byUser, M, y); y += 14; }
   doc.text('Exported:  ' + fmtDate(Date.now()), M, y); y += 14;
   doc.text('Total piles:  ' + total.toLocaleString(), M, y); y += 22;
 
@@ -104,7 +120,6 @@ function exportPDF(tasks, assign, lastModified) {
   doc.setFillColor(230, 230, 230); doc.rect(M, y + 40, 230, 8, 'F');
   doc.setFillColor(22, 163, 74); doc.rect(M, y + 40, 230 * overall / 100, 8, 'F');
 
-  // legend (left column)
   let ly = y + 78;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20);
   doc.text('TASKS', M, ly); ly += 18;
@@ -120,7 +135,6 @@ function exportPDF(tasks, assign, lastModified) {
     ly += 40;
   });
 
-  // map image (right column)
   try {
     const url = renderMapDataURL(assign, colorById);
     const imgW = 250; const imgH = imgW * (PLAN_H / PLAN_W);
@@ -128,17 +142,18 @@ function exportPDF(tasks, assign, lastModified) {
     doc.setDrawColor(210); doc.setLineWidth(1); doc.rect(ix - 2, iy - 2, imgW + 4, imgH + 4);
     doc.addImage(url, 'PNG', ix, iy, imgW, imgH);
     doc.setFontSize(8); doc.setTextColor(140); doc.text('Pile layout (color = task)', ix, iy + imgH + 12);
-  } catch (e) { /* canvas tainting shouldn't happen for generated canvas */ }
+  } catch (e) { /* generated canvas is never tainted */ }
 
-  doc.save(`Pile_Plan_Dwyer_Rd_${fileStamp(lastModified)}.pdf`);
+  doc.save(`Pile_Plan_Dwyer_Rd_${fileStamp(stampTs)}.pdf`);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
-export default function PilePlan({ onExit }) {
+export default function PilePlan({ onExit, portalUser }) {
   const TOTAL = DOTS.length;
   const mob = useIsMobile();
+  const userName = (typeof portalUser === 'string' ? portalUser : (portalUser && portalUser.name)) || 'Unknown user';
 
   const [tasks, setTasks] = useState(() => {
     const saved = storage.get(STORE_TASKS);
@@ -153,9 +168,7 @@ export default function PilePlan({ onExit }) {
   const [lastModified, setLastModified] = useState(() => {
     const m = storage.get(STORE_META); return (m && m.lastModified) || Date.now();
   });
-  const [revisions, setRevisions] = useState(() => {
-    const r = storage.get(STORE_REVS); return Array.isArray(r) ? r : [];
-  });
+  const [log, setLog] = useState(() => { const r = storage.get(STORE_LOG); return Array.isArray(r) ? r : []; });
   const [activeId, setActiveId] = useState(tasks[0] ? tasks[0].id : 't0');
   const [mode, setMode] = useState('paint');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -163,18 +176,11 @@ export default function PilePlan({ onExit }) {
 
   useEffect(() => { storage.set(STORE_TASKS, tasks); }, [tasks]);
   useEffect(() => { storage.set(STORE_ASSIGN, assign); }, [assign]);
-  useEffect(() => { storage.set(STORE_REVS, revisions); }, [revisions]);
+  useEffect(() => { storage.set(STORE_LOG, log); }, [log]);
   useEffect(() => { storage.set(STORE_META, { lastModified }); }, [lastModified]);
   useEffect(() => {
     if (!tasks.find((t) => t.id === activeId) && tasks[0]) setActiveId(tasks[0].id);
   }, [tasks, activeId]);
-
-  // bump lastModified on any real edit (skip initial mount)
-  const mounted = useRef(false);
-  useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
-    setLastModified(Date.now());
-  }, [tasks, assign]);
 
   const colorById = useMemo(() => { const m = {}; tasks.forEach((t) => { m[t.id] = t.color; }); return m; }, [tasks]);
   const counts = useMemo(() => computeCounts(assign, tasks), [assign, tasks]);
@@ -185,9 +191,30 @@ export default function PilePlan({ onExit }) {
   /* ----- refs ----- */
   const activeIdRef = useRef(activeId); useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   const modeRef = useRef(mode); useEffect(() => { modeRef.current = mode; }, [mode]);
+  const tasksRef = useRef(tasks); useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+  const assignRef = useRef(assign); useEffect(() => { assignRef.current = assign; }, [assign]);
   const paintingRef = useRef(false);
+  const burstRef = useRef(null);
+  const editBeforeRef = useRef(null);
+
+  /* ----- the change log (every edit, with user + timestamp) ----- */
+  const pushLog = useCallback((summary, snapTasks, snapAssign) => {
+    const entry = {
+      id: 'h' + Date.now() + Math.random().toString(36).slice(2, 6),
+      ts: Date.now(), user: userName, summary,
+      tasks: snapTasks.map((t) => ({ ...t })),
+      assign: encAssign(snapAssign, snapTasks),
+    };
+    setLog((prev) => [entry, ...prev].slice(0, MAX_LOG));
+    setLastModified(entry.ts);
+  }, [userName]);
+
   const paintDot = useCallback((i) => {
-    setAssign((prev) => { if (prev[i] === activeIdRef.current) return prev; const n = prev.slice(); n[i] = activeIdRef.current; return n; });
+    setAssign((prev) => {
+      if (prev[i] === activeIdRef.current) return prev;
+      if (burstRef.current) burstRef.current.count++;
+      const n = prev.slice(); n[i] = activeIdRef.current; return n;
+    });
   }, []);
   const paintAt = useCallback((cx, cy) => {
     const el = document.elementFromPoint(cx, cy);
@@ -222,7 +249,7 @@ export default function PilePlan({ onExit }) {
       pinchRef.current = { dist, mid: toView(midC.x, midC.y), s0: viewRef.current.s, x0: viewRef.current.x, y0: viewRef.current.y };
       return;
     }
-    if (modeRef.current === 'paint') { paintingRef.current = true; paintAt(e.clientX, e.clientY); }
+    if (modeRef.current === 'paint') { paintingRef.current = true; burstRef.current = { taskId: activeIdRef.current, count: 0 }; paintAt(e.clientX, e.clientY); }
     else { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: viewRef.current.x, vy: viewRef.current.y }; }
   };
   const onPointerMove = (e) => {
@@ -244,50 +271,77 @@ export default function PilePlan({ onExit }) {
     if (pointersRef.current.size < 2) pinchRef.current = null;
     if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; }
   };
+  // global move/up: drag-paint across dots + flush the paint burst into one log entry
   useEffect(() => {
     const mv = (e) => { if (paintingRef.current && modeRef.current === 'paint' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
-    const up = () => { paintingRef.current = false; };
+    const up = () => {
+      paintingRef.current = false;
+      const b = burstRef.current;
+      if (b && b.count > 0) {
+        const tn = tasksRef.current.find((t) => t.id === b.taskId);
+        pushLog(`painted ${b.count} pile${b.count !== 1 ? 's' : ''} → "${tn ? tn.name : '?'}"`, tasksRef.current, assignRef.current);
+      }
+      burstRef.current = null;
+    };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
-  }, [paintAt]);
+  }, [paintAt, pushLog]);
   const resetView = () => setView({ s: 1, x: 0, y: 0 });
   const zoomBtn = (f) => zoomAt(VW / 2, VH / 2, f);
 
-  /* ----- task ops ----- */
+  /* ----- task ops (each logs) ----- */
   const renameTask = (id, name) => setTasks((ts) => ts.map((t) => t.id === id ? { ...t, name } : t));
   const recolorTask = (id, color) => setTasks((ts) => ts.map((t) => t.id === id ? { ...t, color } : t));
-  const toggleDone = (id) => setTasks((ts) => ts.map((t) => t.id === id ? { ...t, done: !t.done } : t));
+  const onEditFocus = (type, t) => { editBeforeRef.current = { type, id: t.id, before: type === 'name' ? t.name : t.color }; };
+  const onEditBlur = () => {
+    const b = editBeforeRef.current; editBeforeRef.current = null;
+    if (!b) return;
+    const cur = tasksRef.current.find((x) => x.id === b.id); if (!cur) return;
+    if (b.type === 'name' && cur.name !== b.before) pushLog(`renamed "${b.before}" → "${cur.name}"`, tasksRef.current, assignRef.current);
+    if (b.type === 'color' && cur.color !== b.before) pushLog(`recolored "${cur.name}" to ${cur.color}`, tasksRef.current, assignRef.current);
+  };
+  const toggleDone = (id) => {
+    const next = tasksRef.current.map((t) => t.id === id ? { ...t, done: !t.done } : t);
+    const t = next.find((x) => x.id === id);
+    setTasks(next);
+    pushLog(`marked "${t.name}" as ${t.done ? 'complete' : 'not complete'}`, next, assignRef.current);
+  };
   const addTask = () => {
-    const used = new Set(tasks.map((t) => t.color));
+    const used = new Set(tasksRef.current.map((t) => t.color));
     const color = SWATCHES.find((c) => !used.has(c)) || '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
     const t = { id: newId(), name: 'New Task', color, done: false };
-    setTasks((ts) => [...ts, t]); setActiveId(t.id);
+    const next = [...tasksRef.current, t];
+    setTasks(next); setActiveId(t.id);
+    pushLog(`added task "${t.name}"`, next, assignRef.current);
   };
   const removeTask = (id) => {
-    if (tasks.length <= 1) return;
-    const fallback = tasks.find((t) => t.id !== id).id;
-    setAssign((prev) => prev.map((a) => (a === id ? fallback : a)));
-    setTasks((ts) => ts.filter((t) => t.id !== id));
+    if (tasksRef.current.length <= 1) return;
+    const removed = tasksRef.current.find((t) => t.id === id);
+    const fallback = tasksRef.current.find((t) => t.id !== id).id;
+    const nextAssign = assignRef.current.map((a) => (a === id ? fallback : a));
+    const nextTasks = tasksRef.current.filter((t) => t.id !== id);
+    setAssign(nextAssign); setTasks(nextTasks);
+    pushLog(`deleted task "${removed ? removed.name : '?'}"`, nextTasks, nextAssign);
   };
   const resetAll = () => {
     if (!window.confirm('Reset all task colors and dot assignments back to the original drawing?')) return;
-    setTasks(DEFAULT_TASKS.map((t) => ({ ...t })));
-    setAssign(DOTS.map((d) => DEFAULT_TASK_BY_INDEX[d[2]] || 't0'));
-    setActiveId('t0');
+    const nt = DEFAULT_TASKS.map((t) => ({ ...t }));
+    const na = DOTS.map((d) => DEFAULT_TASK_BY_INDEX[d[2]] || 't0');
+    setTasks(nt); setAssign(na); setActiveId('t0');
+    pushLog('reset to original layout', nt, na);
   };
 
-  /* ----- revisions ----- */
-  const snapshot = (note) => ({ id: 'r' + Date.now(), ts: Date.now(), note: note || '', overall, tasks: tasks.map((t) => ({ ...t })), assign: assign.slice() });
-  const saveRevision = (note) => setRevisions((rs) => [snapshot(note), ...rs].slice(0, MAX_REVS));
-  const restoreRevision = (rev) => {
-    if (!window.confirm('Restore this revision from ' + fmtDate(rev.ts) + '? Current unsaved state will be replaced.')) return;
-    setTasks(rev.tasks.map((t) => ({ done: false, ...t })));
-    setAssign(rev.assign.slice());
-    setActiveId(rev.tasks[0] ? rev.tasks[0].id : 't0');
+  /* ----- export + history ----- */
+  const handleExport = () => { exportPDF(tasks, assign, lastModified, userName); pushLog('exported PDF', tasks, assign); };
+  const exportEntry = (entry) => exportPDF(entry.tasks.map((t) => ({ done: false, ...t })), decAssign(entry.assign, entry.tasks), entry.ts, entry.user);
+  const restoreEntry = (entry) => {
+    if (!window.confirm('Restore the version from ' + fmtDate(entry.ts) + ' (by ' + entry.user + ')? Current state will be replaced.')) return;
+    const rt = entry.tasks.map((t) => ({ done: false, ...t }));
+    const ra = decAssign(entry.assign, entry.tasks);
+    setTasks(rt); setAssign(ra); setActiveId(rt[0] ? rt[0].id : 't0');
+    pushLog('restored version from ' + fmtDate(entry.ts), rt, ra);
     setHistoryOpen(false);
   };
-  const handleExport = () => { exportPDF(tasks, assign, lastModified); saveRevision('Auto-saved on export'); };
-  const exportRevision = (rev) => exportPDF(rev.tasks.map((t) => ({ done: false, ...t })), rev.assign, rev.ts);
 
   /* ----- dots ----- */
   const dotEls = useMemo(() => DOTS.map((d, i) => (
@@ -321,9 +375,9 @@ export default function PilePlan({ onExit }) {
               style={{ border: '1px solid ' + (active ? ORANGE : '#334155'), borderRadius: 8, padding: 10, background: active ? 'rgba(249,115,22,.10)' : '#0f172a', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <label style={{ position: 'relative', width: 28, height: 28, flexShrink: 0, borderRadius: 6, background: t.color, border: '2px solid rgba(255,255,255,.35)', cursor: 'pointer' }} title="Change color" onClick={(e) => e.stopPropagation()}>
-                  <input type="color" value={t.color} onChange={(e) => recolorTask(t.id, e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                  <input type="color" value={t.color} onChange={(e) => recolorTask(t.id, e.target.value)} onFocus={() => onEditFocus('color', t)} onBlur={onEditBlur} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
                 </label>
-                <input value={t.name} onChange={(e) => renameTask(t.id, e.target.value)} onClick={(e) => e.stopPropagation()}
+                <input value={t.name} onChange={(e) => renameTask(t.id, e.target.value)} onFocus={() => onEditFocus('name', t)} onBlur={onEditBlur} onClick={(e) => e.stopPropagation()}
                   style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', borderBottom: '1px solid #334155', color: '#fff', fontFamily: FONT_BODY, fontSize: 17, padding: '4px 0', outline: 'none' }} />
                 {tasks.length > 1 && (
                   <button onClick={(e) => { e.stopPropagation(); removeTask(t.id); }} title="Delete task"
@@ -347,31 +401,29 @@ export default function PilePlan({ onExit }) {
       </div>
 
       <button onClick={addTask} style={addBtn()}>+ ADD TASK</button>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={handleExport} style={{ ...primaryBtn(), flex: 2 }}>EXPORT PDF</button>
-        <button onClick={() => saveRevision('Manual save')} style={{ ...secondaryBtn(), flex: 1 }}>SAVE REV</button>
-      </div>
-      <button onClick={() => setHistoryOpen(true)} style={secondaryBtn()}>REVISION HISTORY ({revisions.length})</button>
+      <button onClick={handleExport} style={primaryBtn()}>EXPORT PDF</button>
+      <button onClick={() => setHistoryOpen(true)} style={secondaryBtn()}>EDIT HISTORY ({log.length})</button>
       <button onClick={resetAll} style={resetBtn()}>RESET TO ORIGINAL</button>
     </>
   );
 
   const historyPanel = historyOpen && (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }} onClick={() => setHistoryOpen(false)}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL, border: '1px solid ' + ORANGE, borderRadius: mob ? '16px 16px 0 0' : 12, padding: 16, width: mob ? '100%' : 460, maxHeight: '80vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL, border: '1px solid ' + ORANGE, borderRadius: mob ? '16px 16px 0 0' : 12, padding: 16, width: mob ? '100%' : 520, maxHeight: '82vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ fontFamily: FONT_HEADING, fontSize: 22, letterSpacing: 2, color: '#fff' }}>REVISION HISTORY</div>
+          <div style={{ fontFamily: FONT_HEADING, fontSize: 22, letterSpacing: 2, color: '#fff' }}>EDIT HISTORY</div>
           <button onClick={() => setHistoryOpen(false)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 28, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
         </div>
-        {revisions.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No revisions yet. Use SAVE REV or EXPORT PDF to create one.</div>}
-        {revisions.map((rev) => (
-          <div key={rev.id} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontSize: 12, color: '#64748b', marginTop: -4 }}>Every change is logged with who made it and when. Restore or export any point. Stored on this device.</div>
+        {log.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No edits yet.</div>}
+        {log.map((e) => (
+          <div key={e.id} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, color: '#e2e8f0' }}>{fmtDate(rev.ts)}</div>
-              <div style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rev.note || '—'} · {(rev.overall || 0).toFixed(1)}% overall</div>
+              <div style={{ fontSize: 15, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.summary}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}><span style={{ color: ORANGE }}>{e.user}</span> · {fmtDate(e.ts)}</div>
             </div>
-            <button onClick={() => exportRevision(rev)} style={{ ...secondaryBtn(), padding: '6px 10px', fontSize: 12 }}>PDF</button>
-            <button onClick={() => restoreRevision(rev)} style={{ ...primaryBtn(), padding: '6px 10px', fontSize: 12 }}>RESTORE</button>
+            <button onClick={() => exportEntry(e)} title="Export this version to PDF" style={{ ...secondaryBtn(), padding: '6px 10px', fontSize: 12 }}>PDF</button>
+            <button onClick={() => restoreEntry(e)} title="Restore this version" style={{ ...primaryBtn(), padding: '6px 10px', fontSize: 12 }}>RESTORE</button>
           </div>
         ))}
       </div>
@@ -380,7 +432,6 @@ export default function PilePlan({ onExit }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: BG, display: 'flex', flexDirection: 'column', fontFamily: FONT_BODY, color: '#e2e8f0' }}>
-      {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: mob ? '10px 12px' : '12px 18px', background: PANEL, borderBottom: '1px solid #334155' }}>
         {onExit && <button onClick={onExit} style={hbtn('#475569')} title="Back to dashboard">&#8592; Back</button>}
         <div style={{ fontFamily: FONT_HEADING, fontSize: mob ? 18 : 26, letterSpacing: 1.5, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -388,7 +439,8 @@ export default function PilePlan({ onExit }) {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontFamily: FONT_HEADING, fontSize: mob ? 18 : 22, color: '#22c55e', lineHeight: 1 }}>{overall.toFixed(0)}%</span>
-          {!mob && <button onClick={handleExport} style={{ ...primaryBtn() }}>EXPORT PDF</button>}
+          {!mob && <button onClick={() => setHistoryOpen(true)} style={hbtn('#334155')}>HISTORY</button>}
+          {!mob && <button onClick={handleExport} style={primaryBtn()}>EXPORT PDF</button>}
         </div>
       </div>
 
@@ -450,7 +502,7 @@ export default function PilePlan({ onExit }) {
 function hbtn(bg) { return { background: bg, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontFamily: FONT_BODY, fontSize: 14, letterSpacing: 1, cursor: 'pointer', whiteSpace: 'nowrap' }; }
 function modeBtn(active) { return { flex: 1, background: active ? ORANGE : '#0f172a', color: active ? '#0f172a' : '#94a3b8', border: '1px solid ' + (active ? ORANGE : '#334155'), borderRadius: 6, padding: '10px 0', fontFamily: FONT_BODY, fontWeight: 600, fontSize: 15, letterSpacing: 2, cursor: 'pointer' }; }
 function addBtn() { return { background: 'transparent', color: ORANGE, border: '1px dashed rgba(249,115,22,.5)', borderRadius: 8, padding: '12px 0', fontFamily: FONT_BODY, fontSize: 15, letterSpacing: 2, cursor: 'pointer' }; }
-function primaryBtn() { return { background: ORANGE, color: '#0f172a', border: 'none', borderRadius: 6, padding: '11px 0', fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, letterSpacing: 1.5, cursor: 'pointer', whiteSpace: 'nowrap' }; }
-function secondaryBtn() { return { background: '#334155', color: '#e2e8f0', border: 'none', borderRadius: 6, padding: '11px 0', fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, letterSpacing: 1, cursor: 'pointer', whiteSpace: 'nowrap' }; }
+function primaryBtn() { return { background: ORANGE, color: '#0f172a', border: 'none', borderRadius: 6, padding: '11px 14px', fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, letterSpacing: 1.5, cursor: 'pointer', whiteSpace: 'nowrap' }; }
+function secondaryBtn() { return { background: '#334155', color: '#e2e8f0', border: 'none', borderRadius: 6, padding: '11px 14px', fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, letterSpacing: 1, cursor: 'pointer', whiteSpace: 'nowrap' }; }
 function resetBtn() { return { background: 'transparent', color: '#64748b', border: '1px solid #334155', borderRadius: 6, padding: '10px 0', fontFamily: FONT_BODY, fontSize: 13, letterSpacing: 1, cursor: 'pointer' }; }
 function zbtn() { return { width: 42, height: 42, borderRadius: 8, background: PANEL, color: '#fff', border: '1px solid #334155', fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,.3)' }; }
