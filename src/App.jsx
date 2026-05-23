@@ -4342,18 +4342,18 @@ function StakeholderReports({ onExit }) {
   else content = React.createElement(ActivityTab, null);
 
   return React.createElement('div', { style: { position: 'fixed', inset: 0, zIndex: 2000, background: '#f5f2ee', overflow: 'auto', fontFamily: "'Barlow',sans-serif" } },
-    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px 32px 60px' } },
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 } },
+    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px clamp(14px,4vw,32px) 60px' } },
+      React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 32 } },
         React.createElement('div', null,
           React.createElement('div', { onClick: onExit, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#F97316', marginBottom: 12, transition: 'opacity .2s' }, onMouseEnter: function(e){e.currentTarget.style.opacity='.7'}, onMouseLeave: function(e){e.currentTarget.style.opacity='1'} }, '← Back to Dashboard'),
           React.createElement('div', { style: { ...BB, fontSize: 'clamp(32px,5vw,52px)', letterSpacing: 2, color: '#1a1a2e', lineHeight: 1 } }, 'STAKEHOLDER REPORTS')
         ),
         React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, 'Last refreshed: ' + new Date().toLocaleTimeString())
       ),
-      React.createElement('div', { style: { display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid ' + borderC } },
+      React.createElement('div', { style: { display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid ' + borderC, overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
         tabs.map(function(t) {
           var active = t.id === tab;
-          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 24px', cursor: 'pointer', ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#F97316' : '#888', borderBottom: active ? '2px solid #F97316' : '2px solid transparent', transition: 'all .2s' } }, t.label);
+          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 20px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#F97316' : '#888', borderBottom: active ? '2px solid #F97316' : '2px solid transparent', transition: 'all .2s' } }, t.label);
         })
       ),
       content
