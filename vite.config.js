@@ -12,6 +12,7 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           icons: ['lucide-react'],
           xlsx: ['xlsx'],
+          jspdf: ['jspdf'],
         },
       },
     },
