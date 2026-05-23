@@ -4515,8 +4515,8 @@ export default function App(){
           <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0,marginRight:m?0:20}}>
             <img src={LOGO_SRC} alt="SRC" style={{width:m?36:48,height:m?36:48,objectFit:"contain"}}/>
             <div>
-              <div style={{...BB,fontSize:m?17:21,letterSpacing:'4px',color:'#F5F0EB',lineHeight:1}}>SUNRISE</div>
-              <div style={{...NB,fontSize:m?7:9,letterSpacing:'2px',color:A,textTransform:'uppercase',whiteSpace:'nowrap'}}>Construction & Development</div>
+              <div style={{...BB,fontSize:m?17:21,letterSpacing:m?'2px':'4px',color:'#F5F0EB',lineHeight:1}}>SUNRISE</div>
+              <div style={{...NB,display:m?'none':'block',fontSize:m?7:9,letterSpacing:'2px',color:A,textTransform:'uppercase',whiteSpace:'nowrap'}}>Construction & Development</div>
             </div>
           </div>
 
