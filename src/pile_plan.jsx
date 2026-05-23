@@ -87,6 +87,24 @@ function decAssign(enc, tasks) {
   return enc.d.map(pick);
 }
 
+/* KPI snapshot for the dashboard / stakeholder reports (reads synced state) */
+export function getTaskTrackerKPI() {
+  let tasks = storage.get(STORE_TASKS);
+  if (!Array.isArray(tasks) || !tasks.length) tasks = DEFAULT_TASKS;
+  tasks = tasks.map((t) => ({ done: false, ...t }));
+  let assign = storage.get(STORE_ASSIGN);
+  if (!Array.isArray(assign) || assign.length !== DOTS.length) assign = DOTS.map((d) => DEFAULT_TASK_BY_INDEX[d[2]] || 't0');
+  const total = assign.length;
+  const counts = computeCounts(assign, tasks);
+  const meta = storage.get(STORE_META) || {};
+  return {
+    total,
+    overall: overallPct(counts, tasks, total),
+    lastModified: meta.lastModified || 0,
+    tasks: tasks.map((t) => ({ name: t.name, color: t.color, done: !!t.done, count: counts[t.id] || 0, pct: total ? (counts[t.id] || 0) / total * 100 : 0 })),
+  };
+}
+
 /* dot field → PNG for the PDF (white bg, printable) */
 function renderMapDataURL(assign, colorById) {
   const scale = 2.2, pad = 8;
@@ -128,7 +146,7 @@ function exportPDF(tasks, assign, stampTs, byUser, logo) {
   let titleX = M;
   if (logo) { const lw = 34; doc.addImage(logo.url, 'PNG', M, M - 10, lw, lw * (logo.h / logo.w)); titleX = M + lw + 12; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(20, 20, 28);
-  doc.text('PILE PLAN  —  DWYER RD', titleX, M + 8);
+  doc.text('TASK TRACKER  —  DWYER RD', titleX, M + 8);
   doc.setDrawColor(249, 115, 22); doc.setLineWidth(2.5); doc.line(titleX, M + 16, titleX + 210, M + 16);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(150, 150, 150);
   doc.text('SUNRISE CONSTRUCTION & DEVELOPMENT', titleX, M + 28);
@@ -172,7 +190,7 @@ function exportPDF(tasks, assign, stampTs, byUser, logo) {
     doc.setFontSize(8); doc.setTextColor(140, 140, 140); doc.text('Pile layout (color = task)', ix, iy + imgH + 14);
   } catch (e) { /* generated canvas is never tainted */ }
 
-  doc.save(`Pile_Plan_Dwyer_Rd_${fileStamp(stampTs)}.pdf`);
+  doc.save(`Task_Tracker_Dwyer_Rd_${fileStamp(stampTs)}.pdf`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -496,7 +514,7 @@ export default function PilePlan({ onExit, portalUser }) {
         {onExit && <button onClick={onExit} style={backBtn} title="Back to dashboard">&#8592;</button>}
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 38, height: mob ? 30 : 38, objectFit: 'contain', borderRadius: 4 }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: BBF, fontSize: mob ? 20 : 27, letterSpacing: 1.5, color: CREAM, lineHeight: .95, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>PILE PLAN <span style={{ color: ORANGE }}>— DWYER RD</span></div>
+          <div style={{ fontFamily: BBF, fontSize: mob ? 20 : 27, letterSpacing: 1.5, color: CREAM, lineHeight: .95, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>TASK TRACKER <span style={{ color: ORANGE }}>— DWYER RD</span></div>
           {!mob && <div style={{ fontFamily: NBF, fontSize: 10, letterSpacing: 3, color: ORANGE, textTransform: 'uppercase' }}>Sunrise Construction &amp; Development</div>}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 14 }}>
