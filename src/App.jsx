@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
-import SiteMap from "./site_map.jsx"
-import PilePlan from "./pile_plan.jsx"
+import PilePlan, { getTaskTrackerKPI } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -4116,12 +4115,14 @@ function StakeholderReports({ onExit }) {
   }
 
   function OverviewTab() {
+    var ttk = getTaskTrackerKPI();
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Active Projects', value: data.projects.length, sub: totalMW.toFixed(1) + ' MW total capacity' }),
         React.createElement(MetricCard, { label: 'Total Revenue', value: fmt$(totalRevenue), color: '#22c55e', sub: fmt$(totalProfit) + ' projected profit' }),
         React.createElement(MetricCard, { label: 'Avg Margin', value: avgMargin.toFixed(1) + '%', color: avgMargin > 15 ? '#22c55e' : '#eab308' }),
-        React.createElement(MetricCard, { label: 'Man-Hours', value: fmtN(totalMH), sub: fmtN(weekActivity) + ' entries this week' })
+        React.createElement(MetricCard, { label: 'Man-Hours', value: fmtN(totalMH), sub: fmtN(weekActivity) + ' entries this week' }),
+        React.createElement(MetricCard, { label: 'Site Completion', value: ttk.overall.toFixed(1) + '%', color: '#F97316', sub: ttk.total.toLocaleString() + ' piles · Task Tracker' })
       ),
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Tasks In Progress', value: allInProgress, color: '#F97316' }),
@@ -4383,7 +4384,7 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','sitemap','pileplan']})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
 
@@ -4391,7 +4392,7 @@ export default function App(){
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','sitemap','pileplan','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
@@ -4435,7 +4436,7 @@ export default function App(){
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:inv.tools,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
     window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent('SRC%26D Employee Portal Invitation')+'&body='+encodeURIComponent('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link),'_blank')
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','sitemap','pileplan']})
+    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
   }
 
   function submitAccessReq(){
@@ -4459,7 +4460,7 @@ export default function App(){
   var userTools=user&&user.tools?user.tools:[]
   function hasTool(t){return isPortalAdmin||userTools.indexOf(t)>=0}
 
-  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',sitemap:'Site Map',pileplan:'Pile Plan'}
+  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker'}
 
   const boxRef=useRef()
 
@@ -4586,6 +4587,31 @@ export default function App(){
                 </div>
                 <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
               </div>
+              {hasTool('pileplan')&&(function(){
+                var ttk=getTaskTrackerKPI();
+                return (
+                  <div onClick={function(){setPage('pileplan')}} style={{background:'#fff',border:'1px solid rgba(0,0,0,.08)',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:m?'18px':'24px 28px',marginBottom:m?14:20,cursor:'pointer',transition:'all .25s'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.transform='translateY(-2px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.transform='translateY(0)'}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:1,background:A}}/>Live Site Progress · Task Tracker</div>
+                    <div style={{display:'flex',alignItems:'flex-end',gap:18,flexWrap:'wrap'}}>
+                      <div style={{...BB,fontSize:m?44:62,color:'#1a1a2e',lineHeight:.85}}>{ttk.overall.toFixed(1)}<span style={{fontSize:'.45em',color:A,marginLeft:2}}>%</span></div>
+                      <div style={{flex:1,minWidth:180}}>
+                        <div style={{height:10,background:'#eceae6',borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:ttk.overall+'%',background:'linear-gradient(90deg,#F97316,#EAB308)',transition:'width .3s'}}/></div>
+                        <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px',marginTop:7}}>{ttk.total.toLocaleString()} piles · {ttk.lastModified?'updated '+new Date(ttk.lastModified).toLocaleDateString():'no edits yet'}</div>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:m?12:18,flexWrap:'wrap',marginTop:14}}>
+                      {ttk.tasks.map(function(t,i){return (
+                        <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{width:12,height:12,borderRadius:3,background:t.color,flexShrink:0,outline:t.done?'2px solid rgba(34,197,94,.5)':'none'}}/>
+                          <span style={{...NB,fontSize:13,color:'#444',letterSpacing:'.5px'}}>{t.name} <strong style={{color:'#1a1a2e'}}>{t.pct.toFixed(0)}%</strong> <span style={{color:'#999'}}>({t.count.toLocaleString()})</span></span>
+                        </div>
+                      )})}
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
                 {[
                   {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
@@ -4597,8 +4623,7 @@ export default function App(){
                   {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
                   {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
                   {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
-                  {key:'sitemap',   label:'Site Map',              icon:'M', desc:'Drawing import & construction progress tracking'},
-                  {key:'pileplan',  label:'Pile Plan',            icon:'P', desc:'Pile dot layout with editable task color legend & % complete'},
+                  {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
                 ].filter(function(tile){return hasTool(tile.key)}).map(function(tile){
                   return (
                     <div key={tile.key} onClick={function(){setPage(tile.key)}} style={{
@@ -4787,7 +4812,6 @@ export default function App(){
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}}/>}
-        {page==='sitemap'&&<div style={{position:'fixed',inset:0,zIndex:2000,background:'#f5f2ee',overflow:'auto'}}><SiteMap onExit={function(){setPage('dashboard')}}/></div>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
