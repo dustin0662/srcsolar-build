@@ -4788,7 +4788,7 @@ export default function App(){
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}}/>}
         {page==='sitemap'&&<div style={{position:'fixed',inset:0,zIndex:2000,background:'#f5f2ee',overflow:'auto'}}><SiteMap onExit={function(){setPage('dashboard')}}/></div>}
-        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}}/>}
+        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
