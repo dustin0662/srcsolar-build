@@ -4527,7 +4527,7 @@ export default function App(){
             ))}
           </div>}
 
-          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>Employee Portal</div>}
+          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>Login</div>}
           {page!=='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>Back to Site</div>}
           <a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:m?'2px':'3px',textTransform:'uppercase',textDecoration:'none',padding:m?'8px 12px':'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
             {m?'Get In Touch':'Partner Now'}
