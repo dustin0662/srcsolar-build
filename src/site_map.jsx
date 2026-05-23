@@ -840,6 +840,7 @@ function btnStyle(bg, small = false) {
     fontWeight: 600,
     whiteSpace: 'nowrap',
     letterSpacing: '0.02em',
+    flexShrink: 0,
   };
 }
 
@@ -859,7 +860,18 @@ function inputStyle() {
 /* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
+function useIsMobile() {
+  const [m, setM] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setM(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return m;
+}
+
 export default function SiteMap({ onExit }) {
+  const mob = useIsMobile();
   const [sections, setSections] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [mode, setMode] = useState('all'); // 'all' | 'view-N' | 'edit-N' | 'move' | 'editgrid' | 'import'
@@ -1039,7 +1051,9 @@ export default function SiteMap({ onExit }) {
         padding: '8px 12px',
         backgroundColor: '#0f172a',
         borderBottom: '1px solid #334155',
-        flexWrap: 'wrap',
+        flexWrap: mob ? 'nowrap' : 'wrap',
+        overflowX: mob ? 'auto' : 'visible',
+        WebkitOverflowScrolling: 'touch',
         zIndex: 50,
       }}>
         {/* Back button */}
@@ -1095,7 +1109,7 @@ export default function SiteMap({ onExit }) {
         <div style={{ width: 1, height: 28, background: '#334155', margin: '0 4px' }} />
 
         {/* BG opacity */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <label htmlFor="bd-upload" style={{
             ...btnStyle('#334155', true),
             display: 'inline-flex', alignItems: 'center', cursor: 'pointer',
