@@ -515,7 +515,7 @@ function CapCard({c,ci}){
   </div>)
 }
 
-const CAPS=[{n:'01',t:'ISNet Compliance',b:'Full ISNetworld compliance ensuring safety protocols, training records, and insurance coverage meet the most stringent standards for utility-scale solar.'},{n:'02',t:'Apprenticeship Enabled',b:'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.'},{n:'03',t:'EPC Subcontracting',b:'Precision tracking installation, pile driving, and mechanical assembly for utility-scale EPCs with industry-leading accuracy and zero schedule slippage.'}]
+const CAPS=[{n:'01',t:'ISNet Compliance',b:'Full ISNetworld compliance ensuring safety protocols, training records, and insurance coverage meet the most stringent standards for utility-scale solar.'},{n:'02',t:'Apprenticeship Enabled',b:'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.'},{n:'03',t:'EPC Subcontracting',b:'Precision tracking installation, pile driving, and mechanical assembly for utility-scale EPCs with industry-leading accuracy.'}]
 const PROJS=[{mw:'210',name:'Grimes Solar',loc:'Iola, TX',mods:'500,000',fill:1.0,icon:'orbital'},{mw:'135',name:'Happy Solar',loc:'White County, AR',mods:'285,000',fill:.57,icon:'sunny'},{mw:'80',name:'Grasshopper Solar',loc:'Chase City, VA',mods:'78,000',fill:.16,icon:'tracker'},{mw:'50',name:'Salt City Solar',loc:'Ross County, OH',mods:'125,000',fill:.25,icon:'city'},{mw:'50',name:'Whitehorn Solar',loc:'Gretna, VA',mods:'180,000',fill:.36,icon:'mountain'},{mw:'6.7',name:'Locust Solar',loc:'Cortland, NY',mods:'15,000',fill:.03,icon:'swarm'},{mw:'4.8',name:'Remsen Solar',loc:'E. Syracuse, NY',mods:'10,000',fill:.02,icon:'pulse'},{mw:'4.4',name:'Taft Solar',loc:'E. Syracuse, NY',mods:'10,000',fill:.02,icon:'prism'},{mw:'2.93',name:'Union Solar',loc:'Union, ME',mods:'8,000',fill:.016,icon:'unity'}]
 
 // ── SEC with mobile padding ────────────────────────────────────────────────
@@ -4926,7 +4926,7 @@ export default function App(){
             </div>
             {m?(
               <div style={{display:'flex',justifyContent:'space-around',gap:16}}>
-                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Placed'},{n:'9',l:'States Worked'},{n:'0',l:'Schedule Slippage'}].map(s=>(
+                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Placed'},{n:'9',l:'States Worked'}].map(s=>(
                   <div key={s.n} style={{textAlign:'center'}}>
                     <div style={{...BB,fontSize:38,color:'#F5F0EB',lineHeight:1}}>{s.n}</div>
                     <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:6}}>{s.l}</div>
@@ -4934,14 +4934,12 @@ export default function App(){
                 ))}
               </div>
             ):(
-              <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto 1fr auto 1fr',alignItems:'center'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto 1fr',alignItems:'center'}}>
                 <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>500+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>Megawatts Our Team Installed</div></div>
                 <div style={{width:1,height:70,background:'linear-gradient(to bottom,transparent,rgba(249,115,22,.4),transparent)',margin:'0 12px'}}/>
                 <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>1.2M+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>Modules Team Placed</div></div>
                 <div style={{width:1,height:70,background:'linear-gradient(to bottom,transparent,rgba(249,115,22,.4),transparent)',margin:'0 12px'}}/>
                 <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>9</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>States Team Worked</div></div>
-                <div style={{width:1,height:70,background:'linear-gradient(to bottom,transparent,rgba(249,115,22,.4),transparent)',margin:'0 12px'}}/>
-                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:A,lineHeight:1,textShadow:'0 0 24px rgba(249,115,22,.4)'}}>0</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>Schedule Slippage</div></div>
               </div>
             )}
           </div>
