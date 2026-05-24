@@ -423,9 +423,11 @@ function buildProposalHTML(params, computed) {
 
 // ─── Execution Plan ──────────────────────────────────────────────────
 
-export function buildExecutionPlanHTML(params, computed) {
+export function buildExecutionPlanHTML(params, computed, photos = {}) {
   const p = params;
   const r = computed;
+  const ph = photos || {};
+  const bgPhoto = (key) => ph[key] ? `style="background:#fff url('${ph[key]}') center/cover no-repeat"` : "";
   const c = BRAND.contact;
   const origin = (typeof window !== "undefined" && window.location && window.location.origin) || "";
   const LOGO = origin + "/logo.webp";
@@ -504,9 +506,9 @@ export function buildExecutionPlanHTML(params, computed) {
     .back .info .bar { width: 1px; background: #9aa0a8; }
   `;
 
-  const divider = (n, t) => `
+  const divider = (n, t, key) => `
     <div class="page divider">
-      <div class="dtop"></div>
+      <div class="dtop" ${bgPhoto(key)}></div>
       <img class="dlogo" src="${LOGO}">
       <div class="dbot"><div class="dtitle hd">${n} ${t}</div><div class="dco">${PEPCO.toUpperCase()}</div></div>
       <div class="stripes"></div>
@@ -633,7 +635,7 @@ export function buildExecutionPlanHTML(params, computed) {
     <style>${styles}</style></head><body>
 
     <div class="page cover">
-      <div class="photo"></div>
+      <div class="photo" ${bgPhoto("cover")}></div>
       <div class="navy"></div>
       <div class="stripes"></div>
       <img class="clogo" src="${LOGO}">
@@ -648,21 +650,21 @@ export function buildExecutionPlanHTML(params, computed) {
     </div>
 
     ${content("EXECUTIVE SUMMARY", 1, execInner)}
-    ${divider("I.", "MATERIAL HANDLING")}
+    ${divider("I.", "MATERIAL HANDLING", "mh")}
     ${content("MATERIAL HANDLING", 2, mhInner)}
-    ${divider("II.", "PILE DRIVING")}
+    ${divider("II.", "PILE DRIVING", "pile")}
     ${content("PILE DRIVING", 3, pileInner)}
-    ${divider("III.", "RACKING")}
+    ${divider("III.", "RACKING", "rack")}
     ${content("RACKING", 4, rackInner)}
-    ${divider("IV.", "MODULE INSTALLATION")}
+    ${divider("IV.", "MODULE INSTALLATION", "mod")}
     ${content("MODULE INSTALLATION", 5, modInner)}
-    ${divider("V.", "EQUIPMENT & SITE SUPPORT")}
+    ${divider("V.", "EQUIPMENT & SITE SUPPORT", "equip")}
     ${content("EQUIPMENT & SITE SUPPORT", 6, equipInner)}
-    ${divider("VI.", "ASSUMED SCHEDULE")}
+    ${divider("VI.", "ASSUMED SCHEDULE", "sched")}
     ${content("ASSUMED SCHEDULE", 7, schedInner)}
-    ${divider("VII.", "QA/QC & PUNCHLIST")}
+    ${divider("VII.", "QA/QC & PUNCHLIST", "qaqc")}
     ${content("QA/QC & PUNCHLIST", 8, qcInner)}
-    ${divider("VIII.", "SAFETY & QUALITY")}
+    ${divider("VIII.", "SAFETY & QUALITY", "safety")}
     ${content("SAFETY & QUALITY", 9, safetyInner)}
 
     <div class="page back">
@@ -694,9 +696,105 @@ export function exportBidProposal(params, computed) {
   openInNewWindow(html, `${BRAND.shortName} — Proposal — ${params.projectName || "Project"}`);
 }
 
-export function exportExecutionPlan(params, computed) {
-  const html = buildExecutionPlanHTML(params, computed);
+export function exportExecutionPlan(params, computed, photos) {
+  const html = buildExecutionPlanHTML(params, computed, photos || {});
   openInNewWindow(html, `${BRAND.shortName} — Execution Plan — ${params.projectName || "Project"}`);
+}
+
+// ─── PEP photo helper ────────────────────────────────────────────────
+function fileToScaledDataURL(file, maxW = 1600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL("image/jpeg", 0.82));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+const PEP_SECTIONS = [
+  { key: "cover", label: "Cover" },
+  { key: "mh", label: "I. Material Handling" },
+  { key: "pile", label: "II. Pile Driving" },
+  { key: "rack", label: "III. Racking" },
+  { key: "mod", label: "IV. Module Installation" },
+  { key: "equip", label: "V. Equipment & Site Support" },
+  { key: "sched", label: "VI. Assumed Schedule" },
+  { key: "qaqc", label: "VII. QA/QC & Punchlist" },
+  { key: "safety", label: "VIII. Safety & Quality" },
+];
+const PEP_PAGES = 20;
+
+// ─── PEP Builder (preview + background photos + export) ───────────────
+function PepBuilder({ params, computed, onClose }) {
+  const [photos, setPhotos] = React.useState({});
+  const [scale, setScale] = React.useState(0.7);
+  const [busyKey, setBusyKey] = React.useState(null);
+  const paneRef = React.useRef(null);
+
+  const html = React.useMemo(() => buildExecutionPlanHTML(params, computed, photos), [params, computed, photos]);
+
+  React.useEffect(() => {
+    const fit = () => { if (paneRef.current) setScale(Math.max(0.2, Math.min(1, (paneRef.current.clientWidth - 24) / 816))); };
+    fit(); window.addEventListener("resize", fit); return () => window.removeEventListener("resize", fit);
+  }, []);
+
+  const upload = async (key, file) => {
+    if (!file) return;
+    setBusyKey(key);
+    try { const url = await fileToScaledDataURL(file); setPhotos((p) => ({ ...p, [key]: url })); } catch (e) {}
+    setBusyKey(null);
+  };
+  const clear = (key) => setPhotos((p) => { const n = { ...p }; delete n[key]; return n; });
+
+  const ORANGE = "#F97316", NAVY = "#16466e", FB = "'Barlow Condensed', sans-serif";
+  const mob = typeof window !== "undefined" && window.innerWidth < 768;
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "stretch", justifyContent: "center", padding: mob ? 0 : 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#0f1320", color: "#e8eaf0", width: "100%", maxWidth: 1100, display: "flex", flexDirection: "column", borderRadius: mob ? 0 : 10, overflow: "hidden", fontFamily: FB }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: "#0a0d18", borderBottom: "1px solid " + NAVY }}>
+          <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: 1 }}>PEP BUILDER <span style={{ color: ORANGE }}>— {(params.projectName || "Project")}</span></div>
+          <button onClick={() => exportExecutionPlan(params, computed, photos)} style={{ marginLeft: "auto", background: ORANGE, color: "#1a1206", border: "none", padding: "9px 16px", fontFamily: FB, fontWeight: 700, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", borderRadius: 5 }}>Export / Print</button>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#9aa0b0", fontSize: 26, lineHeight: 1, cursor: "pointer" }}>&times;</button>
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: mob ? "column" : "row", minHeight: 0 }}>
+          {/* controls */}
+          <div style={{ width: mob ? "auto" : 320, flexShrink: 0, overflowY: "auto", padding: 14, borderRight: mob ? "none" : "1px solid " + NAVY, borderBottom: mob ? "1px solid " + NAVY : "none", maxHeight: mob ? "38vh" : "none" }}>
+            <div style={{ fontSize: 12, letterSpacing: 2, textTransform: "uppercase", color: ORANGE, fontWeight: 700, marginBottom: 4 }}>Section Backgrounds</div>
+            <div style={{ fontSize: 12, color: "#8a90a0", marginBottom: 12 }}>Add a photo to any divider/cover, or leave blank for the branded default.</div>
+            {PEP_SECTIONS.map((s) => (
+              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #1c2233" }}>
+                <div style={{ width: 46, height: 34, flexShrink: 0, border: "1px solid #2a3147", background: photos[s.key] ? `#000 url('${photos[s.key]}') center/cover` : "linear-gradient(135deg,#e8eaec,#9aa0a8)", borderRadius: 3 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, color: "#e8eaf0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                  <div style={{ fontSize: 11, color: photos[s.key] ? "#22c55e" : "#6b7280" }}>{busyKey === s.key ? "loading…" : photos[s.key] ? "custom photo" : "default"}</div>
+                </div>
+                <label style={{ background: "transparent", color: ORANGE, border: "1px solid " + ORANGE, borderRadius: 4, padding: "4px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  {photos[s.key] ? "Change" : "Upload"}
+                  <input type="file" accept="image/*" hidden onChange={(e) => upload(s.key, e.target.files[0])} />
+                </label>
+                {photos[s.key] && <button onClick={() => clear(s.key)} title="Remove" style={{ background: "transparent", border: "none", color: "#8a90a0", fontSize: 18, cursor: "pointer" }}>&times;</button>}
+              </div>
+            ))}
+          </div>
+          {/* preview */}
+          <div ref={paneRef} style={{ flex: 1, overflow: "auto", background: "#2b2f3a", padding: 12 }}>
+            <div style={{ width: 816 * scale, height: 1056 * PEP_PAGES * scale, margin: "0 auto", boxShadow: "0 4px 24px rgba(0,0,0,.5)" }}>
+              <iframe title="PEP preview" srcDoc={html} style={{ width: 816, height: 1056 * PEP_PAGES, border: "none", background: "#fff", transform: `scale(${scale})`, transformOrigin: "top left" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── React Button Component ──────────────────────────────────────────
@@ -704,23 +802,12 @@ export function exportExecutionPlan(params, computed) {
 export default function BidExportButtons({ bid, computed }) {
   const params = bid || {};
   const r = computed || {};
+  const [showPep, setShowPep] = React.useState(false);
 
   const btnBase = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "7px 14px",
-    borderRadius: 6,
-    border: "1.5px solid #F9731644",
-    background: "#F973160a",
-    color: "#F97316",
-    fontSize: 11,
-    fontWeight: 700,
-    cursor: "pointer",
-    fontFamily: "'Barlow Condensed', sans-serif",
-    letterSpacing: "0.5px",
-    transition: "all .15s",
-    whiteSpace: "nowrap",
+    display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
+    border: "1.5px solid #F9731644", background: "#F973160a", color: "#F97316", fontSize: 11, fontWeight: 700,
+    cursor: "pointer", fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.5px", transition: "all .15s", whiteSpace: "nowrap",
   };
 
   return (
@@ -736,13 +823,14 @@ export default function BidExportButtons({ bid, computed }) {
       </button>
       <button
         style={{ ...btnBase, color: "#0F766E", borderColor: "#0F766E44", background: "#0F766E0a" }}
-        onClick={() => exportExecutionPlan(params, r)}
+        onClick={() => setShowPep(true)}
         onMouseEnter={(e) => { e.currentTarget.style.background = "#0F766E15"; e.currentTarget.style.borderColor = "#0F766E"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "#0F766E0a"; e.currentTarget.style.borderColor = "#0F766E44"; }}
-        title="Generate execution plan with staffing and timeline"
+        title="Open the PEP Builder — preview, add background photos, then export"
       >
-        📋 Execution Plan
+        📋 Build PEP
       </button>
+      {showPep && <PepBuilder params={params} computed={r} onClose={() => setShowPep(false)} />}
     </div>
   );
 }
