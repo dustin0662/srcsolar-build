@@ -4387,6 +4387,11 @@ export default function App(){
   const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
+  const[showPw,setShowPw]=useState(false)
+  const[pwOld,setPwOld]=useState('')
+  const[pwNew,setPwNew]=useState('')
+  const[pwConf,setPwConf]=useState('')
+  const[pwMsg,setPwMsg]=useState('')
 
   function pHash(s){var h=5381;for(var i=0;i<s.length;i++){h=((h<<5)+h)+s.charCodeAt(i);h=h&h}return Math.abs(h).toString(36)}
 
@@ -4412,6 +4417,22 @@ export default function App(){
     var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
     if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
     setUser(u);setPage('dashboard')
+  }
+
+  function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
+  function changePassword(){
+    setPwMsg('')
+    if(!user){return}
+    if(user.passwordHash!==pHash(pwOld)){setPwMsg('Current password is incorrect');return}
+    if((pwNew||'').length<8){setPwMsg('New password must be at least 8 characters');return}
+    if(pwNew!==pwConf){setPwMsg('New passwords do not match');return}
+    if(pwNew===pwOld){setPwMsg('New password must be different from the current one');return}
+    var nh=pHash(pwNew)
+    var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{passwordHash:nh}):x})
+    svPU(nu)
+    setUser(Object.assign({},user,{passwordHash:nh}))
+    setPwOld('');setPwNew('');setPwConf('');setPwMsg('ok')
+    setTimeout(function(){setShowPw(false);setPwMsg('')},1300)
   }
 
   function doInviteSignup(token){
@@ -4583,7 +4604,25 @@ export default function App(){
                   {user ? user.name.toUpperCase() : 'OPERATOR'}
                 </div>
                 <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
+                <div onClick={openChangePw} style={{display:'inline-block',marginTop:12,cursor:'pointer',...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,borderBottom:'1px solid '+A,paddingBottom:2}}>Change Password</div>
               </div>
+              {showPw&&(
+                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
+                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
+                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Change Password</div>
+                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>Set a strong password for {user?user.email:'your account'}</div>
+                    <input type="password" value={pwOld} onChange={function(e){setPwOld(e.target.value)}} placeholder="Current password" style={{...IST,marginBottom:10}}/>
+                    <input type="password" value={pwNew} onChange={function(e){setPwNew(e.target.value)}} placeholder="New password (min 8 characters)" style={{...IST,marginBottom:10}}/>
+                    <input type="password" value={pwConf} onChange={function(e){setPwConf(e.target.value)}} placeholder="Confirm new password" onKeyDown={function(e){if(e.key==='Enter')changePassword()}} style={{...IST}}/>
+                    {pwMsg&&pwMsg!=='ok'&&<div style={{...NB,fontSize:12,color:'#dc2626',marginTop:12}}>{pwMsg}</div>}
+                    {pwMsg==='ok'&&<div style={{...NB,fontSize:12,color:'#16a34a',marginTop:12}}>Password updated. Save it in your password manager.</div>}
+                    <div style={{display:'flex',gap:10,marginTop:20}}>
+                      <button onClick={changePassword} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Update Password</button>
+                      <button onClick={function(){setShowPw(false)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {hasTool('pileplan')&&(function(){
                 var ttk=getTaskTrackerKPI();
                 return (
