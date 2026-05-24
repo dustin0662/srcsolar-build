@@ -1,4 +1,4 @@
-// Auto-generated from Pile_Plan__Dwyer_Rd.pdf — 2067 pile dots.
+// Auto-generated pile plan layout — 2067 pile dots.
 // Each entry: [x, y, defaultColorIndex] (0=gray/none, 1=green, 2=red)
 export const PLAN_W = 444.6;
 export const PLAN_H = 700.7;
