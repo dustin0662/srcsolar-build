@@ -4568,9 +4568,6 @@ export default function App(){
               <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#555'}}>
                 Invite-only access · @sunriseconstructionco.com
               </div>
-              <div style={{textAlign:'center',marginTop:8,...NB,fontSize:11,color:'#555'}}>
-                Default admin: dustin.hanson@sunriseconstructionco.com / admin123
-              </div>
             </div>
           </div>
         )}
