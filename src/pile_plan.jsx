@@ -662,6 +662,65 @@ function ImportModal({ mob, onClose, onCreate }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Live read-only preview for the public landing page                 */
+/* ------------------------------------------------------------------ */
+export function TaskTrackerPreview() {
+  const mob = useIsMobile();
+  const [doc, setDoc] = useState(() => {
+    const p = storage.get(projKey('dwyer'));
+    return p && Array.isArray(p.assign) ? { tasks: p.tasks, assign: p.assign, lastModified: p.lastModified } : null;
+  });
+  useEffect(() => {
+    let alive = true;
+    fetch(ENDPOINT + '?project=dwyer', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && Array.isArray(d.assign) && d.assign.length === DOTS.length) setDoc({ tasks: d.tasks, assign: d.assign, lastModified: d.lastModified }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const tasks = ((doc && doc.tasks && doc.tasks.length) ? doc.tasks : DEFAULT_TASKS).map((t) => ({ done: false, ...t }));
+  const assign = (doc && Array.isArray(doc.assign) && doc.assign.length === DOTS.length) ? doc.assign : DOTS.map((d) => DEFAULT_TASK_BY_INDEX[d[2]] || 't0');
+  const colorById = {}; tasks.forEach((t) => { colorById[t.id] = t.color; });
+  const total = DOTS.length;
+  const counts = computeCounts(assign, tasks);
+  const overall = overallPct(counts, tasks, total);
+  const PAD = 16, VW = PLAN_W + PAD * 2, VH = PLAN_H + PAD * 2;
+  const lm = doc && doc.lastModified;
+
+  return (
+    <div style={{ border: '1px solid ' + LINE, background: 'rgba(8,8,18,.7)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: mob ? 'column' : 'row', overflow: 'hidden' }}>
+      <div style={{ flex: mob ? 'none' : '0 0 300px', padding: mob ? 18 : 26, display: 'flex', flexDirection: 'column', gap: 13, borderRight: mob ? 'none' : '1px solid ' + LINE, borderBottom: mob ? '1px solid ' + LINE : 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: 11, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: ORANGE }}>
+          <span style={{ width: 18, height: 1, background: ORANGE }} />Live Site Progress
+        </div>
+        <div style={{ fontFamily: BBF, fontSize: mob ? 30 : 36, letterSpacing: 1, color: CREAM, lineHeight: .95 }}>DWYER RD</div>
+        <div>
+          <div style={{ fontFamily: BBF, fontSize: mob ? 58 : 74, color: GOLD, lineHeight: .85, textShadow: '0 0 26px rgba(234,179,8,.4)' }}>{overall.toFixed(1)}<span style={{ fontSize: '.42em' }}>%</span></div>
+          <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: MUTE, marginTop: 2 }}>Overall Complete</div>
+        </div>
+        <div style={{ height: 7, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}><div style={{ height: '100%', width: overall + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')' }} /></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
+          {tasks.map((t) => (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 12, height: 12, background: t.color, flexShrink: 0 }} />
+              <span style={{ fontFamily: NBF, fontSize: 14, color: '#cfcabf', letterSpacing: .5 }}>{t.name}</span>
+              <span style={{ marginLeft: 'auto', fontFamily: BBF, fontSize: 18, color: t.color }}>{((counts[t.id] || 0) / total * 100).toFixed(0)}%</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontFamily: NBF, fontSize: 11, color: '#6b6b73', letterSpacing: 1 }}>{total.toLocaleString()} piles{lm ? ' · updated ' + new Date(lm).toLocaleDateString() : ''}</div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+        <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: mob ? 320 : 470, display: 'block' }}>
+          {DOTS.map((d, i) => <circle key={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={colorById[assign[i]] || '#9ca3af'} stroke="rgba(2,3,10,.5)" strokeWidth={0.4} />)}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 /* styles */
 const kicker = { fontFamily: NBF, fontSize: 12, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: MUTE };
 const bar = { height: 7, background: 'rgba(255,255,255,.08)', marginTop: 8, overflow: 'hidden', borderRadius: 2 };
