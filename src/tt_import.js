@@ -137,7 +137,7 @@ function autoSection(points, spacing) {
   return { sec: Array.from(sec), count: cur };
 }
 
-const TARGET_SPACING = 13; // normalize so dot radius ~4 looks right (matches Dwyer)
+const TARGET_SPACING = 13; // normalize so dot radius ~4 looks right
 
 export async function processImport(file, sensitivity = 5) {
   const canvas = await fileToCanvas(file);

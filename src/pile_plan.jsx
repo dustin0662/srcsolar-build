@@ -60,14 +60,23 @@ function decAssign(enc, tasks) { const fb = tasks[0] ? tasks[0].id : 't0'; if (!
 
 const DWYER_POINTS = DOTS.map((d) => [d[0], d[1]]);
 function defaultDwyerProject() {
-  return { name: 'Dwyer Rd', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0,
+  return { name: 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0,
     tasks: DEFAULT_TASKS.map((t) => ({ ...t })), assign: DOTS.map((d) => DEFAULT_TASK_BY_INDEX[d[2]] || 't0'), log: [], lastModified: Date.now() };
 }
 
-/* one-time migration of the legacy single-tracker into a 'dwyer' project */
+/* one-time migration of the legacy single-tracker into a project */
 function ensureMigrated() {
   let reg = storage.get(REG_KEY);
-  if (Array.isArray(reg) && reg.length) return reg;
+  if (Array.isArray(reg) && reg.length) {
+    // redact any legacy project name → "Project Alpha"
+    let changed = false;
+    reg = reg.map((p) => { if (p && /dwyer/i.test(p.name || '')) { changed = true; return { ...p, name: 'Project Alpha' }; } return p; });
+    if (changed) {
+      storage.set(REG_KEY, reg);
+      reg.forEach((p) => { const d = storage.get(projKey(p.id)); if (d && /dwyer/i.test(d.name || '')) storage.set(projKey(p.id), { ...d, name: p.name }); });
+    }
+    return reg;
+  }
   const lt = storage.get('pile-plan-tasks-v1'); const la = storage.get('pile-plan-assign-v1');
   const ll = storage.get('pile-plan-log-v1'); const lm = storage.get('pile-plan-meta-v1') || {};
   const proj = defaultDwyerProject();
@@ -76,7 +85,7 @@ function ensureMigrated() {
   if (Array.isArray(ll)) proj.log = ll;
   if (lm.lastModified) proj.lastModified = lm.lastModified;
   storage.set(projKey('dwyer'), proj);
-  reg = [{ id: 'dwyer', name: 'Dwyer Rd', createdAt: Date.now() }];
+  reg = [{ id: 'dwyer', name: 'Project Alpha', createdAt: Date.now() }];
   storage.set(REG_KEY, reg);
   storage.set(ACTIVE_KEY, 'dwyer');
   return reg;
@@ -213,6 +222,14 @@ export default function PilePlan({ onExit, portalUser }) {
   useEffect(() => { storage.set(REG_KEY, projects); }, [projects]);
   useEffect(() => { storage.set(ACTIVE_KEY, activeId); }, [activeId]);
   useEffect(() => { if (!tasks.find((t) => t.id === activeTaskId) && tasks[0]) setActiveTaskId(tasks[0].id); }, [tasks, activeTaskId]);
+  // redact any legacy project name (incl. re-introduced via cloud) and push the rename
+  useEffect(() => {
+    if (/dwyer/i.test(projName || '')) {
+      setProjName('Project Alpha');
+      setProjects((ps) => ps.map((p) => p.id === activeId ? { ...p, name: 'Project Alpha' } : p));
+      setLastModified(Date.now());
+    }
+  }, [projName, activeId]);
 
   const colorById = useMemo(() => { const m = {}; tasks.forEach((t) => { m[t.id] = t.color; }); return m; }, [tasks]);
   const counts = useMemo(() => computeCounts(assign, tasks), [assign, tasks]);
@@ -695,7 +712,7 @@ export function TaskTrackerPreview() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: 11, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: ORANGE }}>
           <span style={{ width: 18, height: 1, background: ORANGE }} />Live Site Progress
         </div>
-        <div style={{ fontFamily: BBF, fontSize: mob ? 30 : 36, letterSpacing: 1, color: CREAM, lineHeight: .95 }}>DWYER RD</div>
+        <div style={{ fontFamily: BBF, fontSize: mob ? 30 : 36, letterSpacing: 1, color: CREAM, lineHeight: .95 }}>{((doc && doc.name && !/dwyer/i.test(doc.name)) ? doc.name : 'Project Alpha').toUpperCase()}</div>
         <div>
           <div style={{ fontFamily: BBF, fontSize: mob ? 58 : 74, color: GOLD, lineHeight: .85, textShadow: '0 0 26px rgba(234,179,8,.4)' }}>{overall.toFixed(1)}<span style={{ fontSize: '.42em' }}>%</span></div>
           <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: MUTE, marginTop: 2 }}>Overall Complete</div>
