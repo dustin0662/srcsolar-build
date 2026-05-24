@@ -340,8 +340,15 @@ export default function PilePlan({ onExit, portalUser }) {
   const viewRef = useRef(view); useEffect(() => { viewRef.current = view; }, [view]);
   const svgRef = useRef(null);
   const PAD = 16; const VW = planW + PAD * 2; const VH = planH + PAD * 2;
-  const toView = useCallback((cx, cy) => { const r = svgRef.current.getBoundingClientRect(); return { x: (cx - r.left) / r.width * VW, y: (cy - r.top) / r.height * VH }; }, [VW, VH]);
-  const zoomAt = useCallback((px, py, factor) => { setView((v) => { const ns = Math.min(28, Math.max(1, v.s * factor)); const wx = (px - v.x) / v.s, wy = (py - v.y) / v.s; return { s: ns, x: px - wx * ns, y: py - wy * ns }; }); }, []);
+  const toView = useCallback((cx, cy) => { const el = svgRef.current; if (!el) return { x: 0, y: 0 }; const r = el.getBoundingClientRect(); if (!r.width || !r.height) return { x: 0, y: 0 }; return { x: (cx - r.left) / r.width * VW, y: (cy - r.top) / r.height * VH }; }, [VW, VH]);
+  const clampView = useCallback((v) => {
+    let s = v.s; if (!isFinite(s)) s = 1; s = Math.min(28, Math.max(1, s));
+    let x = isFinite(v.x) ? v.x : 0; let y = isFinite(v.y) ? v.y : 0;
+    x = Math.min(0, Math.max(VW * (1 - s), x));
+    y = Math.min(0, Math.max(VH * (1 - s), y));
+    return { s, x, y };
+  }, [VW, VH]);
+  const zoomAt = useCallback((px, py, factor) => { setView((v) => { const ns = Math.min(28, Math.max(1, v.s * factor)); const wx = (px - v.x) / v.s, wy = (py - v.y) / v.s; return clampView({ s: ns, x: px - wx * ns, y: py - wy * ns }); }); }, [clampView]);
   const onWheel = useCallback((e) => { e.preventDefault(); const p = toView(e.clientX, e.clientY); zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, [toView, zoomAt]);
   useEffect(() => { const svg = svgRef.current; if (!svg) return; svg.addEventListener('wheel', onWheel, { passive: false }); return () => svg.removeEventListener('wheel', onWheel); }, [onWheel]);
   const pointersRef = useRef(new Map()); const panRef = useRef(null); const pinchRef = useRef(null);
@@ -353,8 +360,8 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const onPointerMove = (e) => {
     if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinchRef.current && pointersRef.current.size >= 2) { const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const ratio = dist / (pinchRef.current.dist || 1); const ns = Math.min(28, Math.max(1, pinchRef.current.s0 * ratio)); const { mid, s0, x0, y0 } = pinchRef.current; const wx = (mid.x - x0) / s0, wy = (mid.y - y0) / s0; setView({ s: ns, x: mid.x - wx * ns, y: mid.y - wy * ns }); return; }
-    if (panRef.current) { const p = toView(e.clientX, e.clientY); setView((v) => ({ ...v, x: panRef.current.vx + (p.x - panRef.current.sx), y: panRef.current.vy + (p.y - panRef.current.sy) })); }
+    if (pinchRef.current && pointersRef.current.size >= 2) { const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const ratio = dist / (pinchRef.current.dist || 1); const ns = Math.min(28, Math.max(1, pinchRef.current.s0 * ratio)); const { mid, s0, x0, y0 } = pinchRef.current; const wx = (mid.x - x0) / s0, wy = (mid.y - y0) / s0; setView(clampView({ s: ns, x: mid.x - wx * ns, y: mid.y - wy * ns })); return; }
+    if (panRef.current) { const p = toView(e.clientX, e.clientY); setView((v) => clampView({ ...v, x: panRef.current.vx + (p.x - panRef.current.sx), y: panRef.current.vy + (p.y - panRef.current.sy) })); }
   };
   const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; } };
   useEffect(() => {
