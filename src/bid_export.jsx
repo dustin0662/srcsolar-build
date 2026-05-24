@@ -423,75 +423,259 @@ function buildProposalHTML(params, computed) {
 
 // ─── Execution Plan ──────────────────────────────────────────────────
 
-function buildExecutionPlanHTML(params, computed) {
+export function buildExecutionPlanHTML(params, computed) {
   const p = params;
   const r = computed;
   const c = BRAND.contact;
-  const co = BRAND.company;
+  const origin = (typeof window !== "undefined" && window.location && window.location.origin) || "";
+  const LOGO = origin + "/logo.webp";
+  const NAVY = "#16466e";
+  const PEPCO = "Sunrise Construction Co & Development";
+  const projName = p.projectName || "Solar Project";
+  const footName = (p.projectName || "Project").toUpperCase() + " PEP";
+  const prepName = p.preparedBy || c.name;
+  const prepTitle = p.preparedByTitle || c.title;
+  const num = (n) => Number(n || 0).toLocaleString();
 
-  const pageStyle = `
-    @page { size: letter; margin: 0.6in 0.75in; }
+  // ── carried-over rules / computed values ──
+  const pileJourney = (p.pileGroundMan || 0) + (p.pileAdditionalLaborers || 0);
+  const pileApp = Math.ceil(((p.pileAdditionalLaborers || 0) + (p.pileGroundMan || 0)) * (p.apprenticeReqPct || 0));
+  const pileOps = (p.numExcavators || 0) + (p.pileSkidSteerOps || 0);
+  const rackOps = (p.rackingTelehandlerOps || 0) + (p.rackingSkidSteerOps || 0);
+  const peakCrew = Math.max(r.pileTotalStaff || 0, p.rackingTotalWorkers || 0, p.moduleTotalWorkers || 0);
+  const fieldDays = (r.pileDaysToComplete || 0) + (r.rackingDaysToComplete || 0) + (r.moduleDaysToComplete || 0) + (r.qcWorkdays || 0);
+  const totalDays = fieldDays + 7; // + mobilization (~4) and demobilization (~3)
+  const addr = (c.address || "").split(",");
+  const addr1 = (addr[0] || "").trim();
+  const addr2 = (addr.slice(1).join(",") || "").trim();
+
+  const styles = `
+    @page { size: letter; margin: 0; }
     @media print { body { margin: 0; } }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Barlow Condensed', Arial, sans-serif; color: #1a1a2e; font-size: 11pt; line-height: 1.6; }
-    h1 { font-family: 'Black Ops One', Impact, sans-serif; font-size: 24pt; letter-spacing: 3px; color: #1a1a2e; border-bottom: 3px solid #F97316; padding-bottom: 6px; margin-bottom: 16px; }
-    h2 { font-family: 'Black Ops One', Impact, sans-serif; font-size: 16pt; color: #F97316; margin: 20px 0 10px; }
-    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10pt; }
-    th { background: #1a1a2e; color: #fff; padding: 6px 10px; text-align: left; }
-    td { padding: 5px 10px; border-bottom: 1px solid #e5e5e5; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: 'Barlow Condensed', Arial, sans-serif; color: #1a1a2e; font-size: 11pt; line-height: 1.55; }
+    .hd { font-family: 'Montserrat', Arial, sans-serif; font-weight: 800; }
+    .page { position: relative; width: 8.5in; height: 11in; overflow: hidden; page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+    .stripes { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(122deg, transparent 21%, #F6B600 21%, #F6B600 26%, transparent 26%, transparent 29.5%, #EE7B1A 29.5%, #EE7B1A 35%, transparent 35%); }
+    /* cover */
+    .cover { background: #ced1d6; }
+    .cover .photo { position: absolute; inset: 0; background: linear-gradient(135deg,#eef0f2 0%,#c2c6cb 55%,#9aa0a8 100%); }
+    .cover .navy { position: absolute; left: 0; right: 0; bottom: 0; height: 62%; background: ${NAVY}; clip-path: polygon(0% 20%, 100% 0%, 100% 100%, 0% 100%); }
+    .cover .clogo { position: absolute; top: .55in; right: .6in; width: 175px; z-index: 4; }
+    .cover .ctitle { position: absolute; left: .85in; bottom: 2.15in; color: #fff; font-size: 34pt; line-height: 1.04; letter-spacing: 2px; z-index: 4; }
+    .cover .csub { position: absolute; left: .87in; bottom: 1.78in; width: 4.4in; color: #e6edf5; font-size: 10.5pt; letter-spacing: 2px; text-transform: uppercase; border-top: 1px solid rgba(255,255,255,.4); padding-top: 9px; z-index: 4; }
+    .cover .cprep { position: absolute; left: .87in; bottom: .65in; color: #d3deea; font-size: 10pt; line-height: 1.5; z-index: 4; }
+    /* toc */
+    .toc { background: ${NAVY}; color: #fff; padding: 1in .9in 1in; }
+    .toc .th { font-size: 24pt; letter-spacing: 2px; text-align: right; border-bottom: 2px solid rgba(255,255,255,.5); padding-bottom: 10px; margin-bottom: 26px; }
+    .toc .row { display: flex; align-items: flex-end; font-size: 13pt; margin: 16px 0; color: #eef3f8; }
+    .toc .row .lead { flex: 1; border-bottom: 1px dotted rgba(255,255,255,.5); margin: 0 8px 4px; }
+    /* divider */
+    .divider { background: #fff; }
+    .divider .dtop { position: absolute; top: 0; left: 0; right: 0; height: 58%; background: linear-gradient(135deg,#eef0f2,#c4c8cd); }
+    .divider .dlogo { position: absolute; top: .5in; right: .6in; width: 170px; z-index: 4; }
+    .divider .dbot { position: absolute; left: 0; right: 0; bottom: 0; height: 42%; background: ${NAVY}; }
+    .divider .dtitle { position: absolute; left: .8in; bottom: 1.0in; color: #fff; font-size: 27pt; letter-spacing: 2px; border-bottom: 2px solid rgba(255,255,255,.4); padding-bottom: 10px; }
+    .divider .dco { position: absolute; left: .82in; bottom: .62in; color: #cfe0f0; font-size: 10pt; letter-spacing: 3px; text-transform: uppercase; }
+    /* content */
+    .content { background: #fff; padding: .85in .85in 1.0in; }
+    .content .ch { font-size: 19pt; color: #1a1a2e; letter-spacing: .5px; }
+    .content .ch:after { content: ""; display: block; width: 1.6in; height: 3px; background: #1a1a2e; margin-top: 8px; margin-bottom: 18px; }
+    .content p { margin: 0 0 12px; max-width: 6.6in; }
+    .content h3 { font-family: 'Montserrat',Arial,sans-serif; font-weight: 800; font-size: 12pt; color: ${NAVY}; margin: 18px 0 8px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 10pt; }
+    th { background: ${NAVY}; color: #fff; padding: 7px 10px; text-align: left; }
+    td { padding: 6px 10px; border-bottom: 1px solid #e5e5e5; }
+    tr:nth-child(even) td { background: #f7f8fa; }
     .right { text-align: right; }
-    .phase-box { background: #f5f2ee; border-left: 4px solid #F97316; padding: 12px 16px; margin: 8px 0; }
-    .phase-title { font-family: 'Black Ops One', Impact, sans-serif; font-size: 13pt; letter-spacing: 2px; }
-    .phase-detail { font-size: 10pt; color: #666; margin-top: 4px; }
-    .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 2px solid #1a1a2e; margin-bottom: 20px; }
-    .header .logo { font-family: 'Black Ops One', Impact, sans-serif; font-size: 14pt; letter-spacing: 3px; }
-    .gantt-bar { height: 18px; border-radius: 3px; margin: 2px 0; }
+    ul { padding-left: 20px; line-height: 1.9; }
+    .foot { position: absolute; left: 0; right: 0; bottom: 0; height: .8in; background: #d7d9dd; display: flex; align-items: center; padding: 0 .55in; }
+    .foot img { width: 60px; }
+    .foot .fname { margin-left: 14px; font-size: 9.5pt; letter-spacing: 1px; color: #444; }
+    .foot .fnum { margin-left: auto; font-size: 10pt; color: #444; }
+    /* back cover */
+    .back { background: #ced1d6; }
+    .back .acc { position: absolute; top: 0; right: 0; width: 3.4in; height: 1.7in; background: ${NAVY}; clip-path: polygon(45% 0, 100% 0, 100% 100%); }
+    .back .acc2 { position: absolute; top: 0; right: 0; width: 3.4in; height: 1.2in; background: #2f6ea0; clip-path: polygon(62% 0, 100% 0, 100% 100%); }
+    .back .blogo { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%); width: 250px; }
+    .back .info { position: absolute; left: 0; right: 0; bottom: 1.3in; display: flex; justify-content: center; gap: 26px; }
+    .back .info .col { font-size: 10pt; color: #2a2a33; line-height: 1.55; }
+    .back .info .bar { width: 1px; background: #9aa0a8; }
   `;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>${co} — Execution Plan — ${p.projectName || "Project"}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>${pageStyle}</style></head><body>
-    <div class="header"><div class="logo">${BRAND.shortName.toUpperCase()}</div><div>${fmtDate(p.bidDate)}</div></div>
-    <h1>EXECUTION PLAN</h1>
-    <p style="font-size:12pt;margin-bottom:16px"><strong>${p.projectName || "Solar Project"}</strong> — ${p.projectLocation || ""} — ${p.systemSizeMW} MW DC</p>
+  const divider = (n, t) => `
+    <div class="page divider">
+      <div class="dtop"></div>
+      <img class="dlogo" src="${LOGO}">
+      <div class="dbot"><div class="dtitle hd">${n} ${t}</div><div class="dco">${PEPCO.toUpperCase()}</div></div>
+      <div class="stripes"></div>
+    </div>`;
 
-    <h2>PHASE TIMELINE</h2>
-    <div class="phase-box"><div class="phase-title">1. MOBILIZATION</div><div class="phase-detail">Duration: 3-5 days · ${p.milesFromHQ} mi from HQ · ${p.mobRentalEquipQty} equipment units</div></div>
-    <div class="phase-box"><div class="phase-title">2. PILE DRIVING</div><div class="phase-detail">${r.totalPiles.toLocaleString()} piles · ${r.pileDaysToComplete} work days · ${r.pileTotalStaff} crew · ${p.numExcavators} excavators</div></div>
-    <div class="phase-box"><div class="phase-title">3. RACKING & TORQUE TUBE</div><div class="phase-detail">${(r.linearFeetRacking || 0).toLocaleString()} LF · ${r.rackingDaysToComplete} work days · ${p.rackingTotalWorkers} crew</div></div>
-    <div class="phase-box"><div class="phase-title">4. MODULE INSTALLATION</div><div class="phase-detail">${r.moduleCount.toLocaleString()} modules · ${r.moduleDaysToComplete} work days · ${p.moduleTotalWorkers} crew</div></div>
-    <div class="phase-box"><div class="phase-title">5. QA/QC & PUNCHLIST</div><div class="phase-detail">${r.qcTotalHours} inspection hours · ${r.qcWorkdays} work days · ${p.qcNumMen} inspectors</div></div>
-    <div class="phase-box"><div class="phase-title">6. DEMOBILIZATION</div><div class="phase-detail">Equipment breakdown and site restoration · 2-3 days</div></div>
+  const content = (title, pageNo, inner) => `
+    <div class="page content">
+      <h2 class="ch hd">${title}</h2>
+      ${inner}
+      <div class="foot"><img src="${LOGO}"><span class="fname">${footName}</span><span class="fnum">${pageNo}</span></div>
+    </div>`;
 
-    <h2>STAFFING PLAN</h2>
-    <table><tr><th>Phase</th><th class="right">Journeymen</th><th class="right">Apprentices</th><th class="right">Operators</th><th class="right">Total</th></tr>
-      <tr><td>Pile Driving</td><td class="right">${p.pileGroundMan + p.pileAdditionalLaborers}</td><td class="right">${Math.ceil((p.pileAdditionalLaborers + p.pileGroundMan) * p.apprenticeReqPct)}</td><td class="right">${p.numExcavators + p.pileSkidSteerOps}</td><td class="right">${r.pileTotalStaff}</td></tr>
-      <tr><td>Racking</td><td class="right">${p.rackingGeneralLabor}</td><td class="right">${p.rackingGeneralLaborApp}</td><td class="right">${p.rackingTelehandlerOps + p.rackingSkidSteerOps}</td><td class="right">${p.rackingTotalWorkers}</td></tr>
-      <tr><td>Modules</td><td class="right">${p.moduleGeneralLabor}</td><td class="right">${p.moduleGeneralLaborApp}</td><td class="right">${p.moduleSkidSteerOps}</td><td class="right">${p.moduleTotalWorkers}</td></tr>
+  const staffTable = (jLbl, j, a, oLbl, o, total) => `
+    <h3>Staffing</h3>
+    <table><tr><th>Role</th><th class="right">Count</th></tr>
+      <tr><td>Journeymen (${jLbl})</td><td class="right">${num(j)}</td></tr>
+      <tr><td>Apprentices</td><td class="right">${num(a)}</td></tr>
+      <tr><td>Operators (${oLbl})</td><td class="right">${num(o)}</td></tr>
+      <tr><td><strong>Total Crew</strong></td><td class="right"><strong>${num(total)}</strong></td></tr>
+    </table>`;
+
+  const execInner = `
+    <p><strong>${projName}</strong> is a <strong>${p.systemSizeMW || 0} MW DC</strong> utility-scale solar installation${p.projectLocation ? " located in " + p.projectLocation : ""}. This Project Execution Plan defines ${PEPCO}'s approach across material handling, pile driving, racking &amp; torque tube, module installation, equipment &amp; site support, and the assumed schedule, with embedded QA/QC and safety programs.</p>
+    <table><tr><th>Summary</th><th class="right">Quantity</th></tr>
+      <tr><td>Total Piles</td><td class="right">${num(r.totalPiles)}</td></tr>
+      <tr><td>Racking / Torque Tube</td><td class="right">${num(r.linearFeetRacking)} LF</td></tr>
+      <tr><td>Modules</td><td class="right">${num(r.moduleCount)}</td></tr>
+      <tr><td>Estimated Field Duration</td><td class="right">${num(fieldDays)} work days</td></tr>
+      <tr><td>Estimated Total Duration (incl. mob/demob)</td><td class="right">~${num(totalDays)} work days</td></tr>
+      <tr><td>Peak Crew</td><td class="right">${num(peakCrew)}</td></tr>
+      <tr><td>Apprentice Ratio (target ${fmtPct(p.apprenticeReqPct)})</td><td class="right">${fmtPct(r.apprenticePct)} ${r.apprenticeMet ? "✓" : "✕"}</td></tr>
+    </table>`;
+
+  const mhInner = `
+    <p>Mobilization, deliveries, and material logistics for ${projName}. Equipment and crews mobilize from headquarters; materials are received, inventoried, and staged at the laydown yard, then released to the field in phase sequence.</p>
+    <table><tr><th>Item</th><th class="right">Detail</th></tr>
+      <tr><td>Distance from HQ</td><td class="right">${num(p.milesFromHQ)} mi</td></tr>
+      <tr><td>Mobilization Duration</td><td class="right">3–5 days</td></tr>
+      <tr><td>Rental Equipment Units</td><td class="right">${num(p.mobRentalEquipQty)}</td></tr>
+      <tr><td>Company Trucks</td><td class="right">${num(p.mobCompanyTruckQty)}</td></tr>
+      <tr><td>UTVs / Carts</td><td class="right">${num(p.gcCartsQty)}</td></tr>
+    </table>`;
+
+  const pileInner = `
+    <p>Installation of ${num(r.totalPiles)} foundation piles using ${num(p.numExcavators)} pile-driving rigs/excavators.</p>
+    <table><tr><th>Metric</th><th class="right">Value</th></tr>
+      <tr><td>Total Piles</td><td class="right">${num(r.totalPiles)}</td></tr>
+      <tr><td>Work Days</td><td class="right">${num(r.pileDaysToComplete)}</td></tr>
+      <tr><td>Pile Drivers / Excavators</td><td class="right">${num(p.numExcavators)}</td></tr>
+      <tr><td>Crew Total</td><td class="right">${num(r.pileTotalStaff)}</td></tr>
     </table>
+    ${staffTable("ground + laborers", pileJourney, pileApp, "excavators + skid steer", pileOps, r.pileTotalStaff)}`;
 
-    <h2>EQUIPMENT LIST</h2>
+  const rackInner = `
+    <p>Installation of ${num(r.linearFeetRacking)} linear feet of racking and torque tube.</p>
+    <table><tr><th>Metric</th><th class="right">Value</th></tr>
+      <tr><td>Linear Feet</td><td class="right">${num(r.linearFeetRacking)} LF</td></tr>
+      <tr><td>Work Days</td><td class="right">${num(r.rackingDaysToComplete)}</td></tr>
+      <tr><td>Crew Total</td><td class="right">${num(p.rackingTotalWorkers)}</td></tr>
+    </table>
+    ${staffTable("general labor", p.rackingGeneralLabor, p.rackingGeneralLaborApp, "telehandler + skid steer", rackOps, p.rackingTotalWorkers)}`;
+
+  const modInner = `
+    <p>Installation of ${num(r.moduleCount)} PV modules.</p>
+    <table><tr><th>Metric</th><th class="right">Value</th></tr>
+      <tr><td>Modules</td><td class="right">${num(r.moduleCount)}</td></tr>
+      <tr><td>Work Days</td><td class="right">${num(r.moduleDaysToComplete)}</td></tr>
+      <tr><td>Crew Total</td><td class="right">${num(p.moduleTotalWorkers)}</td></tr>
+    </table>
+    ${staffTable("general labor", p.moduleGeneralLabor, p.moduleGeneralLaborApp, "skid steer", p.moduleSkidSteerOps, p.moduleTotalWorkers)}`;
+
+  const equipInner = `
+    <p>Equipment fleet and site support resources for the duration of the project.</p>
     <table><tr><th>Equipment</th><th class="right">Qty</th><th class="right">Daily Rate</th></tr>
-      <tr><td>Pile Driver / Excavator</td><td class="right">${p.numExcavators}</td><td class="right">${fmt(p.pileDriverEquipDaily)}</td></tr>
-      <tr><td>Skid Steer</td><td class="right">${p.pileSkidSteerOps + p.rackingSkidSteerOps + p.moduleSkidSteerOps}</td><td class="right">${fmt(p.skidSteerEquipDaily)}</td></tr>
-      <tr><td>Telehandler</td><td class="right">${p.rackingTelehandlerOps}</td><td class="right">${fmt(p.telehandlerEquipDaily)}</td></tr>
-      <tr><td>Company Trucks</td><td class="right">${p.mobCompanyTruckQty}</td><td class="right">${fmt(p.companyTruckEquipDaily)}</td></tr>
-      <tr><td>UTVs / Carts</td><td class="right">${p.gcCartsQty}</td><td class="right">${fmt(p.gcCartsRate)}</td></tr>
+      <tr><td>Pile Driver / Excavator</td><td class="right">${num(p.numExcavators)}</td><td class="right">${fmt(p.pileDriverEquipDaily)}</td></tr>
+      <tr><td>Skid Steer</td><td class="right">${num((p.pileSkidSteerOps || 0) + (p.rackingSkidSteerOps || 0) + (p.moduleSkidSteerOps || 0))}</td><td class="right">${fmt(p.skidSteerEquipDaily)}</td></tr>
+      <tr><td>Telehandler</td><td class="right">${num(p.rackingTelehandlerOps)}</td><td class="right">${fmt(p.telehandlerEquipDaily)}</td></tr>
+      <tr><td>Company Trucks</td><td class="right">${num(p.mobCompanyTruckQty)}</td><td class="right">${fmt(p.companyTruckEquipDaily)}</td></tr>
+      <tr><td>UTVs / Carts</td><td class="right">${num(p.gcCartsQty)}</td><td class="right">${fmt(p.gcCartsRate)}</td></tr>
     </table>
+    <h3>Site Support &amp; Management</h3>
+    <table><tr><th>Resource</th><th class="right">Detail</th></tr>
+      <tr><td>Safety Coordinator</td><td class="right">${num(p.mgmtSafetyQty)} · on site ${fmtPct(p.mgmtPctOnSite)} of duration</td></tr>
+      <tr><td>Laydown / Material Staging</td><td class="right">Managed on site</td></tr>
+    </table>`;
 
-    <h2>SAFETY & QUALITY</h2>
-    <ul style="padding-left:20px;line-height:2">
-      <li>Dedicated Safety Coordinator (${p.mgmtSafetyQty}) on site ${fmtPct(p.mgmtPctOnSite)} of duration</li>
-      <li>Daily toolbox talks and JHA reviews</li>
+  const schedInner = `
+    <p>Assumed schedule by phase (work days). Sequence runs civil/mobilization → pile driving → racking &amp; torque tube → module installation → QA/QC → demobilization.</p>
+    <table><tr><th>Phase</th><th class="right">Duration (work days)</th><th class="right">Crew</th></tr>
+      <tr><td>1. Mobilization</td><td class="right">3–5</td><td class="right">—</td></tr>
+      <tr><td>2. Pile Driving</td><td class="right">${num(r.pileDaysToComplete)}</td><td class="right">${num(r.pileTotalStaff)}</td></tr>
+      <tr><td>3. Racking &amp; Torque Tube</td><td class="right">${num(r.rackingDaysToComplete)}</td><td class="right">${num(p.rackingTotalWorkers)}</td></tr>
+      <tr><td>4. Module Installation</td><td class="right">${num(r.moduleDaysToComplete)}</td><td class="right">${num(p.moduleTotalWorkers)}</td></tr>
+      <tr><td>5. QA/QC &amp; Punchlist</td><td class="right">${num(r.qcWorkdays)}</td><td class="right">${num(p.qcNumMen)}</td></tr>
+      <tr><td>6. Demobilization</td><td class="right">2–3</td><td class="right">—</td></tr>
+      <tr><td><strong>Estimated Total</strong></td><td class="right"><strong>~${num(totalDays)}</strong></td><td class="right">—</td></tr>
+    </table>`;
+
+  const qcInner = `
+    <p>Quality assurance and control is embedded in every phase, with a dedicated punchlist program to closeout.</p>
+    <table><tr><th>Metric</th><th class="right">Value</th></tr>
+      <tr><td>Inspection Hours</td><td class="right">${num(r.qcTotalHours)}</td></tr>
+      <tr><td>Work Days</td><td class="right">${num(r.qcWorkdays)}</td></tr>
+      <tr><td>Inspectors</td><td class="right">${num(p.qcNumMen)}</td></tr>
+    </table>
+    <ul>
+      <li>QA/QC inspectors embedded in each phase (pile plumb/embedment, racking torque, module fastening &amp; wiring)</li>
+      <li>Daily inspection logs and non-conformance tracking</li>
+      <li>Punchlist generation, resolution, and verification prior to substantial completion</li>
+    </ul>`;
+
+  const safetyInner = `
+    <p>Safety and quality are the foundation of every ${PEPCO} project.</p>
+    <ul>
+      <li>Dedicated Safety Coordinator (${num(p.mgmtSafetyQty)}) on site ${fmtPct(p.mgmtPctOnSite)} of duration</li>
+      <li>Daily toolbox talks and JHA reviews before each shift</li>
       <li>QA/QC inspectors embedded in each phase</li>
-      <li>Apprentice ratio target: ${fmtPct(p.apprenticeReqPct)} — Current: ${fmtPct(r.apprenticePct)} ${r.apprenticeMet ? "✓" : "✕"}</li>
-    </ul>
+      <li>Apprentice ratio target: ${fmtPct(p.apprenticeReqPct)} — Current: ${fmtPct(r.apprenticePct)} ${r.apprenticeMet ? "✓ (met)" : "✕ (below target)"}</li>
+    </ul>`;
 
-    <div style="margin-top:24px;padding:16px;background:#1a1a2e;color:#fff;text-align:center">
-      <div style="font-family:'Black Ops One',Impact,sans-serif;font-size:14pt;letter-spacing:3px;margin-bottom:4px">${BRAND.shortName.toUpperCase()}</div>
-      <div style="font-size:9pt;opacity:.7">${c.name} · ${c.phone} · ${c.email}</div>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>${PEPCO} — Project Execution Plan — ${projName}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>${styles}</style></head><body>
+
+    <div class="page cover">
+      <div class="photo"></div>
+      <div class="navy"></div>
+      <div class="stripes"></div>
+      <img class="clogo" src="${LOGO}">
+      <div class="ctitle hd">PROJECT<br>EXECUTION PLAN</div>
+      <div class="csub">${PEPCO}</div>
+      <div class="cprep">Report Prepared By:<br>${prepName}<br>${prepTitle}<br>${PEPCO}<br>${fmtDate(p.bidDate)}</div>
     </div>
+
+    <div class="page toc">
+      <div class="th hd">TABLE OF CONTENTS:</div>
+      ${[["Executive Summary", 1], ["I. Material Handling", 2], ["II. Pile Driving", 3], ["III. Racking", 4], ["IV. Module Installation", 5], ["V. Equipment & Site Support", 6], ["VI. Assumed Schedule", 7], ["VII. QA/QC & Punchlist", 8], ["VIII. Safety & Quality", 9]].map((x) => `<div class="row"><span>${x[0]}</span><span class="lead"></span><span>${x[1]}</span></div>`).join("")}
+    </div>
+
+    ${content("EXECUTIVE SUMMARY", 1, execInner)}
+    ${divider("I.", "MATERIAL HANDLING")}
+    ${content("MATERIAL HANDLING", 2, mhInner)}
+    ${divider("II.", "PILE DRIVING")}
+    ${content("PILE DRIVING", 3, pileInner)}
+    ${divider("III.", "RACKING")}
+    ${content("RACKING", 4, rackInner)}
+    ${divider("IV.", "MODULE INSTALLATION")}
+    ${content("MODULE INSTALLATION", 5, modInner)}
+    ${divider("V.", "EQUIPMENT & SITE SUPPORT")}
+    ${content("EQUIPMENT & SITE SUPPORT", 6, equipInner)}
+    ${divider("VI.", "ASSUMED SCHEDULE")}
+    ${content("ASSUMED SCHEDULE", 7, schedInner)}
+    ${divider("VII.", "QA/QC & PUNCHLIST")}
+    ${content("QA/QC & PUNCHLIST", 8, qcInner)}
+    ${divider("VIII.", "SAFETY & QUALITY")}
+    ${content("SAFETY & QUALITY", 9, safetyInner)}
+
+    <div class="page back">
+      <div class="acc"></div><div class="acc2"></div>
+      <img class="blogo" src="${LOGO}">
+      <div class="info">
+        <div class="col">${PEPCO}<br>${c.phone}<br>${c.email}</div>
+        <div class="bar"></div>
+        <div class="col">${addr1}<br>${addr2}</div>
+      </div>
+      <div class="foot"><span class="fname">${footName}</span><span class="fnum">10</span></div>
+    </div>
+
   </body></html>`;
 }
 
