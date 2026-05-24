@@ -1451,9 +1451,21 @@ function computeEarnedValue(scopeKPIs, contractValue, baselineCost) {
   var cpi = totalAC > 0 ? totalEV / totalAC : 0;
   var eac = cpi > 0 ? (baselineCost||0) / cpi : 0;
   var vac = (baselineCost||0) - eac;
-  var totalPlanned = scopeKPIs.reduce(function(s,k){ return s+k.plannedQty; },0);
-  var totalActual = scopeKPIs.reduce(function(s,k){ return s+k.actualInstalled; },0);
-  var overallPct = totalPlanned > 0 ? totalActual / totalPlanned * 100 : 0;
+  // Overall % complete: budget-weighted average of each scope's completion.
+  // (Summing raw quantities across scopes with different units — piles vs
+  // modules vs feet — is meaningless, which made this read wrong.)
+  var totalBudget = scopeKPIs.reduce(function(s,k){ return s+(k.budgetCost||0); },0);
+  var overallPct;
+  if (totalBudget > 0) {
+    var weightedDone = scopeKPIs.reduce(function(s,k){
+      var pc = k.plannedQty > 0 ? Math.min(1, k.actualInstalled / k.plannedQty) : 0;
+      return s + (k.budgetCost||0) * pc;
+    }, 0);
+    overallPct = weightedDone / totalBudget * 100;
+  } else {
+    var withPlan = scopeKPIs.filter(function(k){ return k.plannedQty > 0; });
+    overallPct = withPlan.length ? withPlan.reduce(function(s,k){ return s + Math.min(1, k.actualInstalled / k.plannedQty); }, 0) / withPlan.length * 100 : 0;
+  }
   return {
     ev:Math.round(totalEV), pv:Math.round(totalPV), ac:Math.round(totalAC),
     sv:Math.round(sv), cv:Math.round(cv),

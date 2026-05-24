@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
-import PilePlan, { getTaskTrackerKPI } from "./pile_plan.jsx"
+import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -5020,7 +5020,7 @@ export default function App(){
         {/* ── TRACKING / SITE PROGRESS MAP ── */}
         <Sec id="tracking">
           <div style={{maxWidth:1400,margin:'0 auto'}}>
-            <img src="/site-progress-map.jpg" alt="Site Progress Map" style={{width:'100%',height:'auto',display:'block'}}/>
+            <TaskTrackerPreview/>
             <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?14:20,marginTop:m?14:20}}>
               <div style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.18)',background:'rgba(8,8,20,.65)',backdropFilter:'blur(8px)'}}>
                 <GLBViewer src="/models/midway.glb" height={m?200:280}/>
