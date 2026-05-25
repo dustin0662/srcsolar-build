@@ -1,7 +1,8 @@
 import { getStore } from '@netlify/blobs';
 
 const MAX_LOG = 200;
-const EMPTY = { tasks: null, assign: null, points: null, w: 0, h: 0, sections: null, sectionCount: 0, name: '', log: [], lastModified: 0, rev: 0 };
+const EMPTY = { name: '', points: null, w: 0, h: 0, sections: null, sectionCount: 0, stage: null, qc: null, notes: null, log: [], lastModified: 0, rev: 0 };
+const FIELDS = ['name', 'points', 'w', 'h', 'sections', 'sectionCount', 'stage', 'qc', 'notes', 'lastModified'];
 
 function mergeLogs(a, b) {
   const seen = new Set(); const out = [];
@@ -42,14 +43,13 @@ export default async (req) => {
   if (req.method === 'POST') {
     let body; try { body = await req.json(); } catch { return Response.json({ error: 'bad json' }, { status: 400 }); }
     const cur = (await store.get(KEY, { type: 'json' })) || EMPTY;
-    const log = mergeLogs(body.entries, cur.log);
-    let { tasks, assign, points, w, h, sections, sectionCount, name, lastModified } = cur;
-    if ((body.lastModified || 0) >= (cur.lastModified || 0) && Array.isArray(body.tasks) && Array.isArray(body.assign)) {
-      tasks = body.tasks; assign = body.assign; lastModified = body.lastModified;
-      if (Array.isArray(body.points)) { points = body.points; w = body.w; h = body.h; sections = body.sections || null; sectionCount = body.sectionCount || 0; }
-      if (typeof body.name === 'string') name = body.name;
+    const doc = Object.assign({}, EMPTY, cur);
+    doc.log = mergeLogs(body.entries, cur.log);
+    if ((body.lastModified || 0) >= (cur.lastModified || 0)) {
+      FIELDS.forEach((k) => { if (body[k] !== undefined) doc[k] = body[k]; });
     }
-    const doc = { tasks, assign, points, w, h, sections, sectionCount, name, log, lastModified: lastModified || 0, rev: (cur.rev || 0) + 1 };
+    doc.lastModified = doc.lastModified || 0;
+    doc.rev = (cur.rev || 0) + 1;
     await store.setJSON(KEY, doc);
     return Response.json(doc);
   }
