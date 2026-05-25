@@ -41,6 +41,44 @@ const STAGES = [
 const QC_YELLOW = '#eab308', QC_ORANGE = '#ea580c';
 const QC = [{ name: 'Clear Flag', color: 'transparent' }, { name: 'Requires Attention', color: QC_YELLOW }, { name: 'Flagged Issue', color: QC_ORANGE }];
 
+/* assignable tasks within a project (for employee scoping) */
+export const TASK_DEFS = [
+  { id: 's1', label: 'Piles' },
+  { id: 's2', label: 'Post Caps' },
+  { id: 's3', label: 'Torque Tube' },
+  { id: 's4', label: 'Modules' },
+  { id: 'q', label: 'Quality Checks' },
+];
+/* returns a Set of allowed paint tokens, or null when unrestricted (all).
+   scope absent/null => null (full access); [] => empty set (view only); [..] => those tasks */
+function allowedPaintSet(scope) {
+  if (scope == null || !Array.isArray(scope)) return null;
+  const set = new Set(); let hasStage = false;
+  scope.forEach((t) => {
+    if (t === 'q') { set.add('q0'); set.add('q1'); set.add('q2'); }
+    else if (t === 's1' || t === 's2' || t === 's3' || t === 's4') { set.add(t); hasStage = true; }
+  });
+  if (hasStage) set.add('s0');
+  return set;
+}
+/* background photo display dimensions in plan coordinates */
+function bgDims(bg, planW) { const w = planW * (bg.scale || 1); return { w, h: w * (bg.ar || 0.66) }; }
+/* load + downscale an uploaded image to a JPEG data URL; returns { url, ar } */
+function scaleImage(file, maxDim, q) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(); const src = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+      const f = Math.min(1, (maxDim || 1600) / Math.max(w, h)); w = Math.max(1, Math.round(w * f)); h = Math.max(1, Math.round(h * f));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      try { c.getContext('2d').drawImage(img, 0, 0, w, h); const url = c.toDataURL('image/jpeg', q || 0.82); URL.revokeObjectURL(src); resolve({ url, ar: h / w }); }
+      catch (e) { URL.revokeObjectURL(src); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error('image load failed')); };
+    img.src = src;
+  });
+}
+
 let _idc = 1;
 function newProjId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
@@ -80,7 +118,7 @@ const decNums = (s, n) => { const out = new Array(n).fill(0); if (typeof s === '
 const DWYER_POINTS = DOTS.map((d) => [d[0], d[1]]);
 function defaultProject(name) {
   const N = DWYER_POINTS.length;
-  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), notes: {}, log: [], lastModified: Date.now() };
+  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, log: [], lastModified: Date.now() };
 }
 function normalizeDoc(d) {
   if (!d) return defaultProject();
@@ -88,8 +126,11 @@ function normalizeDoc(d) {
   const N = pts.length;
   const stage = Array.isArray(d.stage) && d.stage.length === N ? d.stage : new Array(N).fill(0);
   const qc = Array.isArray(d.qc) && d.qc.length === N ? d.qc : new Array(N).fill(0);
+  const by = Array.isArray(d.by) && d.by.length === N ? d.by : new Array(N).fill('');
+  const at = Array.isArray(d.at) && d.at.length === N ? d.at : new Array(N).fill(0);
   const notes = (d.notes && typeof d.notes === 'object') ? d.notes : {};
-  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, notes, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
+  const bg = (d.bg && typeof d.bg === 'object' && d.bg.url) ? d.bg : null;
+  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
 }
 function ensureMigrated() {
   let reg = storage.get(REG_KEY);
@@ -257,6 +298,7 @@ export function TaskTrackerPreview() {
       </div>
       <div style={{ flex: 1, minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
         <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: mob ? 320 : 470, display: 'block' }}>
+          {d.bg && d.bg.on && <image href={d.bg.url} x={d.bg.x + PAD} y={d.bg.y + PAD} width={bgDims(d.bg, d.w).w} height={bgDims(d.bg, d.w).h} opacity={d.bg.opacity != null ? d.bg.opacity : 0.85} preserveAspectRatio="none" />}
           {d.points.map((pt, i) => <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.1} fill={dispColor(d.stage[i], d.qc[i])} stroke="rgba(2,3,10,.55)" strokeWidth={0.45} />)}
         </svg>
       </div>
@@ -293,11 +335,13 @@ export function listProjects() {
   return Array.isArray(reg) ? reg : [];
 }
 
-function ReadonlyMap({ points, w, h, stage, qc, height, mob }) {
+function ReadonlyMap({ points, w, h, stage, qc, height, mob, bg, bgOn, onPick }) {
   const PAD = 16, VW = w + PAD * 2, VH = h + PAD * 2;
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: height || (mob ? 320 : 470), display: 'block' }}>
-      {points.map((pt, i) => <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.1} fill={dispColor(stage[i], qc ? qc[i] : 0)} stroke="rgba(2,3,10,.55)" strokeWidth={0.45} />)}
+    <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: height || (mob ? 320 : 470), display: 'block' }}
+      onClick={onPick ? (e) => { const el = e.target; if (el && el.dataset && el.dataset.i != null) onPick(+el.dataset.i); } : undefined}>
+      {bg && bgOn && bg.url && <image href={bg.url} x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, w).w} height={bgDims(bg, w).h} opacity={bg.opacity != null ? bg.opacity : 0.85} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
+      {points.map((pt, i) => <circle key={i} data-i={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.1} fill={dispColor(stage[i], qc ? qc[i] : 0)} stroke="rgba(2,3,10,.55)" strokeWidth={0.45} style={onPick ? { cursor: 'pointer' } : undefined} />)}
     </svg>
   );
 }
@@ -315,6 +359,8 @@ export function ClientPortal({ user, onExit }) {
   const [models, setModels] = useState([]);
   const [modelStatus, setModelStatus] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [cBgOn, setCBgOn] = useState(true); // client-local photo toggle
+  const [selPt, setSelPt] = useState(null);
   const logoRef = useRef(null);
 
   useEffect(() => { const img = new Image(); img.onload = () => { try { const S = 256; const c = document.createElement('canvas'); c.width = S; c.height = Math.round(S * img.height / img.width); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); logoRef.current = { url: c.toDataURL('image/png'), w: c.width, h: c.height }; } catch (e) {} }; img.src = LOGO_URL; }, []);
@@ -368,6 +414,7 @@ export function ClientPortal({ user, onExit }) {
   const [playing, setPlaying] = useState(false);
   const [frame, setFrame] = useState(0);
   useEffect(() => { setFrame(snaps.length ? snaps.length - 1 : 0); setPlaying(false); }, [snaps.length, activeId]);
+  useEffect(() => { setSelPt(null); setCBgOn(true); }, [activeId]);
   useEffect(() => {
     if (!playing || snaps.length < 2) return;
     const t = setInterval(() => setFrame((f) => (f >= snaps.length - 1 ? 0 : f + 1)), 900);
@@ -452,8 +499,14 @@ export function ClientPortal({ user, onExit }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 14, height: 14, background: QC_YELLOW, flexShrink: 0, clipPath: CLIP }} /><span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1 }}>Requires Attention</span><span style={{ fontFamily: BBF, fontSize: 17, color: QC_YELLOW }}>{st.yellow}</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 14, height: 14, background: QC_ORANGE, flexShrink: 0, clipPath: CLIP }} /><span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1 }}>Flagged Issue</span><span style={{ fontFamily: BBF, fontSize: 17, color: QC_ORANGE }}>{st.orange}</span></div></>}
               </div>
-              <div style={{ flex: 1, minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-                <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={doc.stage} qc={doc.qc} mob={mob} />
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {doc.bg && <button onClick={() => setCBgOn((v) => !v)} style={{ ...miniBtn, color: cBgOn ? '#22c55e' : MUTE, borderColor: cBgOn ? '#22c55e' : 'rgba(255,255,255,.25)' }}>Site Photo {cBgOn ? 'On' : 'Off'}</button>}
+                  <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Tap any point for details</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+                  <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={doc.stage} qc={doc.qc} mob={mob} bg={doc.bg} bgOn={cBgOn} onPick={setSelPt} />
+                </div>
               </div>
             </div>
           )}
@@ -463,7 +516,7 @@ export function ClientPortal({ user, onExit }) {
             <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', gap: 16 }}>
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-                  {frameSnap && <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={frameSnap.stage} qc={frameSnap.qc} height={mob ? 300 : 430} mob={mob} />}
+                  {frameSnap && <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={frameSnap.stage} qc={frameSnap.qc} height={mob ? 300 : 430} mob={mob} bg={doc.bg} bgOn={cBgOn} />}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button onClick={() => setPlaying((p) => !p)} disabled={snaps.length < 2} style={{ ...ctaBtn, padding: '10px 18px', opacity: snaps.length < 2 ? .5 : 1 }}>{playing ? '❚❚ Pause' : '► Play Timelapse'}</button>
@@ -495,6 +548,16 @@ export function ClientPortal({ user, onExit }) {
           )}
         </div>
       )}
+      {selPt != null && doc && (
+        <div style={overlay(mob)} onClick={() => setSelPt(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={modalCard(mob, 380)}>
+            <div style={{ display: 'flex', alignItems: 'center' }}><div style={headTitle}>Point #{selPt + 1}</div><button onClick={() => setSelPt(null)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ width: 14, height: 14, background: dispColor(doc.stage[selPt], doc.qc[selPt]), border: '1px solid rgba(255,255,255,.3)', clipPath: CLIP }} /><span style={{ fontFamily: NBF, fontSize: 15, color: CREAM }}>{STAGES[doc.stage[selPt]].name}{doc.qc[selPt] ? ' · ' + (doc.qc[selPt] === 2 ? 'Flagged Issue' : 'Requires Attention') : ''}</span></div>
+            {doc.at && doc.at[selPt] ? <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Last updated by <span style={{ color: ORANGE }}>{(doc.by && doc.by[selPt]) || 'Unknown'}</span><br />{fmtDate(doc.at[selPt])}</div> : <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>No updates recorded yet.</div>}
+            {doc.notes && doc.notes[selPt] && <div style={{ fontFamily: NBF, fontSize: 14, color: CREAM, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, padding: 10 }}>{doc.notes[selPt]}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -504,7 +567,11 @@ export function ClientPortal({ user, onExit }) {
 /* ------------------------------------------------------------------ */
 export default function PilePlan({ onExit, portalUser }) {
   const mob = useIsMobile();
-  const userName = (typeof portalUser === 'string' ? portalUser : (portalUser && portalUser.name)) || 'Unknown user';
+  const pObj = (portalUser && typeof portalUser === 'object') ? portalUser : null;
+  const userName = (typeof portalUser === 'string' ? portalUser : (pObj && pObj.name)) || 'Unknown user';
+  const isAdmin = !!(pObj && pObj.role === 'admin');
+  const assignedSet = (!isAdmin && pObj && Array.isArray(pObj.assignedProjects)) ? new Set(pObj.assignedProjects) : null; // null = unrestricted
+  const myTaskScope = (pObj && pObj.taskScope && typeof pObj.taskScope === 'object') ? pObj.taskScope : {};
 
   const [projects, setProjects] = useState(() => ensureMigrated());
   const [activeId, setActiveId] = useState(() => storage.get(ACTIVE_KEY) || (storage.get(REG_KEY)?.[0]?.id) || 'dwyer');
@@ -520,9 +587,18 @@ export default function PilePlan({ onExit, portalUser }) {
   const [sectionCount, setSectionCount] = useState(init.current.sectionCount);
   const [stage, setStage] = useState(init.current.stage);
   const [qc, setQc] = useState(init.current.qc);
+  const [by, setBy] = useState(init.current.by);
+  const [at, setAt] = useState(init.current.at);
   const [notes, setNotes] = useState(init.current.notes);
+  const [bg, setBg] = useState(init.current.bg);
+  const [bgT, setBgT] = useState(init.current.bgT);
+  const [bgOn, setBgOn] = useState(!!(init.current.bg && init.current.bg.on)); // local view toggle
   const [log, setLog] = useState(init.current.log);
   const [lastModified, setLastModified] = useState(init.current.lastModified);
+
+  /* effective edit permissions for the active project */
+  const scopeForActive = isAdmin ? null : (Array.isArray(myTaskScope[activeId]) ? myTaskScope[activeId] : null);
+  const allowed = allowedPaintSet(scopeForActive); // null = all allowed
 
   const [paint, setPaint] = useState('s1');         // s0-s4 stages, q1/q2 QC, q0 clear
   const [mode, setMode] = useState('brush');        // brush | fill | pan
@@ -542,10 +618,19 @@ export default function PilePlan({ onExit, portalUser }) {
   const skipPersist = useRef(false);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, notes, log, lastModified });
-  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, notes, log, lastModified]);
+    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, log, lastModified });
+  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, log, lastModified]);
   useEffect(() => { storage.set(REG_KEY, projects); }, [projects]);
   useEffect(() => { storage.set(ACTIVE_KEY, activeId); }, [activeId]);
+  // pull the shared project registry so assigned projects appear on any device
+  useEffect(() => {
+    let alive = true;
+    fetch(ENDPOINT + '?registry=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (!alive || !j || !Array.isArray(j.projects) || !j.projects.length) return;
+      setProjects((local) => { const map = {}; (local || []).forEach((p) => { if (p && p.id) map[p.id] = p; }); j.projects.forEach((p) => { if (p && p.id) map[p.id] = Object.assign({}, map[p.id], p); }); return Object.values(map); });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   /* refs */
   const activeIdRef = useRef(activeId); useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
@@ -553,6 +638,10 @@ export default function PilePlan({ onExit, portalUser }) {
   const modeRef = useRef(mode); useEffect(() => { modeRef.current = mode; }, [mode]);
   const stageRef = useRef(stage); useEffect(() => { stageRef.current = stage; }, [stage]);
   const qcRef = useRef(qc); useEffect(() => { qcRef.current = qc; }, [qc]);
+  const byRef = useRef(by); useEffect(() => { byRef.current = by; }, [by]);
+  const atRef = useRef(at); useEffect(() => { atRef.current = at; }, [at]);
+  const bgRef = useRef(bg); useEffect(() => { bgRef.current = bg; }, [bg]);
+  const bgTRef = useRef(bgT); useEffect(() => { bgTRef.current = bgT; }, [bgT]);
   const notesRef = useRef(notes); useEffect(() => { notesRef.current = notes; }, [notes]);
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const lastModifiedRef = useRef(lastModified); useEffect(() => { lastModifiedRef.current = lastModified; }, [lastModified]);
@@ -571,31 +660,41 @@ export default function PilePlan({ onExit, portalUser }) {
     const entry = { id: 'h' + Date.now() + Math.random().toString(36).slice(2, 6), ts: Date.now(), user: userName, summary, stage: encNums(stageRef.current), qc: encNums(qcRef.current), notes: { ...notesRef.current } };
     setLog((prev) => [entry, ...prev].slice(0, MAX_LOG)); setLastModified(entry.ts);
   }, [userName]);
-  const snapshotUndo = () => { undoRef.current.push({ stage: stageRef.current.slice(), qc: qcRef.current.slice(), notes: { ...notesRef.current } }); if (undoRef.current.length > 60) undoRef.current.shift(); setCanUndo(true); };
+  const snapshotUndo = () => { undoRef.current.push({ stage: stageRef.current.slice(), qc: qcRef.current.slice(), by: byRef.current.slice(), at: atRef.current.slice(), notes: { ...notesRef.current } }); if (undoRef.current.length > 60) undoRef.current.shift(); setCanUndo(true); };
   const undo = () => {
     const snap = undoRef.current.pop(); if (!snap) { setCanUndo(false); return; }
-    setStage(snap.stage); setQc(snap.qc); setNotes(snap.notes); setLastModified(Date.now()); setCanUndo(undoRef.current.length > 0);
+    setStage(snap.stage); setQc(snap.qc); setBy(snap.by); setAt(snap.at); setNotes(snap.notes); setLastModified(Date.now()); setCanUndo(undoRef.current.length > 0);
     pushLog('undid last change');
   };
 
   /* ---- painting ---- */
+  const allowedRef = useRef(allowed); useEffect(() => { allowedRef.current = allowed; }, [allowed]);
+  const stampIndex = (i) => { const t = Date.now(); setAt((prev) => { const n = prev.slice(); n[i] = t; return n; }); setBy((prev) => { if (prev[i] === userName) return prev; const n = prev.slice(); n[i] = userName; return n; }); };
   const applyPaintToIndex = (i) => {
     const pv = paintRef.current;
+    if (allowedRef.current && !allowedRef.current.has(pv)) return;
     if (pv[0] === 's') {
-      const sv = +pv[1];
-      setStage((prev) => { if (prev[i] === sv) return prev; if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; } const n = prev.slice(); n[i] = sv; return n; });
+      const sv = +pv[1]; if (stageRef.current[i] === sv) return;
+      if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; }
+      setStage((prev) => { const n = prev.slice(); n[i] = sv; return n; });
     } else {
-      const qv = +pv[1];
-      setQc((prev) => { if (prev[i] === qv) return prev; if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; } const n = prev.slice(); n[i] = qv; return n; });
+      const qv = +pv[1]; if (qcRef.current[i] === qv) return;
+      if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; }
+      setQc((prev) => { const n = prev.slice(); n[i] = qv; return n; });
     }
+    stampIndex(i);
   };
   const paintAt = useCallback((cx, cy) => { const el = document.elementFromPoint(cx, cy); if (el && el.dataset && el.dataset.i != null) applyPaintToIndex(+el.dataset.i); }, []);
   const fillAt = (i) => {
+    const pv = paintRef.current; if (allowedRef.current && !allowedRef.current.has(pv)) return;
     snapshotUndo();
     const secs = sectionsRef.current; const sec = secs ? secs[i] : null;
-    const pv = paintRef.current; const isStage = pv[0] === 's'; const v = +pv[1];
-    if (isStage) setStage((prev) => prev.map((x, j) => ((secs ? secs[j] === sec : true) ? v : x)));
-    else setQc((prev) => prev.map((x, j) => ((secs ? secs[j] === sec : true) ? v : x)));
+    const isStage = pv[0] === 's'; const v = +pv[1]; const t = Date.now();
+    const inSec = (j) => (secs ? secs[j] === sec : true);
+    if (isStage) setStage((prev) => prev.map((x, j) => (inSec(j) ? v : x)));
+    else setQc((prev) => prev.map((x, j) => (inSec(j) ? v : x)));
+    setAt((prev) => prev.map((x, j) => (inSec(j) ? t : x)));
+    setBy((prev) => prev.map((x, j) => (inSec(j) ? userName : x)));
     const label = isStage ? STAGES[v].name : QC[v].name;
     pushLog(`filled ${secs ? 'section ' + (sec + 1) : 'all points'} → "${label}"`);
   };
@@ -617,13 +716,27 @@ export default function PilePlan({ onExit, portalUser }) {
   const pushTimerRef = useRef(null);
   const applyRemote = useCallback((d) => {
     applyingRemoteRef.current = true;
+    const nd = normalizeDoc(d);
+    const curPts = pointsRef.current;
+    const sameLayout = Array.isArray(curPts) && Array.isArray(d.points) && d.points.length === curPts.length && curPts.length > 0;
+    if (Array.isArray(d.points) && d.points.length && !sameLayout) {
+      // different point layout → take remote wholesale
+      setPoints(nd.points); setPlanW(nd.w); setPlanH(nd.h); setSections(nd.sections); setSectionCount(nd.sectionCount);
+      setStage(nd.stage); setQc(nd.qc); setBy(nd.by); setAt(nd.at);
+    } else {
+      // per-point merge: take remote point only when its timestamp is newer
+      const cs = stageRef.current, cq = qcRef.current, cb = byRef.current, ca = atRef.current;
+      const N = nd.points.length; let changed = false;
+      const ns = cs.slice(), nq = cq.slice(), nb = cb.slice(), na = ca.slice();
+      for (let i = 0; i < N; i++) { const ra = nd.at[i] || 0; if (ra > (na[i] || 0)) { ns[i] = nd.stage[i]; nq[i] = nd.qc[i]; nb[i] = nd.by[i]; na[i] = ra; changed = true; } }
+      if (changed) { setStage(ns); setQc(nq); setBy(nb); setAt(na); }
+    }
     if ((d.lastModified || 0) > (lastModifiedRef.current || 0)) {
-      const nd = normalizeDoc(d);
-      setStage(nd.stage); setQc(nd.qc); setNotes(nd.notes);
-      if (Array.isArray(d.points) && d.points.length) { setPoints(nd.points); setPlanW(nd.w); setPlanH(nd.h); setSections(nd.sections); setSectionCount(nd.sectionCount); }
       if (d.name) setProjName(d.name);
+      setNotes(nd.notes);
       setLastModified(d.lastModified);
     }
+    if ((d.bgT || 0) > (bgTRef.current || 0)) { setBg(nd.bg); setBgT(d.bgT || 0); setBgOn(!!(nd.bg && nd.bg.on)); }
     if (Array.isArray(d.log)) { setLog((local) => mergeLogs(local, d.log)); d.log.forEach((e) => syncedIdsRef.current.add(e.id)); }
     lastRevRef.current = d.rev;
     setTimeout(() => { applyingRemoteRef.current = false; }, 0);
@@ -633,7 +746,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const entries = logRef.current.filter((e) => !syncedIdsRef.current.has(e.id));
     try {
       setCloudStatus('syncing');
-      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, notes: notesRef.current, lastModified: lastModifiedRef.current, entries };
+      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, lastModified: lastModifiedRef.current, entries };
       const r = await fetch(ENDPOINT + '?project=' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error('http ' + r.status);
       const d = await r.json();
@@ -661,7 +774,7 @@ export default function PilePlan({ onExit, portalUser }) {
   useEffect(() => {
     if (!readyRef.current || applyingRemoteRef.current) return;
     clearTimeout(pushTimerRef.current); pushTimerRef.current = setTimeout(() => { pushCloud(); }, 1000);
-  }, [stage, qc, notes, log, projName, points, pushCloud]);
+  }, [stage, qc, at, notes, bg, bgT, log, projName, points, pushCloud]);
   // redact legacy name
   useEffect(() => { if (/dwyer/i.test(projName || '')) { setProjName('Project Alpha'); setProjects((ps) => ps.map((p) => p.id === activeId ? { ...p, name: 'Project Alpha' } : p)); setLastModified(Date.now()); } }, [projName, activeId]);
 
@@ -679,24 +792,26 @@ export default function PilePlan({ onExit, portalUser }) {
   const zoomAt = useCallback((px, py, f) => { setVw((v) => { const ns = Math.min(28, Math.max(1, v.s * f)); const wx = (px - v.x) / v.s, wy = (py - v.y) / v.s; return clampView({ s: ns, x: px - wx * ns, y: py - wy * ns }); }); }, [clampView]);
   const onWheel = useCallback((e) => { e.preventDefault(); const p = toView(e.clientX, e.clientY); zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, [toView, zoomAt]);
   useEffect(() => { const svg = svgRef.current; if (!svg) return; svg.addEventListener('wheel', onWheel, { passive: false }); return () => svg.removeEventListener('wheel', onWheel); }, [onWheel, view]);
-  const pointersRef = useRef(new Map()); const panRef = useRef(null); const pinchRef = useRef(null); const pannedRef = useRef(false);
+  const pointersRef = useRef(new Map()); const panRef = useRef(null); const pinchRef = useRef(null); const pannedRef = useRef(false); const bgDragRef = useRef(null);
   const onPointerDown = (e) => {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointersRef.current.size === 2) { paintingRef.current = false; panRef.current = null; const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const midC = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }; pinchRef.current = { dist, mid: toView(midC.x, midC.y), s0: vwRef.current.s, x0: vwRef.current.x, y0: vwRef.current.y }; return; }
+    if (pointersRef.current.size === 2) { paintingRef.current = false; panRef.current = null; bgDragRef.current = null; const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const midC = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }; pinchRef.current = { dist, mid: toView(midC.x, midC.y), s0: vwRef.current.s, x0: vwRef.current.x, y0: vwRef.current.y }; return; }
     const m = modeRef.current;
-    if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
+    if (m === 'bg') { if (bgRef.current) { const p = toView(e.clientX, e.clientY); bgDragRef.current = { sx: p.x, sy: p.y, x0: bgRef.current.x, y0: bgRef.current.y }; } }
+    else if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
     else if (m === 'fill') { const el = document.elementFromPoint(e.clientX, e.clientY); if (el && el.dataset && el.dataset.i != null) fillAt(+el.dataset.i); }
     else { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: vwRef.current.x, vy: vwRef.current.y }; pannedRef.current = false; }
   };
   const onPointerMove = (e) => {
     if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchRef.current && pointersRef.current.size >= 2) { const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const ratio = dist / (pinchRef.current.dist || 1); const ns = Math.min(28, Math.max(1, pinchRef.current.s0 * ratio)); const { mid, s0, x0, y0 } = pinchRef.current; const wx = (mid.x - x0) / s0, wy = (mid.y - y0) / s0; setVw(clampView({ s: ns, x: mid.x - wx * ns, y: mid.y - wy * ns })); return; }
+    if (bgDragRef.current && pointersRef.current.size < 2) { const bd = bgDragRef.current; const b = bgRef.current; if (b) { const p = toView(e.clientX, e.clientY); setBg({ ...b, x: bd.x0 + (p.x - bd.sx), y: bd.y0 + (p.y - bd.sy) }); } return; }
     if (panRef.current) { const pr = panRef.current; pannedRef.current = true; const p = toView(e.clientX, e.clientY); setVw((v) => clampView({ ...v, x: pr.vx + (p.x - pr.sx), y: pr.vy + (p.y - pr.sy) })); }
   };
-  const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; } };
+  const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
   useEffect(() => {
     const mv = (e) => { if (paintingRef.current && modeRef.current === 'brush' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
-    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } };
+    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   }, [paintAt]);
@@ -707,7 +822,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const openProject = (id) => {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
-    setStage(d.stage); setQc(d.qc); setNotes(d.notes); setLog(d.log); setLastModified(d.lastModified);
+    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setLog(d.log); setLastModified(d.lastModified);
     undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
@@ -722,7 +837,7 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const createProject = (name, imp) => {
     const id = newProjId(); const N = imp.points.length;
-    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), notes: {}, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
+    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
     storage.set(projKey(id), doc);
     const next = [...projects, { id, name: doc.name, createdAt: Date.now() }]; setProjects(next);
     fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {});
@@ -747,6 +862,25 @@ export default function PilePlan({ onExit, portalUser }) {
   /* ---- save note ---- */
   const saveNote = (i, text) => { snapshotUndo(); setNotes((n) => { const x = { ...n }; if (text && text.trim()) x[i] = text.trim(); else delete x[i]; return x; }); pushLog(`note on point #${i + 1}`); };
 
+  /* ---- background photo ---- */
+  const [bgBusy, setBgBusy] = useState(false);
+  const onBgUpload = async (file) => {
+    if (!file) return; setBgBusy(true);
+    try { const { url, ar } = await scaleImage(file, 1600, 0.82); const h = planW * ar; setBg({ url, x: 0, y: (planH - h) / 2, scale: 1, ar, opacity: 0.85, on: true }); setBgT(Date.now()); setBgOn(true); pushLog('updated background photo'); }
+    catch (e) { window.alert('Could not load that image.'); }
+    setBgBusy(false); if (mode === 'bg') setMode('brush');
+  };
+  const toggleBg = () => { if (!bg) { setBgOn((v) => !v); return; } const nv = !bgOn; setBgOn(nv); setBg({ ...bg, on: nv }); setBgT(Date.now()); };
+  const setBgScale = (s) => { if (!bg) return; const old = bgDims(bg, planW); const cx = bg.x + old.w / 2, cy = bg.y + old.h / 2; const nb = { ...bg, scale: s }; const nd = bgDims(nb, planW); nb.x = cx - nd.w / 2; nb.y = cy - nd.h / 2; setBg(nb); setBgT(Date.now()); };
+  const setBgOpacity = (o) => { if (!bg) return; setBg({ ...bg, opacity: o }); setBgT(Date.now()); };
+  const removeBg = () => { if (!bg) return; if (!window.confirm('Remove the background photo?')) return; setBg(null); setBgT(Date.now()); setBgOn(false); if (mode === 'bg') setMode('brush'); pushLog('removed background photo'); };
+
+  /* keep paint tool within the user's allowed tasks */
+  useEffect(() => {
+    if (!allowed) return;
+    if (!allowed.has(paint)) { const order = ['s1', 's2', 's3', 's4', 'q1', 'q2', 's0', 'q0']; setPaint(order.find((t) => allowed.has(t)) || 's0'); }
+  }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ---- dots ---- */
   const dotEls = useMemo(() => points.map((d, i) => (
     <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} />
@@ -765,8 +899,11 @@ export default function PilePlan({ onExit, portalUser }) {
     return arr.map((a, i) => ({ i, total: a.total, pct: a.total ? a.sum / (a.total * 4) * 100 : 0 }));
   }, [sections, sectionCount, stage, points]);
 
+  const isAllowed = (tok) => !allowed || allowed.has(tok);
+  const canEditQC = isAllowed('q2');
   const legendBody = (
     <>
+      {allowed && <div style={{ fontFamily: NBF, fontSize: 12, color: GOLD, background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.3)', padding: '7px 10px' }}>You're assigned to: {(scopeForActive || []).map((t) => (TASK_DEFS.find((x) => x.id === t) || {}).label).filter(Boolean).join(', ') || 'view only'}.</div>}
       <div style={card()}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <span style={kicker}>Overall Completion</span>
@@ -780,14 +917,18 @@ export default function PilePlan({ onExit, portalUser }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ ...kicker, color: ORANGE }}>Painting</span>
         <select value={paint} onChange={(e) => setPaint(e.target.value)} style={selectStyle}>
-          <optgroup label="Install Status">
-            {STAGES.map((s, i) => <option key={i} value={'s' + i}>{s.name}</option>)}
-          </optgroup>
-          <optgroup label="Quality Check">
-            <option value="q1">Requires Attention (yellow)</option>
-            <option value="q2">Flagged Issue (orange)</option>
-            <option value="q0">Clear Flag</option>
-          </optgroup>
+          {STAGES.some((s, i) => isAllowed('s' + i)) && (
+            <optgroup label="Install Status">
+              {STAGES.map((s, i) => (isAllowed('s' + i) ? <option key={i} value={'s' + i}>{s.name}</option> : null))}
+            </optgroup>
+          )}
+          {(isAllowed('q1') || isAllowed('q2') || isAllowed('q0')) && (
+            <optgroup label="Quality Check">
+              {isAllowed('q1') && <option value="q1">Requires Attention (yellow)</option>}
+              {isAllowed('q2') && <option value="q2">Flagged Issue (orange)</option>}
+              {isAllowed('q0') && <option value="q0">Clear Flag</option>}
+            </optgroup>
+          )}
         </select>
       </div>
 
@@ -798,10 +939,28 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
       <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, opacity: canUndo ? 1 : .4 }}>&#8634; Undo</button>
 
+      <div style={card()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={kicker}>Site Photo</span>
+          {bg && <button onClick={toggleBg} style={{ ...miniBtn, color: bgOn ? '#22c55e' : MUTE, borderColor: bgOn ? '#22c55e' : 'rgba(255,255,255,.25)' }}>{bgOn ? 'On' : 'Off'}</button>}
+        </div>
+        {!bg ? (
+          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '10px 0', cursor: bgBusy ? 'default' : 'pointer', opacity: bgBusy ? .6 : 1 }}>{bgBusy ? 'Loading…' : 'Add Background Photo'}<input type="file" accept="image/*" hidden disabled={bgBusy} onChange={(e) => onBgUpload(e.target.files[0])} /></label>
+        ) : (<>
+          <button onClick={() => { const nm = mode === 'bg' ? 'brush' : 'bg'; setMode(nm); if (nm === 'bg') setSheetOpen(false); }} style={{ ...segBtn(mode === 'bg'), width: '100%', marginBottom: 8 }}>{mode === 'bg' ? 'Done — drag map to move photo' : 'Align Photo'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Size</span><input type="range" min="0.2" max="4" step="0.02" value={bg.scale || 1} onChange={(e) => setBgScale(+e.target.value)} style={{ flex: 1 }} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={bg.opacity != null ? bg.opacity : 0.85} onChange={(e) => setBgOpacity(+e.target.value)} style={{ flex: 1 }} /></div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            <label style={{ ...ghostBtn, flex: 1, textAlign: 'center', padding: '8px 0', fontSize: 12, cursor: 'pointer' }}>Replace<input type="file" accept="image/*" hidden onChange={(e) => onBgUpload(e.target.files[0])} /></label>
+            <button onClick={removeBg} style={{ ...ghostBtn, flex: 1, padding: '8px 0', fontSize: 12, color: '#f87171', borderColor: 'rgba(248,113,113,.5)' }}>Remove</button>
+          </div>
+        </>)}
+      </div>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
         <span style={kicker}>Install Status (cumulative)</span>
-        {STAGES.slice(1).map((s, i) => { const cnt = stats.cum[i + 1]; const p = TOTAL ? cnt / TOTAL * 100 : 0; return (
-          <div key={i} style={statusRow(paint === 's' + (i + 1))} onClick={() => setPaint('s' + (i + 1))}>
+        {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const cnt = stats.cum[i + 1]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); return (
+          <div key={i} style={{ ...statusRow(paint === tok && !lock), cursor: lock ? 'default' : 'pointer', opacity: lock ? .5 : 1 }} onClick={() => { if (!lock) setPaint(tok); }}>
             <span style={{ width: 16, height: 16, background: s.color, border: '1px solid rgba(255,255,255,.3)', flexShrink: 0, clipPath: CLIP }} />
             <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{s.name}</span>
             <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>{cnt.toLocaleString()}</span>
@@ -809,17 +968,17 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         ); })}
         <span style={{ ...kicker, marginTop: 4 }}>Quality Checks</span>
-        <div style={statusRow(paint === 'q1')} onClick={() => setPaint('q1')}>
+        <div style={{ ...statusRow(paint === 'q1' && isAllowed('q1')), cursor: isAllowed('q1') ? 'pointer' : 'default', opacity: isAllowed('q1') ? 1 : .5 }} onClick={() => { if (isAllowed('q1')) setPaint('q1'); }}>
           <span style={{ width: 16, height: 16, background: QC_YELLOW, flexShrink: 0, clipPath: CLIP }} />
           <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Requires Attention</span>
           <span style={{ fontFamily: BBF, fontSize: 18, color: QC_YELLOW }}>{stats.yellow}</span>
         </div>
-        <div style={statusRow(paint === 'q2')} onClick={() => setPaint('q2')}>
+        <div style={{ ...statusRow(paint === 'q2' && isAllowed('q2')), cursor: isAllowed('q2') ? 'pointer' : 'default', opacity: isAllowed('q2') ? 1 : .5 }} onClick={() => { if (isAllowed('q2')) setPaint('q2'); }}>
           <span style={{ width: 16, height: 16, background: QC_ORANGE, flexShrink: 0, clipPath: CLIP }} />
           <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Flagged Issue</span>
           <span style={{ fontFamily: BBF, fontSize: 18, color: QC_ORANGE }}>{stats.orange}</span>
         </div>
-        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Tap a flagged (orange) point in Pan mode to view/edit its note.</div>
+        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Tap any point in Pan mode to see its status, who updated it, and notes.</div>
       </div>
 
       {sectionStats && (
@@ -839,6 +998,8 @@ export default function PilePlan({ onExit, portalUser }) {
 
   const sectionLabel = (txt) => (<div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: 12, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: ORANGE }}><span style={{ width: 22, height: 2, background: ORANGE, display: 'inline-block' }} />{txt}</div>);
 
+  const visibleProjects = (isAdmin || !assignedSet) ? projects : projects.filter((p) => assignedSet.has(p.id));
+
   /* ---- projects dashboard view ---- */
   if (view === 'dashboard') {
     return (
@@ -850,8 +1011,9 @@ export default function PilePlan({ onExit, portalUser }) {
         </div>
         <div style={{ padding: mob ? 16 : 28, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           {sectionLabel('Select a Project')}
+          {visibleProjects.length === 0 && <div style={{ fontFamily: NBF, fontSize: 15, color: MUTE, marginTop: 16 }}>No projects have been assigned to you yet. Contact your administrator.</div>}
           <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 16, marginTop: 16 }}>
-            {projects.map((pr) => {
+            {visibleProjects.map((pr) => {
               const d = normalizeDoc(storage.get(projKey(pr.id))); const s = computeStats(d.stage, d.qc);
               return (
                 <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', background: 'rgba(255,255,255,.03)', border: '1px solid ' + LINE, padding: 16, transition: 'all .15s' }}
@@ -868,7 +1030,7 @@ export default function PilePlan({ onExit, portalUser }) {
                 </div>
               );
             })}
-            <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1px dashed rgba(249,115,22,.5)', padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 110, color: ORANGE, fontFamily: NBF, fontSize: 16, letterSpacing: 1, textTransform: 'uppercase' }}>+ New Project (Import)</div>
+            {isAdmin && <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1px dashed rgba(249,115,22,.5)', padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 110, color: ORANGE, fontFamily: NBF, fontSize: 16, letterSpacing: 1, textTransform: 'uppercase' }}>+ New Project (Import)</div>}
           </div>
         </div>
         {importOpen && <ImportModal mob={mob} onClose={() => setImportOpen(false)} onCreate={createProject} />}
@@ -902,9 +1064,13 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         )}
         <div style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
-          <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: mode === 'pan' ? 'grab' : 'crosshair' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
-            onClick={(e) => { if (modeRef.current !== 'pan' || pannedRef.current) { pannedRef.current = false; return; } const el = e.target; if (el && el.dataset && el.dataset.i != null) { const i = +el.dataset.i; if (qcRef.current[i]) setNotePt(i); } }}>
-            <g transform={`translate(${vw.x} ${vw.y}) scale(${vw.s})`}>{dotEls}</g>
+          <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: mode === 'pan' ? 'grab' : mode === 'bg' ? 'move' : 'crosshair' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
+            onClick={(e) => { if (modeRef.current !== 'pan' || pannedRef.current) { pannedRef.current = false; return; } const el = e.target; if (el && el.dataset && el.dataset.i != null) setNotePt(+el.dataset.i); }}>
+            <g transform={`translate(${vw.x} ${vw.y}) scale(${vw.s})`}>
+              {bg && bgOn && <image href={bg.url} x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} opacity={bg.opacity != null ? bg.opacity : 0.85} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
+              {bg && bgOn && mode === 'bg' && <rect x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} fill="none" stroke={ORANGE} strokeWidth={1.5 / vw.s} strokeDasharray={`${6 / vw.s} ${4 / vw.s}`} style={{ pointerEvents: 'none' }} />}
+              {dotEls}
+            </g>
           </svg>
           <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
             <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
@@ -971,10 +1137,15 @@ export default function PilePlan({ onExit, portalUser }) {
       {notePt != null && (
         <div style={overlay(mob)} onClick={() => setNotePt(null)}>
           <div onClick={(e) => e.stopPropagation()} style={modalCard(mob, 420)}>
-            <div style={{ display: 'flex', alignItems: 'center' }}><div style={headTitle}>Point #{notePt + 1} — Issue Note</div><button onClick={() => setNotePt(null)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
+            <div style={{ display: 'flex', alignItems: 'center' }}><div style={headTitle}>Point #{notePt + 1}</div><button onClick={() => setNotePt(null)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
             <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Status: {STAGES[stage[notePt]].name}{qc[notePt] ? ' · ' + (qc[notePt] === 2 ? 'Flagged Issue' : 'Requires Attention') : ''}</div>
-            <textarea id="tt-note" defaultValue={notes[notePt] || ''} placeholder="Describe the issue at this point…" style={{ width: '100%', minHeight: 110, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 15, padding: 10, outline: 'none', resize: 'vertical' }} />
-            <button onClick={() => { const v = document.getElementById('tt-note').value; saveNote(notePt, v); setNotePt(null); }} style={{ ...ctaBtn, padding: '11px 0' }}>Save Note</button>
+            {at[notePt] ? <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Last updated by <span style={{ color: ORANGE }}>{by[notePt] || 'Unknown'}</span> · {fmtDate(at[notePt])}</div> : <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>No updates recorded yet.</div>}
+            {canEditQC ? (<>
+              <textarea id="tt-note" defaultValue={notes[notePt] || ''} placeholder="Describe the issue at this point…" style={{ width: '100%', minHeight: 110, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 15, padding: 10, outline: 'none', resize: 'vertical' }} />
+              <button onClick={() => { const v = document.getElementById('tt-note').value; saveNote(notePt, v); setNotePt(null); }} style={{ ...ctaBtn, padding: '11px 0' }}>Save Note</button>
+            </>) : (
+              notes[notePt] ? <div style={{ fontFamily: NBF, fontSize: 15, color: CREAM, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, padding: 10 }}>{notes[notePt]}</div> : <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>No note on this point.</div>
+            )}
           </div>
         </div>
       )}
@@ -1112,6 +1283,7 @@ function segBtn(active) { return { flex: 1, background: active ? ORANGE : 'trans
 const ctaBtn = { background: ORANGE, color: '#1a1206', border: 'none', padding: '12px 18px', fontFamily: NBF, fontWeight: 700, fontSize: 14, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap', boxShadow: '0 0 20px rgba(249,115,22,.30)' };
 const ghostBtn = { background: 'transparent', color: ORANGE, border: '1px solid ' + ORANGE, padding: '10px 16px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' };
 const backBtn = { background: 'transparent', color: CREAM, border: '1px solid rgba(255,255,255,.2)', width: 38, height: 34, fontSize: 17, cursor: 'pointer', clipPath: CLIP, flexShrink: 0 };
+const miniBtn = { background: 'transparent', border: '1px solid', borderColor: 'rgba(255,255,255,.25)', padding: '3px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
 const zbtn = { width: 44, height: 44, background: 'rgba(4,4,12,.8)', color: CREAM, border: '1px solid ' + LINE, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', clipPath: CLIP, backdropFilter: 'blur(6px)' };
 const xBtn = { background: 'transparent', border: 'none', color: MUTE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
 function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,.62)', display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }

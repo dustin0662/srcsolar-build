@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
-import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview, ClientPortal, listProjects } from "./pile_plan.jsx"
+import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -4384,7 +4384,9 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[]})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[],taskScope:{}})
+  const[assignUser,setAssignUser]=useState(null)
+  const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
   const[projOpts,setProjOpts]=useState(function(){return listProjects()})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
@@ -4443,7 +4445,7 @@ export default function App(){
       if(!inv||!inv.email){setLoginErr('Invalid invite');return}
       if(portalUsers.find(function(x){return x.email===inv.email})){setLoginErr('Account already exists. Sign in.');return}
       if(!loginPass.trim()){setLoginErr('Set a password');return}
-      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
+      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
       setUser(u);setPage(u.role==='client'?'client':'dashboard')
@@ -4455,16 +4457,61 @@ export default function App(){
     var isClient=invForm.role==='client'
     if(!isClient&&invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
     if(portalUsers.find(function(x){return x.email===invForm.email})){return}
+    var isMember=invForm.role==='member'
     var tools=isClient?[]:invForm.tools
-    var assignedProjects=isClient?(invForm.assignedProjects||[]):[]
-    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    var assignedProjects=(isClient||isMember)?(invForm.assignedProjects||[]):[]
+    var taskScope=isMember?(invForm.taskScope||{}):{}
+    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
-    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,invitedBy:inv.invitedBy}))
+    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
     var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
     var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link)
     window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[]})
+    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[],taskScope:{}})
+  }
+
+  function openAssign(u){setAssignUser(u);setAssignForm({assignedProjects:(u.assignedProjects||[]).slice(),taskScope:Object.assign({},u.taskScope||{})})}
+  function saveAssign(){
+    if(!assignUser){return}
+    var nu=portalUsers.map(function(x){return x.id===assignUser.id?Object.assign({},x,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}):x})
+    svPU(nu)
+    if(user&&user.id===assignUser.id){setUser(Object.assign({},user,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}))}
+    setAssignUser(null)
+  }
+  function renderAssignEditor(val,onChange){
+    var ap=val.assignedProjects||[];var ts=val.taskScope||{}
+    if(!projOpts.length){return <div style={{...NB,fontSize:12,color:'#999'}}>No projects yet. Create one in the Task Tracker first.</div>}
+    return projOpts.map(function(p){
+      var on=ap.indexOf(p.id)>=0
+      var scope=ts[p.id]!==undefined?ts[p.id]:TASK_DEFS.map(function(t){return t.id})
+      return (
+        <div key={p.id} style={{border:'1px solid '+(on?'rgba(249,115,22,.4)':'rgba(0,0,0,.12)'),padding:'10px 12px',marginBottom:8,background:on?'rgba(249,115,22,.05)':'transparent'}}>
+          <div onClick={function(){
+            var nap=on?ap.filter(function(x){return x!==p.id}):ap.concat([p.id])
+            var nts=Object.assign({},ts)
+            if(on){delete nts[p.id]}else if(nts[p.id]===undefined){nts[p.id]=TASK_DEFS.map(function(t){return t.id})}
+            onChange({assignedProjects:nap,taskScope:nts})
+          }} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+            <span style={{width:16,height:16,border:'1px solid '+(on?A:'rgba(0,0,0,.3)'),background:on?A:'transparent',display:'inline-block',flexShrink:0}}/>
+            <span style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{p.name||'Project'}</span>
+          </div>
+          {on&&<div style={{marginTop:8,paddingLeft:24}}>
+            <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#999',marginBottom:5}}>Tasks they can update</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {TASK_DEFS.map(function(t){
+                var to=scope.indexOf(t.id)>=0
+                return <div key={t.id} onClick={function(){
+                  var ns=to?scope.filter(function(x){return x!==t.id}):scope.concat([t.id])
+                  var nts=Object.assign({},ts);nts[p.id]=ns;onChange({assignedProjects:ap,taskScope:nts})
+                }} style={{padding:'4px 10px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:to?'rgba(249,115,22,.15)':'transparent',color:to?A:'#666',border:'1px solid '+(to?A:'rgba(0,0,0,.15)')}}>{t.label}</div>
+              })}
+            </div>
+            {scope.length===0&&<div style={{...NB,fontSize:11,color:'#dc2626',marginTop:5}}>No tasks selected — view only on this project.</div>}
+          </div>}
+        </div>
+      )
+    })
   }
 
   function submitAccessReq(){
@@ -4754,7 +4801,7 @@ export default function App(){
                     )})}
                   </div>}
                 </div>
-                ):(
+                ):(<>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TOOL ACCESS</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
@@ -4763,7 +4810,12 @@ export default function App(){
                     )})}
                   </div>
                 </div>
-                )}
+                {invForm.tools.indexOf('pileplan')>=0&&<div style={{marginBottom:16}}>
+                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TASK TRACKER — PROJECTS & TASKS</div>
+                  {renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}
+                  <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'.5px',marginTop:4}}>Employees see and edit only the projects you select here.</div>
+                </div>}
+                </>)}
                 <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
               </div>}
               {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
@@ -4773,15 +4825,31 @@ export default function App(){
                     <div>
                       <div style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{u2.name}</div>
                       <div style={{...NB,fontSize:11,color:'#888'}}>{u2.email} · {u2.role}</div>
-                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')}</div>
+                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')||'—'}</div>
+                      {u2.role!=='admin'&&<div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
                     </div>
                     <div style={{display:'flex',gap:6}}>
+                      {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
                       <div onClick={function(){var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:x.role==='admin'?'member':'admin'}):x});svPU(nu)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
                       {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}))}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
                     </div>
                   </div>
                 )})}
               </div>}
+              {assignUser&&(
+                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setAssignUser(null)}}>
+                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:460,maxHeight:'86vh',overflowY:'auto',padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
+                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Assign Projects</div>
+                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
+                    {renderAssignEditor(assignForm,function(v){setAssignForm(v)})}
+                    {assignUser.role==='client'&&<div style={{...NB,fontSize:11,color:'#888',marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
+                    <div style={{display:'flex',gap:10,marginTop:20}}>
+                      <button onClick={saveAssign} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Save</button>
+                      <button onClick={function(){setAssignUser(null)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {adminTab==='requests'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
                 <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>ACCESS REQUESTS</div>
                 {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div style={{...NB,fontSize:13,color:'#888'}}>No pending requests</div>}
@@ -4869,7 +4937,7 @@ export default function App(){
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}}/>}
-        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
+        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
