@@ -5018,7 +5018,7 @@ export default function App(){
             {/* Stats — inline on mobile, absolute on desktop */}
             {m?(
               <div style={{display:'flex',gap:32,marginTop:36,paddingTop:28,borderTop:'1px solid rgba(255,255,255,.06)'}}>
-                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Placed'},{n:'9',l:'States'}].map(s=>(
+                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Team Placed'},{n:'9',l:'States Worked'}].map(s=>(
                   <div key={s.n}>
                     <div style={{...BB,fontSize:32,color:A,lineHeight:1}}>{s.n}</div>
                     <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:3}}>{s.l}</div>
@@ -5027,7 +5027,7 @@ export default function App(){
               </div>
             ):(
               <div style={{position:'absolute',right:48,bottom:'14%',display:'flex',flexDirection:'column',gap:26}}>
-                {[{n:'500+',l:'Megawatts Installed'},{n:'1.2M+',l:'Modules Placed'}].map(s=>(
+                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Team Placed'}].map(s=>(
                   <div key={s.n} style={{textAlign:'right'}}>
                     <div style={{...BB,fontSize:50,color:A,lineHeight:1,textShadow:'0 0 30px rgba(249,115,22,.4)'}}>{s.n}</div>
                     <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:4}}>{s.l}</div>
@@ -5069,6 +5069,7 @@ export default function App(){
                 <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>9</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>States Team Worked</div></div>
               </div>
             )}
+            <p style={{...NB,fontSize:m?11:12,fontWeight:300,fontStyle:'italic',color:'#8C8680',lineHeight:1.6,textAlign:'center',marginTop:m?20:28,maxWidth:760,marginLeft:'auto',marginRight:'auto'}}>These figures reflect the combined personal field experience of our team members across their careers and prior employers &mdash; not necessarily projects performed by Sunrise Construction &amp; Development.</p>
           </div>
         </Sec>
 
@@ -5131,10 +5132,11 @@ export default function App(){
             <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:m?24:48,flexWrap:'wrap',gap:14}}>
               <div>
                 <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:22,height:1,background:A}}/>Track Record
+                  <div style={{width:22,height:1,background:A}}/>Team Experience
                 </div>
-                <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>PROJECT PORTFOLIO</h2>
-                <p style={{...NB,fontSize:m?14:16,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?20:32,maxWidth:600}}>Our team's personal portfolio's.</p>
+                <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>TEAM PROJECT PORTFOLIO</h2>
+                <p style={{...NB,fontSize:m?14:16,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?12:16,maxWidth:600}}>A personal portfolio of projects our team members have worked on across their careers.</p>
+                <p style={{...NB,fontSize:m?12:13,fontWeight:300,fontStyle:'italic',lineHeight:1.6,color:'#8C8680',marginBottom:m?20:32,maxWidth:600}}>These projects represent the individual field experience of our team members &mdash; not necessarily work performed by Sunrise Construction &amp; Development.</p>
               </div>
               {!m&&<p style={{maxWidth:280,fontSize:15,fontWeight:300,color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',lineHeight:1.7}}></p>}
             </div>
@@ -5221,7 +5223,7 @@ export default function App(){
             </div>
             <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?16:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>CAREERS</h2>
             <p style={{...NB,fontSize:m?14:16,lineHeight:1.8,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?24:36,maxWidth:600}}>
-              We're building the future of solar energy across 9 states. If you're ready to join a team that's installed 500+ MW and placed 1.2M+ modules, we want to hear from you.
+              We're building the future of solar energy across 9 states. If you're ready to join a team whose members bring 500+ MW of combined personal experience and 1.2M+ modules placed, we want to hear from you.
             </p>
             {careerSubmitted?(
               <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'24px 20px':'32px 28px',textAlign:'center'}}>
