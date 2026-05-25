@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
-import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview } from "./pile_plan.jsx"
+import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview, ClientPortal, listProjects } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -4384,7 +4384,8 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[]})
+  const[projOpts,setProjOpts]=useState(function(){return listProjects()})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
   const[showPw,setShowPw]=useState(false)
@@ -4403,6 +4404,7 @@ export default function App(){
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
     // Check for invite token in URL
     try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
+    try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
   },[])
 
   function svPU(u){setPortalUsers(u);sSet('portal_users',u)}
@@ -4413,10 +4415,9 @@ export default function App(){
   function doPortalLogin(){
     setLoginErr('')
     if(!loginEmail.trim()||!loginPass.trim()){setLoginErr('Enter email and password');return}
-    if(loginEmail.indexOf('@sunriseconstructionco.com')<0){setLoginErr('Only @sunriseconstructionco.com emails allowed');return}
     var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
     if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
-    setUser(u);setPage('dashboard')
+    setUser(u);setPage(u.role==='client'?'client':'dashboard')
   }
 
   function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
@@ -4442,22 +4443,28 @@ export default function App(){
       if(!inv||!inv.email){setLoginErr('Invalid invite');return}
       if(portalUsers.find(function(x){return x.email===inv.email})){setLoginErr('Account already exists. Sign in.');return}
       if(!loginPass.trim()){setLoginErr('Set a password');return}
-      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
+      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
-      setUser(u);setPage('dashboard')
+      setUser(u);setPage(u.role==='client'?'client':'dashboard')
     }catch(e2){setLoginErr('Invalid invite link')}
   }
 
   function sendInvite(){
-    if(!invForm.email||invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
+    if(!invForm.email){return}
+    var isClient=invForm.role==='client'
+    if(!isClient&&invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
     if(portalUsers.find(function(x){return x.email===invForm.email})){return}
-    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:invForm.tools,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    var tools=isClient?[]:invForm.tools
+    var assignedProjects=isClient?(invForm.assignedProjects||[]):[]
+    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
-    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:inv.tools,invitedBy:inv.invitedBy}))
+    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent('SRC%26D Employee Portal Invitation')+'&body='+encodeURIComponent('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link),'_blank')
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
+    var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
+    var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link)
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[]})
   }
 
   function submitAccessReq(){
@@ -4587,7 +4594,7 @@ export default function App(){
                 ACCEPT INVITE & CREATE ACCOUNT
               </div>}
               <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#555'}}>
-                Invite-only access · @sunriseconstructionco.com
+                Invite-only access · Staff & clients
               </div>
             </div>
           </div>
@@ -4730,11 +4737,24 @@ export default function App(){
                 <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>EMAIL</div><input value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="name@sunriseconstructionco.com"/></div>
                 <div style={{marginBottom:12}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>ROLE</div>
-                  <div style={{display:'flex',gap:8}}>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                     <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'member'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='member'?A:'transparent',color:invForm.role==='member'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='member'?A:'rgba(0,0,0,.15)')}}>Member</div>
                     <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'admin'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='admin'?A:'transparent',color:invForm.role==='admin'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='admin'?A:'rgba(0,0,0,.15)')}}>Admin</div>
+                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'client'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='client'?A:'transparent',color:invForm.role==='client'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='client'?A:'rgba(0,0,0,.15)')}}>Client</div>
                   </div>
+                  {invForm.role==='client'&&<div style={{...NB,fontSize:11,color:'#777',letterSpacing:'1px',marginTop:8}}>Clients get a read-only portal for their assigned projects only — any email domain is allowed.</div>}
                 </div>
+                {invForm.role==='client'?(
+                <div style={{marginBottom:16}}>
+                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>ASSIGNED PROJECTS</div>
+                  {projOpts.length===0?<div style={{...NB,fontSize:12,color:'#999'}}>No projects found. Create one in the Task Tracker first.</div>:
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                    {projOpts.map(function(p){var on=(invForm.assignedProjects||[]).indexOf(p.id)>=0;return (
+                      <div key={p.id} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{p.name||'Project'}</div>
+                    )})}
+                  </div>}
+                </div>
+                ):(
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TOOL ACCESS</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
@@ -4743,6 +4763,7 @@ export default function App(){
                     )})}
                   </div>
                 </div>
+                )}
                 <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
               </div>}
               {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
@@ -4849,6 +4870,7 @@ export default function App(){
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
+        {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>

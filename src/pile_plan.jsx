@@ -265,6 +265,241 @@ export function TaskTrackerPreview() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Client portal (read-only) + helpers                                */
+/* ------------------------------------------------------------------ */
+/* end-of-day snapshots: last log entry per calendar day, decoded */
+function dailySnapshots(log, N) {
+  const byDay = new Map();
+  for (const e of (log || [])) {
+    if (!e || !e.ts || typeof e.stage !== 'string') continue;
+    const d = new Date(e.ts);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const prev = byDay.get(key);
+    if (!prev || e.ts > prev.ts) byDay.set(key, e);
+  }
+  const out = [];
+  for (const [key, e] of byDay) {
+    const stage = decNums(e.stage, N), qc = decNums(e.qc, N);
+    const st = computeStats(stage, qc);
+    out.push({ day: key, ts: e.ts, stage, qc, notes: e.notes || {}, overall: st.overall, cum: st.cum, yellow: st.yellow, orange: st.orange });
+  }
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
+
+/* read-only project registry (local cache; cloud is authoritative) */
+export function listProjects() {
+  const reg = storage.get(REG_KEY);
+  return Array.isArray(reg) ? reg : [];
+}
+
+function ReadonlyMap({ points, w, h, stage, qc, height, mob }) {
+  const PAD = 16, VW = w + PAD * 2, VH = h + PAD * 2;
+  return (
+    <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: height || (mob ? 320 : 470), display: 'block' }}>
+      {points.map((pt, i) => <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.1} fill={dispColor(stage[i], qc ? qc[i] : 0)} stroke="rgba(2,3,10,.55)" strokeWidth={0.45} />)}
+    </svg>
+  );
+}
+
+/* read-only client view: live map, PDF download, daily snapshots + timelapse, latest 3D model */
+export function ClientPortal({ user, onExit }) {
+  const mob = useIsMobile();
+  const assigned = (user && Array.isArray(user.assignedProjects)) ? user.assignedProjects : [];
+  const [registry, setRegistry] = useState([]);
+  const [activeId, setActiveId] = useState(assigned[0] || null);
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('progress'); // progress | snapshots | model
+  const [modelBuf, setModelBuf] = useState(null);
+  const [models, setModels] = useState([]);
+  const [modelStatus, setModelStatus] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const logoRef = useRef(null);
+
+  useEffect(() => { const img = new Image(); img.onload = () => { try { const S = 256; const c = document.createElement('canvas'); c.width = S; c.height = Math.round(S * img.height / img.width); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); logoRef.current = { url: c.toDataURL('image/png'), w: c.width, h: c.height }; } catch (e) {} }; img.src = LOGO_URL; }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(ENDPOINT + '?registry=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive && j && Array.isArray(j.projects)) setRegistry(j.projects); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const projects = useMemo(() => {
+    const byId = {}; registry.forEach((p) => { byId[p.id] = p; });
+    return assigned.map((id) => byId[id] || { id, name: 'Project' });
+  }, [registry, assigned]);
+
+  useEffect(() => { if (!activeId && assigned.length) setActiveId(assigned[0]); }, [assigned, activeId]);
+
+  useEffect(() => {
+    if (!activeId) { setLoading(false); return; }
+    let alive = true; setLoading(true); setDoc(null);
+    const pull = () => fetch(ENDPOINT + '?project=' + encodeURIComponent(activeId), { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d && Array.isArray(d.points) && d.points.length) { setDoc(normalizeDoc(d)); setLoading(false); } else if (alive) setLoading(false); })
+      .catch(() => { if (alive) setLoading(false); });
+    pull(); const t = setInterval(pull, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    let alive = true; setModelBuf(null); setModels([]); setModelStatus('');
+    fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(activeId) + '&list=1', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (j) => {
+        if (!alive || !j || !Array.isArray(j.models) || !j.models.length) return;
+        setModels(j.models);
+        const m = j.models[0];
+        setModelStatus('Loading latest model…');
+        try {
+          const parts = [];
+          for (let i = 0; i < m.chunks; i++) { const r = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(activeId) + '&chunk=1&model=' + encodeURIComponent(m.id) + '&index=' + i, { cache: 'no-store' }); if (!r.ok) throw new Error('chunk'); const cj = await r.json(); parts.push(b64ToBytes(cj.data)); }
+          const total = parts.reduce((s, p) => s + p.length, 0); const out = new Uint8Array(total); let off = 0; for (const p of parts) { out.set(p, off); off += p.length; }
+          if (alive) { setModelBuf(out.buffer); setModelStatus(''); }
+        } catch (e) { if (alive) setModelStatus('Model unavailable.'); }
+      }).catch(() => {});
+    return () => { alive = false; };
+  }, [activeId]);
+
+  const snaps = useMemo(() => (doc ? dailySnapshots(doc.log, doc.points.length) : []), [doc]);
+  const [playing, setPlaying] = useState(false);
+  const [frame, setFrame] = useState(0);
+  useEffect(() => { setFrame(snaps.length ? snaps.length - 1 : 0); setPlaying(false); }, [snaps.length, activeId]);
+  useEffect(() => {
+    if (!playing || snaps.length < 2) return;
+    const t = setInterval(() => setFrame((f) => (f >= snaps.length - 1 ? 0 : f + 1)), 900);
+    return () => clearInterval(t);
+  }, [playing, snaps.length]);
+
+  const handleDownload = async () => {
+    if (!doc) return;
+    setExporting(true);
+    let overhead = null;
+    if (modelBuf) { try { overhead = await renderOverheadPNG(modelBuf); } catch (e) {} }
+    exportPDF(doc.name, doc.points, doc.w, doc.h, doc.stage, doc.qc, doc.notes, doc.lastModified, (user && user.name) || 'Client', logoRef.current, overhead);
+    setExporting(false);
+  };
+
+  const st = doc ? computeStats(doc.stage, doc.qc) : null;
+  const total = st ? st.N : 0;
+  const dispName = projects.find((p) => p.id === activeId)?.name || (doc && doc.name) || 'Project';
+  const frameSnap = snaps[frame];
+
+  const tabBtn = (id, label) => (
+    <button onClick={() => setTab(id)} style={{ background: tab === id ? ORANGE : 'transparent', color: tab === id ? '#1a1206' : CREAM, border: '1px solid ' + (tab === id ? ORANGE : 'rgba(255,255,255,.18)'), padding: mob ? '8px 12px' : '9px 18px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' }}>{label}</button>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE, position: 'sticky', top: 0, zIndex: 5 }}>
+        {onExit && <button onClick={onExit} style={backBtn} title="Sign out">&#8592;</button>}
+        <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 38, height: mob ? 30 : 38, objectFit: 'contain', borderRadius: 4 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: BBF, fontSize: mob ? 18 : 25, letterSpacing: 1.4, color: CREAM, lineHeight: .95 }}>CLIENT PORTAL</div>
+          <div style={{ fontFamily: NBF, fontSize: mob ? 11 : 12, letterSpacing: 1.5, color: ORANGE, textTransform: 'uppercase' }}>{(user && user.name) || 'Client'}</div>
+        </div>
+        {projects.length > 1 && (
+          <select value={activeId || ''} onChange={(e) => setActiveId(e.target.value)} style={{ marginLeft: 'auto', maxWidth: mob ? 150 : 260, background: '#0f1320', color: CREAM, border: '1px solid ' + LINE, padding: '8px 10px', fontFamily: NBF, fontSize: 14, outline: 'none' }}>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
+      </div>
+
+      {(!assigned.length) ? (
+        <div style={{ padding: 40, textAlign: 'center', color: MUTE, fontFamily: NBF, fontSize: 16 }}>No projects have been assigned to your account yet.</div>
+      ) : loading && !doc ? (
+        <div style={{ padding: 40, textAlign: 'center', color: MUTE, fontFamily: NBF, fontSize: 16 }}>Loading project…</div>
+      ) : !doc ? (
+        <div style={{ padding: 40, textAlign: 'center', color: MUTE, fontFamily: NBF, fontSize: 16 }}>This project has no published data yet. Check back soon.</div>
+      ) : (
+        <div style={{ maxWidth: 1200, margin: '0 auto', width: '100%', padding: mob ? 14 : 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontFamily: BBF, fontSize: mob ? 32 : 42, letterSpacing: 1, color: CREAM, lineHeight: .95 }}>{dispName.toUpperCase()}</div>
+              <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, letterSpacing: 1, marginTop: 4 }}>{total.toLocaleString()} points · updated {fmtDate(doc.lastModified)}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: BBF, fontSize: mob ? 54 : 70, color: GOLD, lineHeight: .85, textShadow: '0 0 26px rgba(234,179,8,.4)' }}>{st.overall.toFixed(1)}<span style={{ fontSize: '.42em' }}>%</span></div>
+              <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: MUTE }}>Overall Complete</div>
+            </div>
+            <button onClick={handleDownload} disabled={exporting} style={{ ...ctaBtn, opacity: exporting ? .6 : 1 }}>{exporting ? 'Preparing…' : 'Download PDF Report'}</button>
+          </div>
+
+          <div style={{ height: 8, background: 'rgba(255,255,255,.08)', overflow: 'hidden', borderRadius: 2 }}><div style={{ height: '100%', width: st.overall + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')' }} /></div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {tabBtn('progress', 'Live Progress')}
+            {tabBtn('snapshots', 'Daily Snapshots' + (snaps.length ? ' (' + snaps.length + ')' : ''))}
+            {tabBtn('model', '3D Model')}
+          </div>
+
+          {tab === 'progress' && (
+            <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', gap: 16 }}>
+              <div style={{ flex: '0 0 260px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={kicker}>Install Status</span>
+                {STAGES.slice(1).map((s, i) => { const cnt = st.cum[i + 1]; const p = total ? cnt / total * 100 : 0; return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <span style={{ width: 14, height: 14, background: s.color, border: '1px solid rgba(255,255,255,.3)', flexShrink: 0, clipPath: CLIP }} />
+                    <span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1 }}>{s.name.replace(' Installed', '')}</span>
+                    <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>{cnt.toLocaleString()}</span>
+                    <span style={{ fontFamily: BBF, fontSize: 17, color: s.color, width: 44, textAlign: 'right' }}>{p.toFixed(0)}%</span>
+                  </div>
+                ); })}
+                {(st.yellow > 0 || st.orange > 0) && <><span style={{ ...kicker, marginTop: 6 }}>Quality Checks</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 14, height: 14, background: QC_YELLOW, flexShrink: 0, clipPath: CLIP }} /><span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1 }}>Requires Attention</span><span style={{ fontFamily: BBF, fontSize: 17, color: QC_YELLOW }}>{st.yellow}</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 14, height: 14, background: QC_ORANGE, flexShrink: 0, clipPath: CLIP }} /><span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1 }}>Flagged Issue</span><span style={{ fontFamily: BBF, fontSize: 17, color: QC_ORANGE }}>{st.orange}</span></div></>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+                <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={doc.stage} qc={doc.qc} mob={mob} />
+              </div>
+            </div>
+          )}
+
+          {tab === 'snapshots' && (
+            snaps.length === 0 ? <div style={{ color: MUTE, fontFamily: NBF, fontSize: 15, padding: '20px 0' }}>No daily snapshots recorded yet.</div> : (
+            <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', gap: 16 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #06080f 100%)', border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+                  {frameSnap && <ReadonlyMap points={doc.points} w={doc.w} h={doc.h} stage={frameSnap.stage} qc={frameSnap.qc} height={mob ? 300 : 430} mob={mob} />}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button onClick={() => setPlaying((p) => !p)} disabled={snaps.length < 2} style={{ ...ctaBtn, padding: '10px 18px', opacity: snaps.length < 2 ? .5 : 1 }}>{playing ? '❚❚ Pause' : '► Play Timelapse'}</button>
+                  <input type="range" min="0" max={Math.max(0, snaps.length - 1)} value={frame} onChange={(e) => { setPlaying(false); setFrame(+e.target.value); }} style={{ flex: 1 }} />
+                </div>
+                {frameSnap && <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: BBF, fontSize: 22, color: CREAM, letterSpacing: 1 }}>{new Date(frameSnap.ts).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                  <span style={{ fontFamily: BBF, fontSize: 30, color: GOLD }}>{frameSnap.overall.toFixed(1)}%</span>
+                </div>}
+              </div>
+              <div style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column', gap: 6, maxHeight: mob ? 240 : 480, overflowY: 'auto' }}>
+                <span style={kicker}>End-of-Day Points</span>
+                {[...snaps].reverse().map((s, ri) => { const idx = snaps.length - 1 - ri; return (
+                  <div key={s.day} onClick={() => { setPlaying(false); setFrame(idx); }} style={{ cursor: 'pointer', padding: '8px 10px', border: '1px solid ' + (idx === frame ? ORANGE : 'rgba(255,255,255,.08)'), background: idx === frame ? 'rgba(249,115,22,.10)' : 'rgba(255,255,255,.02)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: NBF, fontSize: 14, color: CREAM }}>{new Date(s.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>{s.orange > 0 && <div style={{ fontFamily: NBF, fontSize: 11, color: QC_ORANGE }}>{s.orange} flagged</div>}</div>
+                    <span style={{ fontFamily: BBF, fontSize: 18, color: GOLD }}>{s.overall.toFixed(0)}%</span>
+                  </div>
+                ); })}
+              </div>
+            </div>
+          ))}
+
+          {tab === 'model' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {modelBuf ? <div style={{ border: '1px solid ' + LINE }}><ModelViewer arrayBuffer={modelBuf} height={mob ? 320 : 500} /></div>
+                : <div style={{ height: mob ? 320 : 500, border: '1px solid ' + LINE, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTE, fontFamily: NBF, fontSize: 14, background: 'radial-gradient(circle at 50% 30%, #11203a, #06080f)' }}>{modelStatus || 'No 3D model has been published for this project yet.'}</div>}
+              {models[0] && <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>Latest model: {models[0].name || 'model.glb'} · {fmtDate(models[0].ts)}</div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 export default function PilePlan({ onExit, portalUser }) {
