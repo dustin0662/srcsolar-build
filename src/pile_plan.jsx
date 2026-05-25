@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { jsPDF } from 'jspdf';
 import { DOTS, PLAN_W, PLAN_H } from './pile_data.js';
 import { processImport } from './tt_import.js';
+import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -24,6 +25,10 @@ const ACTIVE_KEY = 'tt-active';
 const projKey = (id) => 'tt-proj-' + id;
 const MAX_LOG = 200;
 const ENDPOINT = '/.netlify/functions/pileplan';
+const MODELS_ENDPOINT = '/.netlify/functions/ttmodels';
+const MODEL_CHUNK = 3 * 1024 * 1024;
+function b64ToBytes(b64) { const bin = atob(b64 || ''); const len = bin.length; const out = new Uint8Array(len); for (let i = 0; i < len; i++) out[i] = bin.charCodeAt(i); return out; }
+function blobToB64(blob) { return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); }); }
 
 /* fixed staged statuses (sequence) — a point at stage k implies stages 1..k done */
 const STAGES = [
@@ -136,7 +141,7 @@ function drawWatermark(doc, logo) {
   for (let y = -10; y < ph; y += step) for (let x = -10; x < pw; x += step) doc.addImage(logo.url, 'PNG', x, y, size, size * ratio);
   doc.restoreGraphicsState();
 }
-function exportPDF(projName, points, w, h, stage, qc, notes, stampTs, byUser, logo) {
+function exportPDF(projName, points, w, h, stage, qc, notes, stampTs, byUser, logo, overheadPNG) {
   const st = computeStats(stage, qc); const total = st.N;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const M = 40;
@@ -183,6 +188,20 @@ function exportPDF(projName, points, w, h, stage, qc, notes, stampTs, byUser, lo
     doc.addImage(url, 'PNG', ix, iy, imgW, imgH);
     doc.setFontSize(8); doc.setTextColor(140, 140, 140); doc.text('Site layout (color = status)', ix, iy + imgH + 14);
   } catch (e) { /* */ }
+  // overhead model render (page 2)
+  if (overheadPNG) {
+    try {
+      doc.addPage(); drawWatermark(doc, logo);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 20, 28); doc.text('SITE MODEL — OVERHEAD VIEW', M, M + 10);
+      doc.setDrawColor(249, 115, 22); doc.setLineWidth(2); doc.line(M, M + 18, M + 230, M + 18);
+      const pw = doc.internal.pageSize.getWidth() - M * 2;
+      const props = doc.getImageProperties ? doc.getImageProperties(overheadPNG) : null;
+      const ratio = props ? props.height / props.width : 0.75;
+      let iw = pw, ih = pw * ratio; const maxH = doc.internal.pageSize.getHeight() - M - (M + 40);
+      if (ih > maxH) { ih = maxH; iw = ih / ratio; }
+      doc.addImage(overheadPNG, 'PNG', M + (pw - iw) / 2, M + 40, iw, ih);
+    } catch (e) { /* */ }
+  }
   // flagged-issue notes appendix
   const flagged = [];
   for (let i = 0; i < points.length; i++) if (qc[i] === 2 && notes[i]) flagged.push([i, notes[i]]);
@@ -278,6 +297,8 @@ export default function PilePlan({ onExit, portalUser }) {
   const [importOpen, setImportOpen] = useState(false);
   const [notePt, setNotePt] = useState(null);
   const [canUndo, setCanUndo] = useState(false);
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const modelBufRef = useRef(null); // latest viewed GLB ArrayBuffer (for PDF overhead)
 
   const TOTAL = points.length;
   const stats = useMemo(() => computeStats(stage, qc), [stage, qc]);
@@ -452,7 +473,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
     setStage(d.stage); setQc(d.qc); setNotes(d.notes); setLog(d.log); setLastModified(d.lastModified);
-    undoRef.current = []; setCanUndo(false); setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
+    undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
   const deleteProject = (id) => {
@@ -474,7 +495,13 @@ export default function PilePlan({ onExit, portalUser }) {
   };
 
   /* ---- export / history ---- */
-  const handleExport = () => { exportPDF(projName, points, planW, planH, stage, qc, notes, lastModified, userName, logoRef.current); pushLog('exported PDF'); };
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    let overhead = null;
+    if (modelBufRef.current) { setExporting(true); try { overhead = await renderOverheadPNG(modelBufRef.current); } catch (e) {} setExporting(false); }
+    exportPDF(projName, points, planW, planH, stage, qc, notes, lastModified, userName, logoRef.current, overhead);
+    pushLog('exported PDF' + (overhead ? ' (with model overhead)' : ''));
+  };
   const restoreEntry = (entry) => {
     if (!window.confirm('Restore version from ' + fmtDate(entry.ts) + ' (by ' + entry.user + ')?')) return;
     snapshotUndo();
@@ -569,7 +596,8 @@ export default function PilePlan({ onExit, portalUser }) {
         </div>
       )}
 
-      <button onClick={handleExport} style={ctaBtn}>Export PDF</button>
+      <button onClick={handleExport} style={ctaBtn}>{exporting ? 'Rendering…' : 'Export PDF'}</button>
+      <button onClick={() => setModelsOpen(true)} style={ghostBtn}>3D Model / Versions</button>
       <button onClick={() => setHistoryOpen(true)} style={ghostBtn}>Edit History ({log.length})</button>
     </>
   );
@@ -717,6 +745,83 @@ export default function PilePlan({ onExit, portalUser }) {
       )}
 
       {importOpen && <ImportModal mob={mob} onClose={() => setImportOpen(false)} onCreate={createProject} />}
+      {modelsOpen && <ModelsModal mob={mob} projectId={activeId} projName={projName} onClose={() => setModelsOpen(false)} onActiveModel={(buf) => { modelBufRef.current = buf; }} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  3D Models modal (upload + dated version history + viewer)          */
+/* ------------------------------------------------------------------ */
+function ModelsModal({ mob, projectId, projName, onClose, onActiveModel }) {
+  const [models, setModels] = useState([]);
+  const [buf, setBuf] = useState(null);
+  const [curId, setCurId] = useState(null);
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try { const r = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(projectId) + '&list=1', { cache: 'no-store' }); if (r.ok) { const j = await r.json(); setModels(j.models || []); } } catch (e) {}
+  }, [projectId]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const viewModel = async (m) => {
+    setCurId(m.id); setStatus('Loading ' + (m.name || 'model') + '…'); setBusy(true);
+    try {
+      const parts = [];
+      for (let i = 0; i < m.chunks; i++) { const r = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(projectId) + '&chunk=1&model=' + encodeURIComponent(m.id) + '&index=' + i, { cache: 'no-store' }); if (!r.ok) throw new Error('chunk ' + i); const j = await r.json(); parts.push(b64ToBytes(j.data)); }
+      const total = parts.reduce((s, p) => s + p.length, 0); const out = new Uint8Array(total); let off = 0; for (const p of parts) { out.set(p, off); off += p.length; }
+      const ab = out.buffer; setBuf(ab); onActiveModel(ab); setStatus('');
+    } catch (e) { setStatus('Could not load model (cloud unavailable).'); }
+    setBusy(false);
+  };
+
+  const onUpload = async (file) => {
+    if (!file) return;
+    setBusy(true); setStatus('Reading…');
+    const modelId = 'm_' + Date.now();
+    try {
+      const ab = await file.arrayBuffer(); setBuf(ab); onActiveModel(ab); setCurId(modelId); // immediate local view
+      const chunks = Math.max(1, Math.ceil(file.size / MODEL_CHUNK));
+      for (let i = 0; i < chunks; i++) {
+        setStatus('Uploading ' + (i + 1) + '/' + chunks + '…');
+        const b64 = await blobToB64(file.slice(i * MODEL_CHUNK, (i + 1) * MODEL_CHUNK));
+        const r = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(projectId) + '&chunk=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modelId, index: i, data: b64 }) });
+        if (!r.ok) throw new Error('upload chunk ' + i);
+      }
+      const model = { id: modelId, name: file.name, ts: Date.now(), chunks, size: file.size, mime: file.type || 'model/gltf-binary' };
+      const fr = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(projectId) + '&finalize=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }) });
+      if (fr.ok) { const j = await fr.json(); setModels(j.models || []); setStatus('Uploaded ✓'); } else throw new Error('finalize');
+    } catch (e) { setStatus('Saved locally for this session — cloud upload failed (large file or offline).'); refresh(); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={overlay(mob)} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard(mob, 760), padding: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid ' + LINE }}>
+          <div style={headTitle}>3D Model — {projName}</div>
+          <label style={{ ...ctaBtn, marginLeft: 'auto', padding: '9px 14px', fontSize: 12, cursor: busy ? 'default' : 'pointer', opacity: busy ? .6 : 1 }}>Upload GLB<input type="file" accept=".glb,.gltf,model/gltf-binary" hidden disabled={busy} onChange={(e) => onUpload(e.target.files[0])} /></label>
+          <button onClick={onClose} style={{ ...xBtn, marginLeft: 10 }}>&times;</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', minHeight: 0 }}>
+          <div style={{ width: mob ? 'auto' : 240, flexShrink: 0, borderRight: mob ? 'none' : '1px solid ' + LINE, borderBottom: mob ? '1px solid ' + LINE : 'none', padding: 12, overflowY: 'auto', maxHeight: mob ? '30vh' : '60vh' }}>
+            <div style={{ ...kicker, marginBottom: 8 }}>Version History ({models.length})</div>
+            {models.length === 0 && <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>No models yet. Upload a GLB to start a dated version history.</div>}
+            {models.map((m) => (
+              <div key={m.id} onClick={() => viewModel(m)} style={{ padding: '8px 9px', marginBottom: 6, cursor: 'pointer', border: '1px solid ' + (curId === m.id ? ORANGE : 'rgba(255,255,255,.08)'), background: curId === m.id ? 'rgba(249,115,22,.10)' : 'rgba(255,255,255,.02)' }}>
+                <div style={{ fontFamily: NBF, fontSize: 14, color: CREAM, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name || 'model.glb'}</div>
+                <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>{fmtDate(m.ts)} · {(m.size / 1048576).toFixed(1)} MB</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {buf ? <ModelViewer arrayBuffer={buf} height={mob ? 280 : 440} /> : <div style={{ height: mob ? 280 : 440, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTE, fontFamily: NBF, fontSize: 14, background: 'radial-gradient(circle at 50% 30%, #11203a, #06080f)' }}>Upload or select a model version to view</div>}
+            <div style={{ padding: '8px 12px', fontFamily: NBF, fontSize: 12, color: status.indexOf('failed') >= 0 || status.indexOf('not') >= 0 ? GOLD : MUTE, minHeight: 18 }}>{status} {busy ? '' : ''}</div>
+            <div style={{ padding: '0 12px 12px', fontFamily: NBF, fontSize: 11, color: MUTE }}>Upload a fresh model each day to track progress. The latest viewed model is included as an overhead "map" page when you export the PDF.</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
