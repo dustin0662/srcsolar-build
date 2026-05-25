@@ -147,9 +147,20 @@ const store = {
       // Local backup only in Electron
       if (IS_ELECTRON && window.electronAPI)
         window.electronAPI.store.set(ACTIVE_PROFILE_ID, k, v).catch(() => {});
+      ssAudit(k);
     } catch(e) { console.error('store.set error:', e); }
   },
 };
+
+/* debounced audit hook → central admin activity log */
+const _ssTimers = {};
+function ssAudit(key) {
+  if (!key) return;
+  clearTimeout(_ssTimers[key]);
+  _ssTimers[key] = setTimeout(function () {
+    try { if (typeof window !== 'undefined' && window.__audit) window.__audit({ type: 'change', tool: 'hr', key: key, detail: 'Screening Solutions data updated (' + key + ')' }); } catch (e) {}
+  }, 1200);
+}
 
 async function sendEmail(cfg,to,employee,pickedAt,isAuto){
   if(!cfg.serviceId||!cfg.templateId||!cfg.publicKey||!to)return false;

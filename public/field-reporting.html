@@ -27,6 +27,30 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- audit bridge: report data changes to the portal admin activity log -->
+  <script>
+  (function(){
+    if(window.parent===window) return; // only when embedded in the portal
+    var orig = localStorage.setItem.bind(localStorage);
+    var timers = {};
+    function label(key){
+      if(/baseline/.test(key)) return 'Field Manager — baseline updated';
+      if(/kpi/.test(key)) return 'Field Manager — KPIs / earned value updated';
+      if(/report|daily|log/i.test(key)) return 'Field Manager — daily report updated';
+      if(/project/i.test(key)) return 'Field Manager — project data updated';
+      return 'Field Manager — data updated';
+    }
+    localStorage.setItem = function(key, val){
+      orig(key, val);
+      try{
+        if(typeof key==='string' && (key.indexOf('cron_')===0 || key.indexOf('fr_')===0) && !/_authed|_migrated|cron_user(s)?$/.test(key)){
+          clearTimeout(timers[key]);
+          timers[key] = setTimeout(function(){ try{ window.parent.postMessage({type:'FR_AUDIT', detail: label(key)}, '*'); }catch(e){} }, 1500);
+        }
+      }catch(e){}
+    };
+  })();
+  </script>
   <!-- localStorage-backed Firestore-compat shim (replaces Firebase) -->
   <script>
   (function(){

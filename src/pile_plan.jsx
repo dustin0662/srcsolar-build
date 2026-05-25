@@ -659,6 +659,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const pushLog = useCallback((summary) => {
     const entry = { id: 'h' + Date.now() + Math.random().toString(36).slice(2, 6), ts: Date.now(), user: userName, summary, stage: encNums(stageRef.current), qc: encNums(qcRef.current), notes: { ...notesRef.current } };
     setLog((prev) => [entry, ...prev].slice(0, MAX_LOG)); setLastModified(entry.ts);
+    try { if (typeof window !== 'undefined' && window.__audit) window.__audit({ type: 'change', tool: 'pileplan', detail: 'Task Tracker — ' + (projNameRef.current || 'project') + ': ' + summary }); } catch (e) {}
   }, [userName]);
   const snapshotUndo = () => { undoRef.current.push({ stage: stageRef.current.slice(), qc: qcRef.current.slice(), by: byRef.current.slice(), at: atRef.current.slice(), notes: { ...notesRef.current } }); if (undoRef.current.length > 60) undoRef.current.shift(); setCanUndo(true); };
   const undo = () => {

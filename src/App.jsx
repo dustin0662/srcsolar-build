@@ -566,7 +566,37 @@ const fmt=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleDateString
 const fmtTime=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
 
 async function sGet(key){try{const r=await storage.get(key);return r?JSON.parse(r.value):null}catch(e){return null}}
-async function sSet(key,val){try{await storage.set(key,JSON.stringify(val))}catch(e){console.error('storage set error',e)}}
+async function sSet(key,val){try{await storage.set(key,JSON.stringify(val))}catch(e){console.error('storage set error',e)}auditChange(key)}
+
+// ═══ ACTIVITY / AUDIT LOG ═══
+const ACTIVITY_ENDPOINT='/.netlify/functions/activity'
+function _auditSend(ev){
+  try{
+    var u=(typeof window!=='undefined'&&window.__auditUser)||{}
+    var full=Object.assign({id:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),ts:Date.now(),user:u.name||'Anonymous',email:u.email||'',role:u.role||'',tool:(typeof window!=='undefined'&&window.__auditTool)||''},ev)
+    try{var arr=JSON.parse(localStorage.getItem('act-queue')||'[]');arr.push(full);while(arr.length>120)arr.shift();localStorage.setItem('act-queue',JSON.stringify(arr))}catch(e){}
+    try{fetch(ACTIVITY_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({events:[full]}),keepalive:true}).catch(function(){})}catch(e){}
+    return full
+  }catch(e){return null}
+}
+if(typeof window!=='undefined'&&!window.__audit)window.__audit=_auditSend
+function logAudit(ev){try{if(typeof window!=='undefined'&&window.__audit)window.__audit(ev)}catch(e){}}
+function auditKeyInfo(key){
+  if(/^eq_/.test(key))return{tool:'equipment',detail:'Equipment Manager record updated'}
+  if(/^precon_/.test(key))return{tool:'precon',detail:'PreCon Controls data updated'}
+  if(/^tk_/.test(key))return{tool:'timekeeping',detail:'Timekeeping data updated'}
+  if(/^hr_/.test(key)||/^ss_/.test(key))return{tool:'hr',detail:'Screening Solutions data updated'}
+  if(key==='career_submissions')return{tool:'careers',detail:'Careers application submitted'}
+  if(key==='contact_submissions')return{tool:'crm',detail:'Contact / partner inquiry'}
+  if(/^portal_/.test(key))return{tool:'admin',detail:'Account / portal settings change'}
+  return{tool:'other',detail:'Data updated ('+key+')'}
+}
+var _auditTimers={}
+function auditChange(key){
+  if(!key||/^act-/.test(key))return
+  clearTimeout(_auditTimers[key])
+  _auditTimers[key]=setTimeout(function(){var info=auditKeyInfo(key);logAudit({type:'change',tool:info.tool,key:key,detail:info.detail})},1200)
+}
 
 const PROFILE_COLORS=['#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#1abc9c','#34495e','#f39c12']
 
@@ -4387,6 +4417,11 @@ export default function App(){
   const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[],taskScope:{}})
   const[assignUser,setAssignUser]=useState(null)
   const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
+  const[actEvents,setActEvents]=useState([])
+  const[actLoading,setActLoading]=useState(false)
+  const[actView,setActView]=useState('log')
+  const[actUserFilter,setActUserFilter]=useState('')
+  const[actToolFilter,setActToolFilter]=useState('')
   const[projOpts,setProjOpts]=useState(function(){return listProjects()})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
@@ -4419,6 +4454,7 @@ export default function App(){
     if(!loginEmail.trim()||!loginPass.trim()){setLoginErr('Enter email and password');return}
     var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
     if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
+    window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
     setUser(u);setPage(u.role==='client'?'client':'dashboard')
   }
 
@@ -4434,6 +4470,7 @@ export default function App(){
     var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{passwordHash:nh}):x})
     svPU(nu)
     setUser(Object.assign({},user,{passwordHash:nh}))
+    logAudit({type:'action',tool:'admin',detail:'Changed account password'})
     setPwOld('');setPwNew('');setPwConf('');setPwMsg('ok')
     setTimeout(function(){setShowPw(false);setPwMsg('')},1300)
   }
@@ -4448,6 +4485,7 @@ export default function App(){
       var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
+      window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'action',tool:'admin',detail:'Accepted invite & created account'})
       setUser(u);setPage(u.role==='client'?'client':'dashboard')
     }catch(e2){setLoginErr('Invalid invite link')}
   }
@@ -4463,6 +4501,7 @@ export default function App(){
     var taskScope=isMember?(invForm.taskScope||{}):{}
     var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
+    logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+invForm.email})
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
     var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
@@ -4476,6 +4515,7 @@ export default function App(){
     if(!assignUser){return}
     var nu=portalUsers.map(function(x){return x.id===assignUser.id?Object.assign({},x,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}):x})
     svPU(nu)
+    logAudit({type:'action',tool:'admin',detail:'Updated project/task assignments for '+assignUser.name})
     if(user&&user.id===assignUser.id){setUser(Object.assign({},user,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}))}
     setAssignUser(null)
   }
@@ -4526,6 +4566,7 @@ export default function App(){
     svReqs(accessReqs.map(function(r){return r.id===reqId?Object.assign({},r,{status:'approved'}):r}))
     var pu=portalUsers.map(function(u){if(u.id===req.userId){var t=u.tools?u.tools.concat([req.tool]):[req.tool];return Object.assign({},u,{tools:t})}return u})
     svPU(pu)
+    logAudit({type:'action',tool:'admin',detail:'Approved '+(TOOL_LABELS[req.tool]||req.tool)+' access for '+req.userName})
     if(user&&user.id===req.userId){setUser(Object.assign({},user,{tools:(user.tools||[]).concat([req.tool])}))}
   }
 
@@ -4539,6 +4580,36 @@ export default function App(){
 
   const boxRef=useRef()
 
+  // ── audit context + time/session tracking ──
+  useEffect(function(){window.__auditUser=user?{name:user.name,email:user.email,role:user.role}:null},[user])
+  useEffect(function(){window.__auditTool=page},[page])
+  const toolStartRef=useRef(null)
+  useEffect(function(){
+    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
+    var prev=toolStartRef.current
+    if(prev&&prev.tool!==page){logAudit({type:'tool_exit',tool:prev.tool,label:TOOL_LABELS[prev.tool]||prev.tool,detail:'Left '+(TOOL_LABELS[prev.tool]||prev.tool),durMs:Date.now()-prev.ts});toolStartRef.current=null}
+    if(user&&TOOLS[page]&&!toolStartRef.current){toolStartRef.current={tool:page,ts:Date.now()};logAudit({type:'tool_enter',tool:page,label:TOOL_LABELS[page]||page,detail:'Opened '+(TOOL_LABELS[page]||page)})}
+  },[page,user])
+  useEffect(function(){
+    function flush(){var p=toolStartRef.current;if(p){logAudit({type:'tool_exit',tool:p.tool,label:TOOL_LABELS[p.tool]||p.tool,detail:'Session ended',durMs:Date.now()-p.ts});toolStartRef.current=null}}
+    window.addEventListener('beforeunload',flush)
+    return function(){window.removeEventListener('beforeunload',flush)}
+  },[])
+  // logout detection
+  const prevUserRef=useRef(user)
+  useEffect(function(){var pu=prevUserRef.current;if(pu&&!user){window.__auditUser={name:pu.name,email:pu.email,role:pu.role};logAudit({type:'logout',detail:'Signed out'});window.__auditUser=null}prevUserRef.current=user},[user])
+  // load activity log when admin opens the Activity tab
+  useEffect(function(){
+    if(adminTab!=='activity'||!(user&&user.role==='admin'))return
+    var alive=true;setActLoading(true)
+    fetch('/.netlify/functions/activity?days=30',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+      if(!alive)return;var ev=(j&&Array.isArray(j.events))?j.events.slice():[]
+      try{var q=JSON.parse(localStorage.getItem('act-queue')||'[]');var seen={};ev.forEach(function(e){if(e)seen[e.id]=1});q.forEach(function(e){if(e&&e.id&&!seen[e.id])ev.push(e)})}catch(e){}
+      ev.sort(function(a,b){return (b.ts||0)-(a.ts||0)});setActEvents(ev);setActLoading(false)
+    }).catch(function(){if(!alive)return;try{var q=JSON.parse(localStorage.getItem('act-queue')||'[]');q.sort(function(a,b){return (b.ts||0)-(a.ts||0)});setActEvents(q)}catch(e){setActEvents([])}setActLoading(false)})
+    return function(){alive=false}
+  },[adminTab,user])
+
   useEffect(()=>{
     const onResize=()=>setMob(window.innerWidth<768)
     window.addEventListener('resize',onResize)
@@ -4546,7 +4617,7 @@ export default function App(){
   },[])
 
   useEffect(()=>{
-    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); }
+    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); if(e.data && e.data.type==='FR_AUDIT') logAudit({type:'change',tool:'field',detail:(e.data.detail||'Field Manager update')}); }
     window.addEventListener('message', onMsg);
     return ()=> window.removeEventListener('message', onMsg);
   },[])
@@ -4774,8 +4845,8 @@ export default function App(){
               <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</div>
               <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>ADMIN DASHBOARD</div>
               <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-                {['invite','users','requests','editor'].map(function(t){return (
-                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t}</div>
+                {['invite','users','requests','activity','editor'].map(function(t){return (
+                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t==='activity'?'Activity & Time':t}</div>
                 )})}
               </div>
               {adminTab==='invite'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
@@ -4830,8 +4901,8 @@ export default function App(){
                     </div>
                     <div style={{display:'flex',gap:6}}>
                       {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
-                      <div onClick={function(){var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:x.role==='admin'?'member':'admin'}):x});svPU(nu)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
-                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}))}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
+                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:nr}):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
+                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}));logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
                     </div>
                   </div>
                 )})}
@@ -4869,6 +4940,66 @@ export default function App(){
                     </div>
                   </div>
                 )})}
+              </div>}
+              {adminTab==='activity'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
+                {(function(){
+                  function fmtDur(ms){ms=Math.max(0,ms||0);var s=Math.round(ms/1000);var h=Math.floor(s/3600);var mn=Math.floor((s%3600)/60);if(h)return h+'h '+mn+'m';if(mn)return mn+'m';return s+'s'}
+                  function evLabel(e){return e.label||TOOL_LABELS[e.tool]||(e.tool||'—')}
+                  function evWhen(ts){return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+                  var users={},tools={};actEvents.forEach(function(e){if(e.user)users[e.user]=1;if(e.tool)tools[e.tool]=1})
+                  var userList=Object.keys(users).sort(),toolList=Object.keys(tools).sort()
+                  var filtered=actEvents.filter(function(e){return (!actUserFilter||e.user===actUserFilter)&&(!actToolFilter||e.tool===actToolFilter)})
+                  var typeColor={login:'#16a34a',logout:'#888',tool_enter:'#2563eb',tool_exit:'#7c3aed',change:'#ea580c',action:A}
+                  // time aggregation from tool_exit durations
+                  var exits=actEvents.filter(function(e){return e.type==='tool_exit'&&(!actUserFilter||e.user===actUserFilter)})
+                  var dayMap={}
+                  exits.forEach(function(e){var d=new Date(e.ts);var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');var key=day+'|'+(e.user||'?');if(!dayMap[key])dayMap[key]={day:day,user:e.user,total:0,tools:{},sessions:0};dayMap[key].total+=e.durMs||0;dayMap[key].sessions++;var tl=evLabel(e);dayMap[key].tools[tl]=(dayMap[key].tools[tl]||0)+(e.durMs||0)})
+                  var rows=Object.keys(dayMap).map(function(k){return dayMap[k]}).sort(function(a,b){return a.day<b.day?1:a.day>b.day?-1:(a.user<b.user?-1:1)})
+                  return (<>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:16}}>
+                      <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e'}}>ACTIVITY & TIME</div>
+                      <div style={{display:'flex',gap:6}}>
+                        <div onClick={function(){setActView('log')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='log'?A:'transparent',color:actView==='log'?'#fff':'#666',border:'1px solid '+(actView==='log'?A:'rgba(0,0,0,.15)')}}>Activity Log</div>
+                        <div onClick={function(){setActView('time')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='time'?A:'transparent',color:actView==='time'?'#fff':'#666',border:'1px solid '+(actView==='time'?A:'rgba(0,0,0,.15)')}}>Time Tracking</div>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+                      <select value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
+                      {actView==='log'&&<select value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
+                      {actLoading&&<span style={{...NB,fontSize:12,color:'#888',alignSelf:'center'}}>Loading…</span>}
+                    </div>
+                    {actView==='log'?(
+                      <div style={{maxHeight:520,overflowY:'auto',border:'1px solid rgba(0,0,0,.06)'}}>
+                        {filtered.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:16}}>{actLoading?'Loading activity…':'No activity recorded yet.'}</div>}
+                        {filtered.slice(0,500).map(function(e){return (
+                          <div key={e.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
+                            <span style={{width:8,height:8,borderRadius:'50%',background:typeColor[e.type]||'#999',flexShrink:0}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{...NB,fontSize:14,color:'#1a1a2e',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.detail||e.type}</div>
+                              <div style={{...NB,fontSize:11,color:'#888'}}><span style={{color:A}}>{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
+                            </div>
+                          </div>
+                        )})}
+                      </div>
+                    ):(
+                      <div style={{maxHeight:520,overflowY:'auto'}}>
+                        {rows.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
+                        {rows.map(function(r,ri){return (
+                          <div key={ri} style={{border:'1px solid rgba(0,0,0,.08)',padding:'10px 12px',marginBottom:8}}>
+                            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:6}}>
+                              <div style={{...NB,fontSize:15,color:'#1a1a2e',fontWeight:600}}><span style={{color:A}}>{r.user}</span> · {r.day}</div>
+                              <div style={{...BB,fontSize:20,color:'#1a1a2e'}}>{fmtDur(r.total)} <span style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px'}}>· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
+                            </div>
+                            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} style={{...NB,fontSize:11,letterSpacing:'.5px',color:'#555',background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.18)',padding:'3px 9px'}}>{tl}: {fmtDur(r.tools[tl])}</span>})}
+                            </div>
+                          </div>
+                        )})}
+                      </div>
+                    )}
+                    <div style={{...NB,fontSize:11,color:'#999',marginTop:12}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
+                  </>)
+                })()}
               </div>}
               {adminTab==='editor'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
                 <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>SITE EDITOR</div>
