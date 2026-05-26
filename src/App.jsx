@@ -164,6 +164,10 @@ const I18N = {
     careers_choose_file: 'Choose File', careers_submit: 'Submit Application',
     careers_ph_name: 'Your full name', careers_ph_email: 'your@email.com', careers_ph_phone: '(xxx) xxx-xxxx', careers_ph_message: 'Relevant skills, certifications, availability...',
     careers_select_position: 'Select a position', careers_select_experience: 'Select experience',
+    careers_label_gender: 'Gender', careers_label_languages: 'Languages Spoken',
+    opt_gender_male: 'Male', opt_gender_female: 'Female',
+    opt_lang_en: 'English', opt_lang_es: 'Spanish', opt_lang_both: 'Both (English & Spanish)',
+    careers_select_default: 'Select…',
     contact_kicker: 'Build With Us', contact_title: 'GET IN TOUCH',
     contact_start_kicker: 'Start a Conversation',
     contact_label_hq: 'Headquarters', contact_label_phone_lbl: 'Phone', contact_label_email_lbl: 'Email',
@@ -211,6 +215,10 @@ const I18N = {
     careers_choose_file: 'Elegir Archivo', careers_submit: 'Enviar Solicitud',
     careers_ph_name: 'Tu nombre completo', careers_ph_email: 'tu@correo.com', careers_ph_phone: '(xxx) xxx-xxxx', careers_ph_message: 'Habilidades relevantes, certificaciones, disponibilidad...',
     careers_select_position: 'Selecciona un puesto', careers_select_experience: 'Selecciona experiencia',
+    careers_label_gender: 'Género', careers_label_languages: 'Idiomas que habla',
+    opt_gender_male: 'Masculino', opt_gender_female: 'Femenino',
+    opt_lang_en: 'Inglés', opt_lang_es: 'Español', opt_lang_both: 'Ambos (Inglés y Español)',
+    careers_select_default: 'Selecciona…',
     contact_kicker: 'Trabajemos Juntos', contact_title: 'CONTÁCTANOS',
     contact_start_kicker: 'Inicia una Conversación',
     contact_label_hq: 'Sede', contact_label_phone_lbl: 'Teléfono', contact_label_email_lbl: 'Correo',
@@ -2853,7 +2861,10 @@ function CRMModule({ onExit, portalUser }) {
   const [fPosition, setFPosition] = useState('');
   const [fExperience, setFExperience] = useState('');
   const [fRange, setFRange] = useState(''); // ''|7|30|90
+  const [fStage, setFStage] = useState(''); // ''|contacted|interested|notInterested|unavailable|seekingNow
   const [openId, setOpenId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [draftNotes, setDraftNotes] = useState('');
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
   const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.08)';
@@ -2882,7 +2893,15 @@ function CRMModule({ onExit, portalUser }) {
 
   function patchItem(id, patch){
     var by=userName;
-    setItems(function(prev){return prev.map(function(x){if(x.id!==id)return x;var next=Object.assign({},x,patch);var action=patch.status?('status → '+patch.status):'updated';next.log=(Array.isArray(x.log)?x.log:[]).concat([{ts:Date.now(),action:action,by:by}]);return next})});
+    function describe(p){
+      if(p.status)return 'status → '+p.status;
+      if(p.stages){var on=Object.keys(p.stages).filter(function(k){return p.stages[k]}).join(', ');return on?'stage → '+on:'stage cleared'}
+      if(p.unavailableUntil!==undefined)return p.unavailableUntil?('unavailable until '+p.unavailableUntil):'available now';
+      if(p.payAmount!==undefined)return p.payAmount?('pay rate → $'+p.payAmount):'pay cleared';
+      if(p.notes!==undefined)return 'admin note updated';
+      return 'updated';
+    }
+    setItems(function(prev){return prev.map(function(x){if(x.id!==id)return x;var next=Object.assign({},x,patch);next.log=(Array.isArray(x.log)?x.log:[]).concat([{ts:Date.now(),action:describe(patch),by:by}]);return next})});
     try{fetch(CRM_ENDPOINT+'?update=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,patch:patch,by:by}),keepalive:true}).catch(function(){})}catch(e){}
     // local mirror so old fallback path stays in sync
     var keyMap={career:'career_submissions',partner:'contact_submissions'};
@@ -2904,11 +2923,16 @@ function CRMModule({ onExit, portalUser }) {
     if(tab==='applicants'){
       if(fPosition&&x.position!==fPosition)return false;
       if(fExperience&&x.experience!==fExperience)return false;
+      if(fStage){
+        var st=x.stages||{};
+        if(fStage==='unavailable'){if(!x.unavailableUntil)return false}
+        else if(!st[fStage])return false;
+      }
     }
     if(fRange){var cut=daysAgoTs(parseInt(fRange,10));if(new Date(x.submittedAt||0).getTime()<cut)return false}
     if(search){
       var s=search.toLowerCase();
-      var hay=[x.name,x.firstName,x.lastName,x.email,x.phone,x.company,x.position,x.experience,x.message,x.details].filter(Boolean).join(' ').toLowerCase();
+      var hay=[x.name,x.firstName,x.lastName,x.email,x.phone,x.company,x.position,x.experience,x.gender,x.languages,x.message,x.details,x.notes].filter(Boolean).join(' ').toLowerCase();
       if(hay.indexOf(s)<0)return false;
     }
     return true;
@@ -2930,9 +2954,9 @@ function CRMModule({ onExit, portalUser }) {
   function exportExcel(){
     var rows;
     if(tab==='applicants'){
-      rows=filtered.map(function(x){return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Status:x.status||'New',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',Message:x.message||'',ID:x.id||''}});
+      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',ApplicantMessage:x.message||'',ID:x.id||''}});
     }else{
-      rows=filtered.map(function(x){return {'First Name':x.firstName||'','Last Name':x.lastName||'',Company:x.company||'',Email:x.email||'',Phone:x.phone||'',Status:x.status||'New',Submitted:fmtCRMDate(x.submittedAt),Details:x.details||'',ID:x.id||''}});
+      rows=filtered.map(function(x){return {'First Name':x.firstName||'','Last Name':x.lastName||'',Company:x.company||'',Email:x.email||'',Phone:x.phone||'',Status:x.status||'New',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Details:x.details||'',ID:x.id||''}});
     }
     var wb=XLSX.utils.book_new();var ws=XLSX.utils.json_to_sheet(rows);
     var maxColWidths={};rows.forEach(function(r){Object.keys(r).forEach(function(k){var L=Math.min(60,Math.max((maxColWidths[k]||k.length),String(r[k]||'').length));maxColWidths[k]=L})});
@@ -2955,15 +2979,28 @@ function CRMModule({ onExit, portalUser }) {
     filtered.forEach(function(x,idx){
       var lines=[];
       if(tab==='applicants'){
+        var sg=x.stages||{};
+        var langMap={en:'English',es:'Spanish',both:'English & Spanish'};
+        var stagesOn=[];
+        if(sg.contacted)stagesOn.push('Contacted');
+        if(sg.interested)stagesOn.push('Interested');
+        if(sg.notInterested)stagesOn.push('Not Interested');
+        if(x.unavailableUntil)stagesOn.push('Unavailable until '+x.unavailableUntil);
+        if(sg.seekingNow)stagesOn.push('Seeking work now');
         lines.push({k:'Name',v:x.name||'—'});
         lines.push({k:'Email',v:x.email||'—'});
         lines.push({k:'Phone',v:x.phone||'—'});
         lines.push({k:'Position',v:x.position||'—'});
         lines.push({k:'Experience',v:x.experience||'—'});
+        if(x.gender)lines.push({k:'Gender',v:x.gender});
+        if(x.languages)lines.push({k:'Languages',v:langMap[x.languages]||x.languages});
         lines.push({k:'Status',v:x.status||'New'});
+        if(stagesOn.length)lines.push({k:'Hiring Stage',v:stagesOn.join(', ')});
+        if(x.payAmount)lines.push({k:'Pay Rate',v:'$'+x.payAmount});
         lines.push({k:'Submitted',v:fmtCRMDate(x.submittedAt)});
         if(x.resume)lines.push({k:'Resume',v:x.resume});
-        if(x.message)lines.push({k:'Message',v:x.message});
+        if(x.message)lines.push({k:'Applicant Message',v:x.message});
+        if(x.notes)lines.push({k:'Admin Notes',v:x.notes});
       }else{
         lines.push({k:'Name',v:((x.firstName||'')+' '+(x.lastName||'')).trim()||'—'});
         lines.push({k:'Company',v:x.company||'—'});
@@ -2972,6 +3009,7 @@ function CRMModule({ onExit, portalUser }) {
         lines.push({k:'Status',v:x.status||'New'});
         lines.push({k:'Submitted',v:fmtCRMDate(x.submittedAt)});
         if(x.details)lines.push({k:'Project Details',v:x.details});
+        if(x.notes)lines.push({k:'Admin Notes',v:x.notes});
       }
       if(Array.isArray(x.log)&&x.log.length){lines.push({k:'Activity',v:x.log.slice(-4).map(function(e){return fmtCRMDate(e.ts)+' — '+(e.action||'')+(e.by?' ('+e.by+')':'')}).join('  |  ')})}
       // measure block
@@ -2998,7 +3036,7 @@ function CRMModule({ onExit, portalUser }) {
     logAudit({type:'action',tool:'crm',detail:'Exported '+filtered.length+' '+(tab==='applicants'?'applicants':'partners')+' to PDF'});
   }
 
-  function clearFilters(){setSearch('');setSortBy('newest');setFStatus('');setFPosition('');setFExperience('');setFRange('')}
+  function clearFilters(){setSearch('');setSortBy('newest');setFStatus('');setFPosition('');setFExperience('');setFRange('');setFStage('')}
 
   var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'14px':'18px 22px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'};
   var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:4,display:'block'};
@@ -3047,6 +3085,14 @@ function CRMModule({ onExit, portalUser }) {
             <option value="">All Experience</option>
             {expOpts.map(function(p){return <option key={p} value={p}>{p}</option>})}
           </select>}
+          {tab==='applicants'&&<select value={fStage} onChange={function(e){setFStage(e.target.value)}} style={selStyle}>
+            <option value="">All Stages</option>
+            <option value="contacted">Contacted</option>
+            <option value="interested">Interested</option>
+            <option value="notInterested">Not Interested</option>
+            <option value="unavailable">Won't be available until…</option>
+            <option value="seekingNow">Seeking work now</option>
+          </select>}
           <select value={fRange} onChange={function(e){setFRange(e.target.value)}} style={selStyle}>
             <option value="">All Time</option>
             <option value="7">Last 7 days</option>
@@ -3056,7 +3102,7 @@ function CRMModule({ onExit, portalUser }) {
         </div>
         <div style={{...NB,fontSize:12,color:MID,marginBottom:18,display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
           <div>Showing <strong style={{color:TEXT}}>{filtered.length}</strong> of {byTab.length} {tab==='applicants'?'applicants':'partner inquiries'}{loading?' · loading…':''}</div>
-          {(search||fStatus||fPosition||fExperience||fRange||sortBy!=='newest')&&<div onClick={clearFilters} style={{color:A,cursor:'pointer',textDecoration:'underline'}}>Clear filters</div>}
+          {(search||fStatus||fPosition||fExperience||fRange||fStage||sortBy!=='newest')&&<div onClick={clearFilters} style={{color:A,cursor:'pointer',textDecoration:'underline'}}>Clear filters</div>}
         </div>
 
         {filtered.length===0?(
@@ -3087,17 +3133,64 @@ function CRMModule({ onExit, portalUser }) {
                       <button onClick={function(){setOpenId(openId===x.id?null:x.id)}} style={{...NB,fontSize:11,padding:'5px 10px',background:'transparent',border:'1px solid '+BORDER,color:MID,cursor:'pointer'}}>{openId===x.id?'Hide log':'View log ('+((x.log||[]).length)+')'}</button>
                     </div>
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:mob?'1fr':(isApp?'1fr 1fr 1fr':'1fr 1fr'),gap:10}}>
+                  <div style={{display:'grid',gridTemplateColumns:mob?'1fr':(isApp?'1fr 1fr 1fr 1fr 1fr':'1fr 1fr'),gap:10}}>
                     {isApp?(<>
                       <div><span style={labelStyle}>Position</span><div style={{...NB,fontSize:13}}>{x.position||'—'}</div></div>
                       <div><span style={labelStyle}>Experience</span><div style={{...NB,fontSize:13}}>{x.experience||'—'}</div></div>
+                      <div><span style={labelStyle}>Gender</span><div style={{...NB,fontSize:13,textTransform:'capitalize'}}>{x.gender||'—'}</div></div>
+                      <div><span style={labelStyle}>Languages</span><div style={{...NB,fontSize:13}}>{x.languages==='en'?'English':x.languages==='es'?'Spanish':x.languages==='both'?'English & Spanish':'—'}</div></div>
                       <div><span style={labelStyle}>Resume</span><div style={{...NB,fontSize:13}}>{x.resume||'—'}</div></div>
                     </>):(<>
                       <div><span style={labelStyle}>Company / EPC</span><div style={{...NB,fontSize:13}}>{x.company||'—'}</div></div>
                       <div><span style={labelStyle}>Phone</span><div style={{...NB,fontSize:13}}>{x.phone||'—'}</div></div>
                     </>)}
                   </div>
-                  {(isApp?x.message:x.details)&&<div style={{marginTop:10}}><span style={labelStyle}>{isApp?'Message':'Project Details'}</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{isApp?x.message:x.details}</div></div>}
+                  {(isApp?x.message:x.details)&&<div style={{marginTop:10}}><span style={labelStyle}>{isApp?'Applicant Message':'Project Details'}</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{isApp?x.message:x.details}</div></div>}
+                  {isApp&&(function(){
+                    var sg=x.stages||{};
+                    var STAGES_DEF=[{k:'contacted',l:'Contacted'},{k:'interested',l:'Interested'},{k:'notInterested',l:'Not Interested'},{k:'unavailable',l:"Won't be available until…"},{k:'seekingNow',l:'Seeking work now'}];
+                    function toggle(k){
+                      if(k==='unavailable'){
+                        if(x.unavailableUntil){patchItem(x.id,{unavailableUntil:''})}
+                        else{var d=window.prompt('Available starting (YYYY-MM-DD):','');if(d===null)return;patchItem(x.id,{unavailableUntil:d})}
+                        return;
+                      }
+                      var ns=Object.assign({},sg);ns[k]=!ns[k];
+                      if(k==='interested'&&ns.interested)ns.notInterested=false;
+                      if(k==='notInterested'&&ns.notInterested)ns.interested=false;
+                      patchItem(x.id,{stages:ns});
+                    }
+                    return (
+                      <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
+                        <span style={labelStyle}>Hiring Stage</span>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
+                          {STAGES_DEF.map(function(s){
+                            var on=(s.k==='unavailable')?!!x.unavailableUntil:!!sg[s.k];
+                            var labelText=s.l+(s.k==='unavailable'&&x.unavailableUntil?(' '+x.unavailableUntil):'');
+                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),background:on?'rgba(249,115,22,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
+                              <input type="checkbox" checked={on} onChange={function(){toggle(s.k)}} style={{accentColor:A,margin:0}}/>{labelText}
+                            </label>
+                          })}
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1fr 2fr',gap:10,marginTop:12}}>
+                          <div>
+                            <span style={labelStyle}>Pay Rate ($)</span>
+                            <input type="text" defaultValue={x.payAmount||''} placeholder={sg.contacted?'e.g. 28/hr or 65,000':'(set after contact)'} onBlur={function(e){var v=e.target.value.trim();if(v!==(x.payAmount||''))patchItem(x.id,{payAmount:v})}} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none'}}/>
+                          </div>
+                          <div>
+                            <span style={labelStyle}>Admin Notes</span>
+                            <textarea defaultValue={x.notes||''} placeholder="Internal notes (not visible to applicant)…" onBlur={function(e){var v=e.target.value;if(v!==(x.notes||''))patchItem(x.id,{notes:v})}} rows={2} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none',resize:'vertical'}}/>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {!isApp&&(
+                    <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
+                      <span style={labelStyle}>Admin Notes</span>
+                      <textarea defaultValue={x.notes||''} placeholder="Internal notes about this partner inquiry…" onBlur={function(e){var v=e.target.value;if(v!==(x.notes||''))patchItem(x.id,{notes:v})}} rows={2} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none',resize:'vertical',marginTop:4}}/>
+                    </div>
+                  )}
                   {openId===x.id&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px solid '+BORDER}}>
                     <span style={labelStyle}>Activity Log</span>
                     {(x.log||[]).slice().reverse().map(function(e,ei){return <div key={ei} style={{...NB,fontSize:12,color:MID,padding:'4px 0'}}><span style={{color:TEXT,fontWeight:600}}>{e.action||'—'}</span> · {fmtCRMDate(e.ts)}{e.by?' · '+e.by:''}</div>})}
@@ -4564,7 +4657,7 @@ export default function App(){
   const[loginErr,setLoginErr]=useState('')
   const[loginUser,setLoginUser]=useState('')
   const[loginPass,setLoginPass]=useState('')
-  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',experience:'',message:''})
+  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})
   const[careerSubmitted,setCareerSubmitted]=useState(false)
   const[contactForm,setContactForm]=useState({firstName:'',lastName:'',company:'',email:'',details:''})
   const[contactSubmitted,setContactSubmitted]=useState(false)
@@ -5486,7 +5579,7 @@ export default function App(){
               <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'24px 20px':'32px 28px',textAlign:'center'}}>
                 <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>{T('careers_thanks_title')}</div>
                 <div style={{...NB,fontSize:14,color:'#ccc'}}>{T('careers_thanks_copy')}</div>
-                <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',experience:'',message:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
+                <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
               </div>
             ):(
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?12:20}}>
@@ -5531,6 +5624,23 @@ export default function App(){
                       <option value="2-4">2-4 years</option>
                       <option value="5-9">5-9 years</option>
                       <option value="10+">10+ years</option>
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_gender')}</div>
+                    <select value={careerForm.gender} onChange={function(e){setCareerForm(Object.assign({},careerForm,{gender:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                      <option value="">{T('careers_select_default')}</option>
+                      <option value="male">{T('opt_gender_male')}</option>
+                      <option value="female">{T('opt_gender_female')}</option>
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_languages')}</div>
+                    <select value={careerForm.languages} onChange={function(e){setCareerForm(Object.assign({},careerForm,{languages:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                      <option value="">{T('careers_select_default')}</option>
+                      <option value="en">{T('opt_lang_en')}</option>
+                      <option value="es">{T('opt_lang_es')}</option>
+                      <option value="both">{T('opt_lang_both')}</option>
                     </select>
                   </div>
                   <div style={{marginBottom:14}}>
