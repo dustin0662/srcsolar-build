@@ -2851,7 +2851,7 @@ function fmtCRMDate(ts){if(!ts)return'—';var d=new Date(ts);if(isNaN(d.getTime
 function isoDay(ts){var d=new Date(ts);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function daysAgoTs(n){return Date.now()-n*86400000}
 
-function CRMModule({ onExit, portalUser }) {
+function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
   const [tab, setTab] = useState('applicants'); // applicants | partners
   const [items, setItems] = useState([]); // unified, kind:'career'|'partner'
   const [loading, setLoading] = useState(true);
@@ -3167,12 +3167,12 @@ function CRMModule({ onExit, portalUser }) {
                     }
                     function hireToggle(){
                       if(hired){
-                        if(!window.confirm('Unmark '+(x.name||'this applicant')+' as hired? (This will not remove them from Screening Solutions.)'))return;
+                        if(!window.confirm('Unmark '+(x.name||'this applicant')+' as hired? (This will not remove them from Screening Solutions or their portal account.)'))return;
                         var ns=Object.assign({},sg);delete ns.hired;
                         patchItem(x.id,{stages:ns,hiredAt:''});
                         return;
                       }
-                      if(!window.confirm('Mark '+(x.name||'this applicant')+' as HIRED?\n\nA new employee will be queued for Screening Solutions with a pre-employment drug screening due within 7 days. Open Screening Solutions next to import them.'))return;
+                      if(!window.confirm('Mark '+(x.name||'this applicant')+' as HIRED?\n\nThis will:\n  1. Queue a pre-employment drug screening (due within 7 days) in Screening Solutions\n  2. Send an onboarding portal invite to '+(x.email||'their email')+'\n     (they will upload SSN + ID and sign the handbook)'))return;
                       var hiredAt=Date.now();
                       var empId=x.hiredEmployeeId||('HIRE-'+(x.id||'').slice(0,8).toUpperCase());
                       var ns=Object.assign({},sg,{hired:true,contacted:true});
@@ -3184,14 +3184,19 @@ function CRMModule({ onExit, portalUser }) {
                           localStorage.setItem('crm_pending_hires',JSON.stringify(q));
                         }
                       }catch(e){}
-                      logAudit({type:'change',tool:'crm',detail:'Hired '+(x.name||'applicant')+' → pre-employment screening queued for Screening Solutions'});
+                      if(typeof sendOnboardingInvite==='function') sendOnboardingInvite(x);
+                      logAudit({type:'change',tool:'crm',detail:'Hired '+(x.name||'applicant')+' → screening + onboarding invite sent'});
+                    }
+                    function resendInvite(){
+                      if(typeof sendOnboardingInvite==='function') sendOnboardingInvite(x);
                     }
                     return (
                       <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
                         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
                           <span style={labelStyle}>Hiring Stage</span>
                           {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#16a34a',color:'#fff',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
-                          <button onClick={hireToggle} style={{marginLeft:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
+                          {hired&&<button onClick={resendInvite} style={{marginLeft:'auto',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'5px 12px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(7px 0%,100% 0%,calc(100% - 7px) 100%,0% 100%)'}}>Resend Onboarding Invite</button>}
+                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
                         </div>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {STAGES_DEF.map(function(s){
@@ -3231,6 +3236,315 @@ function CRMModule({ onExit, portalUser }) {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+const ONBOARDING_ENDPOINT='/.netlify/functions/onboarding';
+const HANDBOOK_TEXT=`SUNRISE CONSTRUCTION & DEVELOPMENT — EMPLOYEE HANDBOOK ACKNOWLEDGEMENT
+
+By signing below I acknowledge that I have received, read, and understand the Sunrise Construction & Development employee handbook and agree to abide by its policies, including but not limited to:
+
+  · Safety, PPE, and site-conduct requirements (including ISNetworld compliance and stop-work authority)
+  · Drug-free workplace and pre-employment / random drug screening
+  · Anti-harassment, equal opportunity, and respectful workplace expectations
+  · Attendance, timekeeping, and overtime procedures
+  · Confidentiality of client, project, and personnel information
+  · At-will employment — either party may terminate the employment relationship at any time
+
+I understand that violations of these policies may result in disciplinary action up to and including termination. I confirm the documents I uploaded (Social Security card and government-issued ID) are accurate copies of my own valid identification.`;
+
+function scalePhoto(file, maxDim, quality){
+  return new Promise(function(resolve, reject){
+    var img = new Image(); var src = URL.createObjectURL(file);
+    img.onload = function(){
+      var w = img.naturalWidth||1, h = img.naturalHeight||1;
+      var f = Math.min(1, (maxDim||1400) / Math.max(w,h));
+      w = Math.max(1, Math.round(w*f)); h = Math.max(1, Math.round(h*f));
+      var c = document.createElement('canvas'); c.width=w; c.height=h;
+      try { c.getContext('2d').drawImage(img,0,0,w,h); var url = c.toDataURL('image/jpeg', quality||0.82); URL.revokeObjectURL(src); resolve(url); }
+      catch(e){ URL.revokeObjectURL(src); reject(e); }
+    };
+    img.onerror = function(){ URL.revokeObjectURL(src); reject(new Error('image load failed')); };
+    img.src = src;
+  });
+}
+
+function OnboardingPage({ portalUser, onComplete, onExit }){
+  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';const OK='#16a34a';
+  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [idKind, setIdKind] = useState('license');
+  const [sigName, setSigName] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [msg, setMsg] = useState('');
+  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  useEffect(function(){
+    var alive = true;
+    fetch(ONBOARDING_ENDPOINT+'?userId='+encodeURIComponent(portalUser.id),{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+      if(!alive)return;
+      var d = (j && j.doc) || null;
+      setDoc(d||{});
+      if(d && d.id && d.id.kind) setIdKind(d.id.kind);
+      setLoading(false);
+    }).catch(function(){ if(alive){ setDoc({}); setLoading(false); }});
+    return function(){alive=false};
+  },[portalUser.id]);
+
+  function persist(patch){
+    setSaving(true);
+    var next = Object.assign({}, doc || {}, patch);
+    setDoc(next);
+    return fetch(ONBOARDING_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({userId:portalUser.id, name:portalUser.name||'', email:portalUser.email||'', patch:patch}),keepalive:true})
+      .then(function(r){return r.ok?r.json():null}).then(function(j){ setSaving(false); if(j&&j.doc){setDoc(j.doc); return j.doc;} return next; })
+      .catch(function(){ setSaving(false); setMsg('Saved on this device — could not reach server. Try again when online.'); return next; });
+  }
+
+  function uploadPhoto(slot){
+    return function(e){
+      var f = e.target.files && e.target.files[0]; if(!f) return;
+      setMsg('Processing '+(f.name||'image')+'…');
+      scalePhoto(f, 1400, 0.82).then(function(url){
+        var rec = { url: url, name: f.name||'', uploadedAt: Date.now() };
+        if(slot==='id') rec.kind = idKind;
+        var patch = {}; patch[slot] = rec;
+        return persist(patch);
+      }).then(function(){ setMsg(''); }).catch(function(){ setMsg('Could not read that image. Try a JPG or PNG.'); });
+    };
+  }
+
+  function signHandbook(){
+    if(!agreed){setMsg('Tick the acknowledgement box to sign.');return}
+    if(!sigName.trim()){setMsg('Type your full legal name to sign.');return}
+    if(sigName.trim().toLowerCase() !== (portalUser.name||'').trim().toLowerCase()){
+      if(!window.confirm('The name you typed ("'+sigName.trim()+'") does not exactly match your account name ("'+(portalUser.name||'')+'"). Sign anyway?'))return;
+    }
+    persist({ handbook: { signedName: sigName.trim(), signedAt: Date.now(), version: 1 } }).then(function(){ setMsg('Signed.'); });
+  }
+
+  if(loading) return <div style={{position:'fixed',inset:0,background:BG,display:'flex',alignItems:'center',justifyContent:'center',...NB,color:MID}}>Loading your onboarding…</div>;
+
+  var hasSSN = !!(doc && doc.ssn && doc.ssn.url);
+  var hasID = !!(doc && doc.id && doc.id.url);
+  var hasSig = !!(doc && doc.handbook && doc.handbook.signedAt);
+  var all = hasSSN && hasID && hasSig;
+  var completedAt = doc && doc.completedAt;
+
+  var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:6,display:'block'};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'18px':'24px',marginBottom:14};
+  var stepHead=function(n,t,done){return (
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(0,0,0,.06)',color:done?'#fff':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
+      <div style={{...BB,fontSize:22,letterSpacing:1,color:TEXT}}>{t}</div>
+    </div>
+  )};
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px':'48px'}}>
+      <div style={{maxWidth:780,margin:'0 auto'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18,flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>Welcome to Sunrise Construction & Development</div>
+            <div style={{...BB,fontSize:mob?'clamp(30px,8vw,42px)':'clamp(36px,5vw,52px)',letterSpacing:2,lineHeight:1}}>EMPLOYEE ONBOARDING</div>
+            <div style={{...NB,fontSize:13,color:MID,marginTop:6}}>{(portalUser.name||'')} · {portalUser.email||''}</div>
+          </div>
+          {onExit&&<button onClick={onExit} style={{...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',border:'1px solid '+BORDER,color:MID,padding:'8px 14px',cursor:'pointer'}}>Sign Out</button>}
+        </div>
+
+        {completedAt&&<div style={{background:'rgba(22,163,74,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
+        {!completedAt&&<div style={{...NB,fontSize:14,color:MID,marginBottom:18,lineHeight:1.6}}>Please complete the three steps below. Your documents are stored securely and used only for employment verification and HR records.</div>}
+
+        <div style={cardStyle}>
+          {stepHead(1,'Upload Social Security Card', hasSSN)}
+          <div style={{...NB,fontSize:13,color:MID,marginBottom:10}}>A clear photo of the front of your Social Security card. Used for I-9 employment verification only.</div>
+          {hasSSN?(
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <img src={doc.ssn.url} alt="SSN" style={{maxWidth:240,maxHeight:160,objectFit:'contain',border:'1px solid '+BORDER}}/>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{...NB,fontSize:13,color:TEXT}}>{doc.ssn.name||'ssn.jpg'}</div>
+                <div style={{...NB,fontSize:11,color:MID}}>Uploaded {new Date(doc.ssn.uploadedAt).toLocaleString()}</div>
+                {!completedAt&&<label style={{display:'inline-block',marginTop:10,...NB,fontSize:12,letterSpacing:'1.5px',textTransform:'uppercase',color:A,cursor:'pointer',borderBottom:'1px solid '+A,paddingBottom:1}}>Replace<input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/></label>}
+              </div>
+            </div>
+          ):(
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+              📷 Upload Social Security Card Photo
+              <input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/>
+            </label>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          {stepHead(2,'Upload Government ID', hasID)}
+          <div style={{...NB,fontSize:13,color:MID,marginBottom:10}}>A photo of your driver's license <strong>or</strong> passport (whichever you prefer).</div>
+          {!hasID&&<div style={{display:'flex',gap:14,marginBottom:10}}>
+            <label style={{display:'inline-flex',alignItems:'center',gap:6,...NB,fontSize:13,cursor:'pointer'}}><input type="radio" name="idkind" value="license" checked={idKind==='license'} onChange={function(){setIdKind('license')}}/>Driver's License</label>
+            <label style={{display:'inline-flex',alignItems:'center',gap:6,...NB,fontSize:13,cursor:'pointer'}}><input type="radio" name="idkind" value="passport" checked={idKind==='passport'} onChange={function(){setIdKind('passport')}}/>Passport</label>
+          </div>}
+          {hasID?(
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <img src={doc.id.url} alt="ID" style={{maxWidth:240,maxHeight:160,objectFit:'contain',border:'1px solid '+BORDER}}/>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{...NB,fontSize:13,color:TEXT,textTransform:'capitalize'}}>{(doc.id.kind||'ID')} — {doc.id.name||'id.jpg'}</div>
+                <div style={{...NB,fontSize:11,color:MID}}>Uploaded {new Date(doc.id.uploadedAt).toLocaleString()}</div>
+                {!completedAt&&<label style={{display:'inline-block',marginTop:10,...NB,fontSize:12,letterSpacing:'1.5px',textTransform:'uppercase',color:A,cursor:'pointer',borderBottom:'1px solid '+A,paddingBottom:1}}>Replace<input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/></label>}
+              </div>
+            </div>
+          ):(
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+              📷 Upload {idKind==='license'?"Driver's License":'Passport'} Photo
+              <input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/>
+            </label>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          {stepHead(3,'Employee Handbook Acknowledgement', hasSig)}
+          <div style={{...NB,fontSize:13,color:TEXT,whiteSpace:'pre-wrap',lineHeight:1.6,background:'#fafafa',border:'1px solid '+BORDER,padding:'14px 16px',maxHeight:260,overflowY:'auto',marginBottom:12}}>{HANDBOOK_TEXT}</div>
+          {hasSig?(
+            <div style={{padding:'12px 14px',background:'rgba(22,163,74,.08)',border:'1px solid '+OK}}>
+              <div style={{...NB,fontSize:13,color:TEXT}}>Signed by <strong>{doc.handbook.signedName}</strong></div>
+              <div style={{...NB,fontSize:11,color:MID}}>on {new Date(doc.handbook.signedAt).toLocaleString()}</div>
+            </div>
+          ):(<>
+            <label style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:10,cursor:'pointer'}}>
+              <input type="checkbox" checked={agreed} onChange={function(){setAgreed(!agreed)}} style={{accentColor:A,marginTop:3}}/>
+              <span style={{...NB,fontSize:13,color:TEXT}}>I acknowledge that I have read, understand, and agree to the Sunrise Construction & Development Employee Handbook.</span>
+            </label>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              <input value={sigName} onChange={function(e){setSigName(e.target.value)}} placeholder="Type your full legal name as signature" style={{flex:1,minWidth:200,...NB,fontSize:15,padding:'10px 12px',background:CARD,border:'1px solid '+BORDER,color:TEXT,outline:'none'}}/>
+              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(249,115,22,.3)',color:agreed&&sigName.trim()?'#1a1206':'#888',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
+            </div>
+          </>)}
+        </div>
+
+        {msg&&<div style={{...NB,fontSize:12,color:msg.indexOf('failed')>=0||msg.indexOf('Try')>=0||msg.indexOf('Could not')>=0||msg.indexOf('Please')>=0||msg.indexOf('Tick')>=0||msg.indexOf('Type')>=0?'#dc2626':MID,marginBottom:10}}>{msg}</div>}
+
+        {!completedAt&&!all&&<div style={{...NB,fontSize:13,color:MID,padding:'14px 0',textAlign:'center',fontStyle:'italic'}}>Complete all three steps to finish onboarding. {!hasSSN&&'· Upload SSN '}{!hasID&&'· Upload ID '}{!hasSig&&'· Sign handbook'}</div>}
+        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#1a1206',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
+      </div>
+    </div>
+  );
+}
+
+/* MY TIME CARD — employee-facing weekly calendar of their own punches */
+function MyTimeCard({ portalUser, onExit }){
+  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';
+  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const [worker, setWorker] = useState(null);
+  const [punches, setPunches] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [weekStart, setWeekStart] = useState(function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d});
+  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  useEffect(function(){
+    var alive=true;setLoading(true);
+    Promise.all([sGet('tk_workers'),sGet('tk_punches')]).then(function(r){
+      if(!alive)return;
+      var ws=r[0]||[];var ps=r[1]||{};
+      var em=(portalUser.email||'').toLowerCase();
+      var w = ws.find(function(x){return (x.email||'').toLowerCase()===em});
+      setWorker(w||null);setPunches(ps);setLoading(false);
+    });
+    return function(){alive=false};
+  },[portalUser.email]);
+
+  function dayKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+  function hoursOf(arr){
+    if(!arr||!arr.length)return 0;
+    var ms=0,openIn=null;
+    for(var i=0;i<arr.length;i++){var p=arr[i];if(p.type==='in')openIn=new Date(p.time).getTime();else if(p.type==='out'&&openIn!=null){ms+=new Date(p.time).getTime()-openIn;openIn=null}}
+    return ms/3600000;
+  }
+  function fmtH(h){if(!h)return '0:00';var hh=Math.floor(h);var mm=Math.round((h-hh)*60);if(mm===60){hh++;mm=0}return hh+':'+String(mm).padStart(2,'0')}
+  function fmtTime(iso){try{return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}catch(e){return ''}}
+
+  function shiftWeek(n){var d=new Date(weekStart);d.setDate(d.getDate()+n*7);setWeekStart(d)}
+  function thisWeek(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());setWeekStart(d)}
+  var today=new Date();today.setHours(0,0,0,0);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+6);
+  var isCurrent=dayKey(weekStart)===dayKey((function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d})());
+
+  var days=[];var weekTotal=0;
+  if(worker){
+    for(var i=0;i<7;i++){
+      var d=new Date(weekStart);d.setDate(weekStart.getDate()+i);
+      var key=worker.id+'_'+dayKey(d);
+      var arr=punches[key]||[];
+      var h=hoursOf(arr);weekTotal+=h;
+      days.push({date:d,key:dayKey(d),punches:arr,hours:h,isToday:dayKey(d)===dayKey(today),isFuture:d>today});
+    }
+  }
+  var DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+      <div style={{maxWidth:960,margin:'0 auto'}}>
+        <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:18}} onClick={onExit}>← Back to Dashboard</div>
+        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:6}}>
+          <div style={{...BB,fontSize:mob?'clamp(30px,8vw,46px)':'clamp(36px,5vw,56px)',letterSpacing:2}}>MY TIME CARD</div>
+          <div style={{...NB,fontSize:13,color:MID}}>{(portalUser.name||'')} · {portalUser.email||''}</div>
+        </div>
+        <div style={{...NB,fontSize:13,color:MID,marginBottom:22}}>Your weekly hours, pulled directly from your timekeeping punches. Read-only — speak with your supervisor for corrections.</div>
+
+        {loading?(
+          <div style={{textAlign:'center',padding:40,color:DIM,background:CARD,border:'1px solid '+BORDER}}>Loading…</div>
+        ):!worker?(
+          <div style={{textAlign:'center',padding:40,background:CARD,border:'1px solid '+BORDER}}>
+            <div style={{...BB,fontSize:24,marginBottom:8}}>NO TIME CARD YET</div>
+            <div style={{...NB,fontSize:13,color:MID,maxWidth:480,margin:'0 auto'}}>Your account isn't linked to a worker record in Timekeeping yet. Ask your supervisor to add you (using <strong>{portalUser.email||'your email'}</strong>) and your hours will appear here automatically.</div>
+          </div>
+        ):(<>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,marginBottom:14,flexWrap:'wrap'}}>
+            <button onClick={function(){shiftWeek(-1)}} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>← Prev Week</button>
+            <div style={{textAlign:'center'}}>
+              <div style={{...BB,fontSize:22,letterSpacing:1.5,color:TEXT}}>{weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – {weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+              {!isCurrent&&<div onClick={thisWeek} style={{cursor:'pointer',...NB,fontSize:11,letterSpacing:'1.5px',textTransform:'uppercase',color:A,marginTop:2,borderBottom:'1px solid '+A,display:'inline-block'}}>Jump to This Week</div>}
+            </div>
+            <button onClick={function(){shiftWeek(1)}} disabled={weekEnd>=today} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:weekEnd>=today?DIM:A,border:'1px solid '+(weekEnd>=today?BORDER:A),cursor:weekEnd>=today?'default':'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>Next Week →</button>
+          </div>
+
+          <div style={{background:CARD,border:'1px solid '+BORDER,marginBottom:16}}>
+            {days.map(function(d,di){return (
+              <div key={d.key} style={{display:'grid',gridTemplateColumns:mob?'80px 1fr 64px':'140px 1fr 90px',gap:12,padding:'14px 16px',borderTop:di===0?'none':'1px solid '+BORDER,background:d.isToday?'rgba(249,115,22,.05)':'transparent'}}>
+                <div>
+                  <div style={{...BB,fontSize:mob?16:18,color:d.isFuture?DIM:TEXT,letterSpacing:1}}>{mob?DAY_NAMES[d.date.getDay()].slice(0,3).toUpperCase():DAY_NAMES[d.date.getDay()].toUpperCase()}</div>
+                  <div style={{...NB,fontSize:11,color:MID,letterSpacing:1}}>{d.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+                  {d.isToday&&<div style={{...NB,fontSize:9,letterSpacing:'1.5px',textTransform:'uppercase',color:A,marginTop:2,fontWeight:700}}>Today</div>}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {d.punches.length===0?(
+                    <div style={{...NB,fontSize:12,color:DIM,fontStyle:'italic'}}>{d.isFuture?'—':'No punches recorded'}</div>
+                  ):d.punches.map(function(p,pi){return (
+                    <div key={pi} style={{...NB,fontSize:13,color:TEXT,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)',color:p.type==='in'?'#16a34a':'#dc2626',fontWeight:700,textTransform:'uppercase'}}>{p.type==='in'?'IN':'OUT'}</span>
+                      {fmtTime(p.time)}
+                    </div>
+                  )})}
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{...BB,fontSize:22,color:d.hours>0?TEXT:DIM,lineHeight:1}}>{fmtH(d.hours)}</div>
+                  <div style={{...NB,fontSize:10,letterSpacing:'1.5px',textTransform:'uppercase',color:MID,marginTop:2}}>{d.hours>0?'hrs':''}</div>
+                </div>
+              </div>
+            )})}
+          </div>
+
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(2,2,12,.92)',color:'#F5F0EB',padding:'18px 22px',clipPath:'polygon(14px 0%,100% 0%,calc(100% - 14px) 100%,0% 100%)'}}>
+            <div>
+              <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#cfcabf'}}>Week Total</div>
+              <div style={{...NB,fontSize:12,color:'#8a857c',marginTop:2}}>{weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – {weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{...BB,fontSize:48,color:A,lineHeight:1,textShadow:'0 0 24px rgba(249,115,22,.4)'}}>{fmtH(weekTotal)}</div>
+              <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#cfcabf',marginTop:2}}>{weekTotal>40?(weekTotal-40).toFixed(2)+' hrs OT':'hours'}</div>
+            </div>
+          </div>
+        </>)}
       </div>
     </div>
   );
@@ -4738,7 +5052,7 @@ export default function App(){
     var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
     if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
     window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
-    setUser(u);setPage(u.role==='client'?'client':'dashboard')
+    setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
   }
 
   function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
@@ -4765,11 +5079,11 @@ export default function App(){
       if(!inv||!inv.email){setLoginErr('Invalid invite');return}
       if(portalUsers.find(function(x){return x.email===inv.email})){setLoginErr('Account already exists. Sign in.');return}
       if(!loginPass.trim()){setLoginErr('Set a password');return}
-      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
+      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},onboardingRequired:!!inv.onboardingRequired,onboardingComplete:false,passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
       window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'action',tool:'admin',detail:'Accepted invite & created account'})
-      setUser(u);setPage(u.role==='client'?'client':'dashboard')
+      setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
     }catch(e2){setLoginErr('Invalid invite link')}
   }
 
@@ -4791,6 +5105,22 @@ export default function App(){
     var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link)
     window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
     setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan'],assignedProjects:[],taskScope:{}})
+  }
+
+  function sendOnboardingInvite(applicant){
+    var email=(applicant&&applicant.email||'').trim()
+    if(!email){window.alert('This applicant has no email — cannot send an onboarding invite.');return false}
+    if(portalUsers.find(function(x){return x.email===email})){window.alert(email+' already has a portal account.');return false}
+    if(invites.find(function(x){return x.email===email&&!x.used})){if(!window.confirm('An unused invite already exists for '+email+'. Send another?'))return false}
+    var inv={id:uid(),name:applicant.name||'',email:email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    svInv(invites.concat([inv]))
+    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,invitedBy:inv.invitedBy}))
+    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var subj='Welcome to Sunrise Construction & Development — Complete Your Onboarding'
+    var bodyTxt='Welcome to the team, '+(inv.name||'')+'!\n\nClick the link below to set your password and complete your onboarding (upload Social Security card, government ID, and sign the employee handbook):\n\n'+link+'\n\n— SRC&D'
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    logAudit({type:'action',tool:'admin',detail:'Sent onboarding invite to '+email})
+    return true
   }
 
   function openAssign(u){setAssignUser(u);setAssignForm({assignedProjects:(u.assignedProjects||[]).slice(),taskScope:Object.assign({},u.taskScope||{})})}
@@ -5061,6 +5391,7 @@ export default function App(){
               })()}
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
                 {[
+                  {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
                   {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
                   {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
                   {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
@@ -5071,7 +5402,7 @@ export default function App(){
                   {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
                   {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
                   {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
-                ].filter(function(tile){return hasTool(tile.key)}).map(function(tile){
+                ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
                   return (
                     <div key={tile.key} onClick={function(){setPage(tile.key)}} style={{
                       background:'#ffffff',backdropFilter:'blur(12px)',
@@ -5353,7 +5684,9 @@ export default function App(){
         {page==='stakeholders'&&<StakeholderReports onExit={function(){setPage('dashboard')}}/>}
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
-        {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user}/>}
+        {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
+        {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{onboardingComplete:true}):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
         {['hse'].includes(page)&&(
