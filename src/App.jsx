@@ -2895,6 +2895,8 @@ function CRMModule({ onExit, portalUser }) {
     var by=userName;
     function describe(p){
       if(p.status)return 'status → '+p.status;
+      if(p.stages&&p.stages.hired)return 'HIRED → pre-employment screening queued';
+      if(p.hiredAt==='')return 'unhired';
       if(p.stages){var on=Object.keys(p.stages).filter(function(k){return p.stages[k]}).join(', ');return on?'stage → '+on:'stage cleared'}
       if(p.unavailableUntil!==undefined)return p.unavailableUntil?('unavailable until '+p.unavailableUntil):'available now';
       if(p.payAmount!==undefined)return p.payAmount?('pay rate → $'+p.payAmount):'pay cleared';
@@ -2954,7 +2956,7 @@ function CRMModule({ onExit, portalUser }) {
   function exportExcel(){
     var rows;
     if(tab==='applicants'){
-      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',ApplicantMessage:x.message||'',ID:x.id||''}});
+      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',Hired:sg.hired?'Y':'',HiredAt:x.hiredAt?fmtCRMDate(x.hiredAt):'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',ApplicantMessage:x.message||'',ID:x.id||''}});
     }else{
       rows=filtered.map(function(x){return {'First Name':x.firstName||'','Last Name':x.lastName||'',Company:x.company||'',Email:x.email||'',Phone:x.phone||'',Status:x.status||'New',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Details:x.details||'',ID:x.id||''}});
     }
@@ -2987,6 +2989,7 @@ function CRMModule({ onExit, portalUser }) {
         if(sg.notInterested)stagesOn.push('Not Interested');
         if(x.unavailableUntil)stagesOn.push('Unavailable until '+x.unavailableUntil);
         if(sg.seekingNow)stagesOn.push('Seeking work now');
+        if(sg.hired)stagesOn.push('HIRED'+(x.hiredAt?' ('+new Date(x.hiredAt).toLocaleDateString()+')':''));
         lines.push({k:'Name',v:x.name||'—'});
         lines.push({k:'Email',v:x.email||'—'});
         lines.push({k:'Phone',v:x.phone||'—'});
@@ -3092,6 +3095,7 @@ function CRMModule({ onExit, portalUser }) {
             <option value="notInterested">Not Interested</option>
             <option value="unavailable">Won't be available until…</option>
             <option value="seekingNow">Seeking work now</option>
+            <option value="hired">Hired</option>
           </select>}
           <select value={fRange} onChange={function(e){setFRange(e.target.value)}} style={selStyle}>
             <option value="">All Time</option>
@@ -3148,6 +3152,7 @@ function CRMModule({ onExit, portalUser }) {
                   {(isApp?x.message:x.details)&&<div style={{marginTop:10}}><span style={labelStyle}>{isApp?'Applicant Message':'Project Details'}</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{isApp?x.message:x.details}</div></div>}
                   {isApp&&(function(){
                     var sg=x.stages||{};
+                    var hired=!!sg.hired;
                     var STAGES_DEF=[{k:'contacted',l:'Contacted'},{k:'interested',l:'Interested'},{k:'notInterested',l:'Not Interested'},{k:'unavailable',l:"Won't be available until…"},{k:'seekingNow',l:'Seeking work now'}];
                     function toggle(k){
                       if(k==='unavailable'){
@@ -3160,9 +3165,34 @@ function CRMModule({ onExit, portalUser }) {
                       if(k==='notInterested'&&ns.notInterested)ns.interested=false;
                       patchItem(x.id,{stages:ns});
                     }
+                    function hireToggle(){
+                      if(hired){
+                        if(!window.confirm('Unmark '+(x.name||'this applicant')+' as hired? (This will not remove them from Screening Solutions.)'))return;
+                        var ns=Object.assign({},sg);delete ns.hired;
+                        patchItem(x.id,{stages:ns,hiredAt:''});
+                        return;
+                      }
+                      if(!window.confirm('Mark '+(x.name||'this applicant')+' as HIRED?\n\nA new employee will be queued for Screening Solutions with a pre-employment drug screening due within 7 days. Open Screening Solutions next to import them.'))return;
+                      var hiredAt=Date.now();
+                      var empId=x.hiredEmployeeId||('HIRE-'+(x.id||'').slice(0,8).toUpperCase());
+                      var ns=Object.assign({},sg,{hired:true,contacted:true});
+                      patchItem(x.id,{stages:ns,hiredAt:new Date(hiredAt).toISOString(),hiredEmployeeId:empId});
+                      try{
+                        var q=JSON.parse(localStorage.getItem('crm_pending_hires')||'[]');
+                        if(!q.some(function(it){return it.sourceCrmId===x.id})){
+                          q.push({sourceCrmId:x.id,employeeId:empId,name:x.name||'',email:x.email||'',phone:x.phone||'',position:x.position||'Staff',gender:x.gender||'',languages:x.languages||'',payAmount:x.payAmount||'',hiredAt:hiredAt});
+                          localStorage.setItem('crm_pending_hires',JSON.stringify(q));
+                        }
+                      }catch(e){}
+                      logAudit({type:'change',tool:'crm',detail:'Hired '+(x.name||'applicant')+' → pre-employment screening queued for Screening Solutions'});
+                    }
                     return (
                       <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
-                        <span style={labelStyle}>Hiring Stage</span>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                          <span style={labelStyle}>Hiring Stage</span>
+                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#16a34a',color:'#fff',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
+                          <button onClick={hireToggle} style={{marginLeft:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
+                        </div>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {STAGES_DEF.map(function(s){
                             var on=(s.k==='unavailable')?!!x.unavailableUntil:!!sg[s.k];

@@ -1944,8 +1944,55 @@ export default function ScreeningSolutionsApp({portalUser,onExit}={}){
     setActiveProfile(profile);
     try{
       const all = await ssLoadProfileDataDirect(profile.id);
-      setEmployees(all.hr_employees||[]);
-      setScreenings(all.hr_screenings||[]);
+      let emps = all.hr_employees||[];
+      let scns = all.hr_screenings||[];
+      // ── CRM hand-off: import any pending hires queued by the CRM portal ──
+      try{
+        const q = JSON.parse(localStorage.getItem('crm_pending_hires')||'[]');
+        if(Array.isArray(q) && q.length){
+          let imported = 0;
+          q.forEach(function(h){
+            if(!h || !h.employeeId) return;
+            if(emps.some(function(e){return e.id===h.employeeId})) return; // already present
+            emps = emps.concat([{
+              id: h.employeeId,
+              name: h.name||'(Unnamed)',
+              position: 'Staff',
+              title: h.position||'',
+              department: '',
+              isManagement: false,
+              isExempt: false,
+              notes: 'Imported from CRM on '+new Date(h.hiredAt||Date.now()).toLocaleDateString()+(h.payAmount?(' · Pay: $'+h.payAmount):'')+(h.email?(' · '+h.email):'')+(h.phone?(' · '+h.phone):''),
+              prescriptions: '',
+              sourceCrmId: h.sourceCrmId||'',
+              hiredAt: h.hiredAt||Date.now(),
+            }]);
+            const due = new Date((h.hiredAt||Date.now()) + 7*24*60*60*1000);
+            scns = scns.concat([{
+              id: 'sc_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6),
+              employeeId: h.employeeId,
+              employeeName: h.name||'(Unnamed)',
+              type: 'pre-employment',
+              pickedAt: new Date(h.hiredAt||Date.now()).toISOString(),
+              scheduledFor: due.toISOString().slice(0,10),
+              status: 'open',
+              result: 'pending',
+              resultNotes: '',
+              notes: 'Pre-employment screening — due within 7 days of hire ('+due.toLocaleDateString()+'). Auto-created from CRM hire.',
+              autoScheduled: true,
+            }]);
+            imported++;
+          });
+          if(imported>0){
+            await store.set('hr_employees', emps);
+            await store.set('hr_screenings', scns);
+            localStorage.removeItem('crm_pending_hires');
+            notify('Imported '+imported+' new hire'+(imported===1?'':'s')+' from CRM. Pre-employment screening'+(imported===1?'':'s')+' scheduled.');
+          }
+        }
+      }catch(e){console.error('crm hire import error', e);}
+      setEmployees(emps);
+      setScreenings(scns);
       setSchedulerConfig(all.hr_scheduler||DEFAULT_SCHED);
       setEmailConfig(all.hr_email_cfg||DEFAULT_EMAIL);
       setCompanySettings(all.hr_company||{logo:'',name:profile.name});
