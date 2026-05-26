@@ -5448,7 +5448,7 @@ export default function App(){
                   {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
                   {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
                   {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
-                  {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark'},
+                  {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
                 ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
                   return (
                     <div key={tile.key} onClick={function(){setPage(tile.key)}} style={{
