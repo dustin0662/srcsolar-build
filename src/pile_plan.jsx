@@ -118,7 +118,7 @@ const decNums = (s, n) => { const out = new Array(n).fill(0); if (typeof s === '
 const DWYER_POINTS = DOTS.map((d) => [d[0], d[1]]);
 function defaultProject(name) {
   const N = DWYER_POINTS.length;
-  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, log: [], lastModified: Date.now() };
+  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, overlay3d: null, log: [], lastModified: Date.now() };
 }
 function normalizeDoc(d) {
   if (!d) return defaultProject();
@@ -130,7 +130,8 @@ function normalizeDoc(d) {
   const at = Array.isArray(d.at) && d.at.length === N ? d.at : new Array(N).fill(0);
   const notes = (d.notes && typeof d.notes === 'object') ? d.notes : {};
   const bg = (d.bg && typeof d.bg === 'object' && d.bg.url) ? d.bg : null;
-  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
+  const overlay3d = (d.overlay3d && typeof d.overlay3d === 'object') ? d.overlay3d : null;
+  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, overlay3d, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
 }
 function ensureMigrated() {
   let reg = storage.get(REG_KEY);
@@ -593,6 +594,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const [bg, setBg] = useState(init.current.bg);
   const [bgT, setBgT] = useState(init.current.bgT);
   const [bgOn, setBgOn] = useState(!!(init.current.bg && init.current.bg.on)); // local view toggle
+  const [overlay3d, setOverlay3d] = useState(init.current.overlay3d || null);
   const [log, setLog] = useState(init.current.log);
   const [lastModified, setLastModified] = useState(init.current.lastModified);
 
@@ -618,8 +620,8 @@ export default function PilePlan({ onExit, portalUser }) {
   const skipPersist = useRef(false);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, log, lastModified });
-  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, log, lastModified]);
+    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, log, lastModified });
+  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, log, lastModified]);
   useEffect(() => { storage.set(REG_KEY, projects); }, [projects]);
   useEffect(() => { storage.set(ACTIVE_KEY, activeId); }, [activeId]);
   // pull the shared project registry so assigned projects appear on any device
@@ -642,6 +644,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const atRef = useRef(at); useEffect(() => { atRef.current = at; }, [at]);
   const bgRef = useRef(bg); useEffect(() => { bgRef.current = bg; }, [bg]);
   const bgTRef = useRef(bgT); useEffect(() => { bgTRef.current = bgT; }, [bgT]);
+  const overlay3dRef = useRef(overlay3d); useEffect(() => { overlay3dRef.current = overlay3d; }, [overlay3d]);
   const notesRef = useRef(notes); useEffect(() => { notesRef.current = notes; }, [notes]);
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const lastModifiedRef = useRef(lastModified); useEffect(() => { lastModifiedRef.current = lastModified; }, [lastModified]);
@@ -738,6 +741,7 @@ export default function PilePlan({ onExit, portalUser }) {
       setLastModified(d.lastModified);
     }
     if ((d.bgT || 0) > (bgTRef.current || 0)) { setBg(nd.bg); setBgT(d.bgT || 0); setBgOn(!!(nd.bg && nd.bg.on)); }
+    if (d.overlay3d !== undefined) setOverlay3d(d.overlay3d || null);
     if (Array.isArray(d.log)) { setLog((local) => mergeLogs(local, d.log)); d.log.forEach((e) => syncedIdsRef.current.add(e.id)); }
     lastRevRef.current = d.rev;
     setTimeout(() => { applyingRemoteRef.current = false; }, 0);
@@ -747,7 +751,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const entries = logRef.current.filter((e) => !syncedIdsRef.current.has(e.id));
     try {
       setCloudStatus('syncing');
-      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, lastModified: lastModifiedRef.current, entries };
+      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, overlay3d: overlay3dRef.current, lastModified: lastModifiedRef.current, entries };
       const r = await fetch(ENDPOINT + '?project=' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error('http ' + r.status);
       const d = await r.json();
@@ -775,7 +779,7 @@ export default function PilePlan({ onExit, portalUser }) {
   useEffect(() => {
     if (!readyRef.current || applyingRemoteRef.current) return;
     clearTimeout(pushTimerRef.current); pushTimerRef.current = setTimeout(() => { pushCloud(); }, 1000);
-  }, [stage, qc, at, notes, bg, bgT, log, projName, points, pushCloud]);
+  }, [stage, qc, at, notes, bg, bgT, overlay3d, log, projName, points, pushCloud]);
   // redact legacy name
   useEffect(() => { if (/dwyer/i.test(projName || '')) { setProjName('Project Alpha'); setProjects((ps) => ps.map((p) => p.id === activeId ? { ...p, name: 'Project Alpha' } : p)); setLastModified(Date.now()); } }, [projName, activeId]);
 
@@ -823,7 +827,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const openProject = (id) => {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
-    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setLog(d.log); setLastModified(d.lastModified);
+    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setLog(d.log); setLastModified(d.lastModified);
     undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
@@ -1152,7 +1156,7 @@ export default function PilePlan({ onExit, portalUser }) {
       )}
 
       {importOpen && <ImportModal mob={mob} onClose={() => setImportOpen(false)} onCreate={createProject} />}
-      {modelsOpen && <ModelsModal mob={mob} projectId={activeId} projName={projName} onClose={() => setModelsOpen(false)} onActiveModel={(buf) => { modelBufRef.current = buf; }} />}
+      {modelsOpen && <ModelsModal mob={mob} projectId={activeId} projName={projName} onClose={() => setModelsOpen(false)} onActiveModel={(buf) => { modelBufRef.current = buf; }} points={points} planW={planW} planH={planH} stage={stage} qc={qc} overlay3d={overlay3d} onApplyPaint={(i) => { snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; applyPaintToIndex(i); burstFlush(); }} onSaveOverlay={(ov) => { setOverlay3d(ov); setLastModified(Date.now()); pushLog(ov.on ? (ov.locked ? 'locked 3D overlay alignment' : 'updated 3D overlay alignment') : 'hid 3D overlay'); }} paintLabel={paintLabel} paintColor={paintColor} />}
     </div>
   );
 }
@@ -1160,12 +1164,19 @@ export default function PilePlan({ onExit, portalUser }) {
 /* ------------------------------------------------------------------ */
 /*  3D Models modal (upload + dated version history + viewer)          */
 /* ------------------------------------------------------------------ */
-function ModelsModal({ mob, projectId, projName, onClose, onActiveModel }) {
+function ModelsModal({ mob, projectId, projName, onClose, onActiveModel, points, planW, planH, stage, qc, overlay3d, onApplyPaint, onSaveOverlay, paintLabel, paintColor }) {
   const [models, setModels] = useState([]);
   const [buf, setBuf] = useState(null);
   const [curId, setCurId] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  // overlay state (working copy; saved via onSaveOverlay)
+  const DEFAULT_OV = { on: false, locked: false, x: 0, y: 0, scale: 1, opacity: 0.85 };
+  const [ov, setOv] = useState(() => Object.assign({}, DEFAULT_OV, overlay3d || {}));
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { setOv(Object.assign({}, DEFAULT_OV, overlay3d || {})); setDirty(false); }, [overlay3d]);
+  const dragRef = useRef(null);
+  const containerRef = useRef(null);
 
   const refresh = useCallback(async () => {
     try { const r = await fetch(MODELS_ENDPOINT + '?project=' + encodeURIComponent(projectId) + '&list=1', { cache: 'no-store' }); if (r.ok) { const j = await r.json(); setModels(j.models || []); } } catch (e) {}
@@ -1223,9 +1234,56 @@ function ModelsModal({ mob, projectId, projName, onClose, onActiveModel }) {
             ))}
           </div>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {buf ? <ModelViewer arrayBuffer={buf} height={mob ? 280 : 440} /> : <div style={{ height: mob ? 280 : 440, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTE, fontFamily: NBF, fontSize: 14, background: 'radial-gradient(circle at 50% 30%, #11203a, #06080f)' }}>Upload or select a model version to view</div>}
+            {(() => {
+              const H = mob ? 280 : 440;
+              const PAD = 16; const VW = (planW || 1) + PAD * 2; const VH = (planH || 1) + PAD * 2;
+              const onPtrDown = (e) => { if (!ov.on || ov.locked) return; const r = containerRef.current && containerRef.current.getBoundingClientRect(); if (!r) return; dragRef.current = { sx: e.clientX, sy: e.clientY, x0: ov.x, y0: ov.y, w: r.width, h: r.height }; e.preventDefault(); };
+              const onPtrMove = (e) => { if (!dragRef.current) return; const d = dragRef.current; setOv((p) => Object.assign({}, p, { x: d.x0 + (e.clientX - d.sx), y: d.y0 + (e.clientY - d.sy) })); setDirty(true); };
+              const onPtrUp = () => { dragRef.current = null; };
+              const onDotClick = (i, e) => { if (!ov.on || !ov.locked || typeof onApplyPaint !== 'function') return; e.stopPropagation(); onApplyPaint(i); };
+              const N = (points || []).length; const safeStage = stage || []; const safeQc = qc || [];
+              return (
+                <div ref={containerRef} style={{ position: 'relative', height: H, background: 'radial-gradient(circle at 50% 30%, #11203a, #06080f)' }} onPointerMove={onPtrMove} onPointerUp={onPtrUp} onPointerLeave={onPtrUp}>
+                  {buf ? <ModelViewer arrayBuffer={buf} height={H} /> : <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTE, fontFamily: NBF, fontSize: 14 }}>Upload or select a model version to view</div>}
+                  {ov.on && N > 0 && (
+                    <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" onPointerDown={onPtrDown} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: ov.locked ? 'none' : 'auto', cursor: ov.locked ? 'default' : 'move', opacity: ov.opacity != null ? ov.opacity : 0.85 }}>
+                      <g transform={`translate(${ov.x} ${ov.y}) scale(${ov.scale})`}>
+                        {(points || []).map((pt, i) => (
+                          <circle key={i} data-i={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.5} fill={dispColor(safeStage[i] || 0, (safeQc[i] || 0))} stroke="rgba(2,3,10,.6)" strokeWidth={0.6} style={{ pointerEvents: ov.locked ? 'auto' : 'none', cursor: ov.locked ? 'crosshair' : 'default' }} onClick={(e) => onDotClick(i, e)} />
+                        ))}
+                      </g>
+                    </svg>
+                  )}
+                  {ov.on && ov.locked && typeof onApplyPaint === 'function' && (
+                    <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', alignItems: 'center', gap: 7, padding: '5px 10px', background: 'rgba(4,4,12,.78)', border: '1px solid ' + LINE, pointerEvents: 'none', backdropFilter: 'blur(6px)' }}>
+                      <span style={{ width: 12, height: 12, background: paintColor || ORANGE, border: '1px solid rgba(255,255,255,.4)' }} />
+                      <span style={{ fontFamily: NBF, fontSize: 11, color: CREAM, letterSpacing: 1, textTransform: 'uppercase' }}>Paint: {paintLabel || 'No tool'}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* overlay controls */}
+            {buf && (points || []).length > 0 && (
+              <div style={{ padding: '10px 12px', borderTop: '1px solid ' + LINE, background: 'rgba(255,255,255,.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: ov.on ? 8 : 0 }}>
+                  <button onClick={() => { setOv((p) => Object.assign({}, p, { on: !p.on })); setDirty(true); }} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 11, background: ov.on ? ORANGE : 'transparent', color: ov.on ? '#1a1206' : ORANGE }}>{ov.on ? '◉ Overlay On' : '○ Show Task Tracker Overlay'}</button>
+                  {ov.on && <button onClick={() => { setOv((p) => Object.assign({}, p, { locked: !p.locked })); setDirty(true); }} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 11, background: ov.locked ? GOLD : 'transparent', color: ov.locked ? '#1a1206' : GOLD, borderColor: GOLD }}>{ov.locked ? '🔒 Locked — Tap dots to paint' : '🔓 Aligning — Drag to move'}</button>}
+                  {ov.on && <button onClick={() => { setOv(Object.assign({}, DEFAULT_OV, { on: true })); setDirty(true); }} style={{ ...ghostBtn, padding: '6px 12px', fontSize: 11 }}>Reset</button>}
+                  {dirty && typeof onSaveOverlay === 'function' && <button onClick={() => { onSaveOverlay(ov); setDirty(false); }} style={{ ...ctaBtn, padding: '6px 14px', fontSize: 11 }}>Save Alignment</button>}
+                </div>
+                {ov.on && !ov.locked && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE, letterSpacing: 1, textTransform: 'uppercase' }}>Size</span>
+                    <input type="range" min="0.2" max="4" step="0.02" value={ov.scale || 1} onChange={(e) => { setOv((p) => Object.assign({}, p, { scale: +e.target.value })); setDirty(true); }} style={{ width: '100%' }} />
+                    <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE, letterSpacing: 1, textTransform: 'uppercase' }}>Opacity</span>
+                    <input type="range" min="0.15" max="1" step="0.05" value={ov.opacity != null ? ov.opacity : 0.85} onChange={(e) => { setOv((p) => Object.assign({}, p, { opacity: +e.target.value })); setDirty(true); }} style={{ width: '100%' }} />
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ padding: '8px 12px', fontFamily: NBF, fontSize: 12, color: status.indexOf('failed') >= 0 || status.indexOf('not') >= 0 ? GOLD : MUTE, minHeight: 18 }}>{status} {busy ? '' : ''}</div>
-            <div style={{ padding: '0 12px 12px', fontFamily: NBF, fontSize: 11, color: MUTE }}>Upload a fresh model each day to track progress. The latest viewed model is included as an overhead "map" page when you export the PDF.</div>
+            <div style={{ padding: '0 12px 12px', fontFamily: NBF, fontSize: 11, color: MUTE }}>Upload a fresh model each day to track progress. The latest viewed model is included as an overhead "map" page when you export the PDF. Toggle the Task Tracker overlay to float dots on top of the model — align with the scene then lock to paint statuses from this view.</div>
           </div>
         </div>
       </div>
