@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
-import PilePlan, { getTaskTrackerKPI, TaskTrackerPreview } from "./pile_plan.jsx"
+import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
+import DocumentPortal from "./document_portal.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
+import { jsPDF } from "jspdf"
 
 const CSS = `
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;touch-action:manipulation}
@@ -126,98 +128,132 @@ const LOGO_SRC="data:image/webp;base64,UklGRohUAABXRUJQVlA4IHxUAABQgwKdASo4BCEEP
 
 
 
-// ── GLB MODEL VIEWER (lazy-loads three.js) ──────────────────────────────────
-function GLBViewer({ src, height }) {
-  const mountRef = useRef(null)
-  const [error, setError] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  useEffect(() => {
-    const mount = mountRef.current
-    if (!mount) return
-    let cancelled = false
-    let renderer, controls, rafId, onResize
-    Promise.all([
-      import('three'),
-      import('three/examples/jsm/loaders/GLTFLoader.js'),
-      import('three/examples/jsm/controls/OrbitControls.js')
-    ]).then(([THREE, gltfMod, ocMod]) => {
-      if (cancelled || !mountRef.current) return
-      const GLTFLoader = gltfMod.GLTFLoader
-      const OrbitControls = ocMod.OrbitControls
-      const w = mount.clientWidth
-      const h = height
-      const scene = new THREE.Scene()
-      const camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 5000)
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-      renderer.setSize(w, h)
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-      if (THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding
-      mount.appendChild(renderer.domElement)
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x202030, 1.1))
-      const dir = new THREE.DirectionalLight(0xffffff, 1.2)
-      dir.position.set(40, 80, 60)
-      scene.add(dir)
-      const fill = new THREE.DirectionalLight(0xffe2b5, 0.5)
-      fill.position.set(-40, 20, -30)
-      scene.add(fill)
-      controls = new OrbitControls(camera, renderer.domElement)
-      controls.enableDamping = true
-      controls.dampingFactor = 0.08
-      controls.autoRotate = true
-      controls.autoRotateSpeed = 0.5
-      controls.enablePan = false
-      new GLTFLoader().load(src, (gltf) => {
-        if (cancelled) return
-        const model = gltf.scene
-        const box = new THREE.Box3().setFromObject(model)
-        const size = box.getSize(new THREE.Vector3())
-        const center = box.getCenter(new THREE.Vector3())
-        model.position.sub(center)
-        const maxDim = Math.max(size.x, size.y, size.z)
-        const fitDist = maxDim / (2 * Math.tan(Math.PI * camera.fov / 360))
-        camera.position.set(fitDist*0.45, fitDist*0.25, fitDist*0.45)
-        camera.near = Math.max(maxDim/100, 0.01)
-        camera.far = maxDim * 20
-        camera.updateProjectionMatrix()
-        controls.target.set(0,0,0)
-        controls.minDistance = fitDist * 0.3
-        controls.maxDistance = fitDist * 3
-        controls.update()
-        scene.add(model)
-        setLoaded(true)
-      }, undefined, () => setError(true))
-      const animate = () => {
-        rafId = requestAnimationFrame(animate)
-        controls.update()
-        renderer.render(scene, camera)
-      }
-      animate()
-      onResize = () => {
-        if (!mountRef.current) return
-        const nw = mountRef.current.clientWidth
-        camera.aspect = nw / h
-        camera.updateProjectionMatrix()
-        renderer.setSize(nw, h)
-      }
-      window.addEventListener('resize', onResize)
-    }).catch(() => setError(true))
-    return () => {
-      cancelled = true
-      if (rafId) cancelAnimationFrame(rafId)
-      if (onResize) window.removeEventListener('resize', onResize)
-      if (controls) controls.dispose()
-      if (renderer) {
-        renderer.dispose()
-        if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement)
-      }
-    }
-  }, [src, height])
+// ── I18N (English / Mexican Spanish) ────────────────────────────────────────
+const I18N = {
+  en: {
+    lang_pick_title: 'Choose Your Language',
+    lang_pick_sub: 'Select a language to view the site.',
+    lang_en: 'English (US)',
+    lang_es: 'Español (México)',
+    lang_continue: 'Continue',
+    lang_change: 'Change language',
+    nav_safety: 'Safety', nav_capabilities: 'Capabilities', nav_portfolio: 'Portfolio', nav_careers: 'Careers', nav_contact: 'Contact', nav_login: 'Login', nav_partner: 'Partner Now', nav_back_to_site: 'Back to Site',
+    hero_kicker: 'Elite Solar Subcontractor', hero_we: 'WE', hero_dominate: 'DOMINATE', hero_solar: 'SOLAR',
+    hero_sub: "The technical powerhouse delivering dominance, precision, and efficiency for the nation's largest utility-scale projects.",
+    cta_partner: 'Partner Now', cta_view_portfolio: 'View Portfolio',
+    stat_mw_combined: 'MW Combined Experience', stat_modules_team: 'Modules Team Placed', stat_states: 'States', stat_states_worked: 'States Worked',
+    stat_band_kicker: 'our team has combined experience over:',
+    stat_megawatts_long: 'Megawatts Our Team Installed', stat_modules_team_long: 'Modules Team Placed', stat_states_team_long: 'States Team Worked',
+    stats_disclaimer: 'These figures reflect the combined personal field experience of our team members across their careers and prior employers — not necessarily projects performed by Sunrise Construction & Development.',
+    scroll: 'Scroll',
+    services_kicker: 'Our Core Scope', services_title: 'TURNKEY MECHANICAL INSTALLATION',
+    services_intro_pre: 'We provide ', services_intro_strong: 'transparent, turnkey mechanical installation services for EPCs in the solar sector', services_intro_post: ' — piles, racking, modules, and trackers delivered with real-time proof.',
+    services_outro: 'Beyond the core scope, our team and partners offer supporting services to round out full-scope construction solutions.',
+    caps_kicker: 'What We Deliver', caps_title: 'CAPABILITIES',
+    cap_01_t: 'ISNet Compliance', cap_01_b: 'Full ISNetworld compliance ensuring safety protocols, training records, and insurance coverage meet the most stringent standards for utility-scale solar.',
+    cap_02_t: 'Apprenticeship Enabled', cap_02_b: 'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.',
+    cap_03_t: 'EPC Subcontracting', cap_03_b: 'Precision tracking installation, pile driving, and mechanical assembly for utility-scale EPCs with industry-leading accuracy.',
+    port_kicker: 'Team Experience', port_title: 'TEAM PROJECT PORTFOLIO',
+    port_intro: "A personal portfolio of projects our team members have worked on across their careers.",
+    port_disclaimer: 'These projects represent the individual field experience of our team members — not necessarily work performed by Sunrise Construction & Development.',
+    cov_national: 'National Coverage', cov_utility: 'Utility-Scale', cov_isnet: 'ISNet Compliant', cov_safety: 'Safety First',
+    careers_kicker: 'Join the Mission', careers_title: 'BUILD WITH US',
+    careers_copy: "We're building the future of solar energy across 9 states. If you're ready to join a team whose members bring 500+ MW of combined personal experience and 1.2M+ modules placed, we want to hear from you.",
+    careers_thanks_title: 'APPLICATION RECEIVED', careers_thanks_copy: "We'll review your application and reach out if it's a match. Thank you!",
+    careers_submit_another: 'Submit Another Application',
+    careers_label_name: 'Full Name', careers_label_email: 'Email', careers_label_phone: 'Phone', careers_label_position: 'Position of Interest', careers_label_experience: 'Years of Experience', careers_label_message: 'Tell us about yourself', careers_label_resume: 'Resume (optional)',
+    careers_choose_file: 'Choose File', careers_submit: 'Submit Application',
+    careers_ph_name: 'Your full name', careers_ph_email: 'your@email.com', careers_ph_phone: '(xxx) xxx-xxxx', careers_ph_message: 'Relevant skills, certifications, availability...',
+    careers_select_position: 'Select a position', careers_select_experience: 'Select experience',
+    careers_label_gender: 'Gender', careers_label_languages: 'Languages Spoken',
+    opt_gender_male: 'Male', opt_gender_female: 'Female',
+    opt_lang_en: 'English', opt_lang_es: 'Spanish', opt_lang_both: 'Both (English & Spanish)',
+    careers_select_default: 'Select…',
+    contact_kicker: 'Build With Us', contact_title: 'GET IN TOUCH',
+    contact_start_kicker: 'Start a Conversation',
+    contact_label_hq: 'Headquarters', contact_label_phone_lbl: 'Phone', contact_label_email_lbl: 'Email',
+    contact_thanks_title: 'MESSAGE SENT', contact_thanks_copy: "We've received your inquiry and will respond shortly.",
+    contact_send_another: 'Send Another Message',
+    contact_label_first: 'First Name', contact_label_last: 'Last Name', contact_label_company: 'Company / EPC', contact_label_email: 'Email', contact_label_details: 'Project Details',
+    contact_ph_first: 'John', contact_ph_last: 'Smith', contact_ph_company: 'Company Name', contact_ph_email: 'john@company.com', contact_ph_details: 'MW capacity, location, timeline...',
+    contact_send: 'Send Message →',
+    login_subtitle: 'Sunrise Construction & Development', login_email: 'EMAIL', login_password: 'PASSWORD',
+    login_email_ph: 'name@sunriseconstructionco.com', login_password_ph: 'Enter password',
+    login_signin: 'Sign In', login_accept_invite: 'ACCEPT INVITE & CREATE ACCOUNT', login_invite_only: 'Invite-only access · Staff & clients',
+  },
+  es: {
+    lang_pick_title: 'Elija Su Idioma',
+    lang_pick_sub: 'Seleccione un idioma para ver el sitio.',
+    lang_en: 'English (US)',
+    lang_es: 'Español (México)',
+    lang_continue: 'Continuar',
+    lang_change: 'Cambiar idioma',
+    nav_safety: 'Seguridad', nav_capabilities: 'Capacidades', nav_portfolio: 'Portafolio', nav_careers: 'Empleo', nav_contact: 'Contacto', nav_login: 'Acceso', nav_partner: 'Asóciate Ya', nav_back_to_site: 'Volver al Sitio',
+    hero_kicker: 'Subcontratista Solar de Élite', hero_we: 'DOMINAMOS', hero_dominate: 'LA ENERGÍA', hero_solar: 'SOLAR',
+    hero_sub: 'La potencia técnica que entrega dominio, precisión y eficiencia para los proyectos a gran escala más grandes del país.',
+    cta_partner: 'Asóciate Ya', cta_view_portfolio: 'Ver Portafolio',
+    stat_mw_combined: 'MW de Experiencia Combinada', stat_modules_team: 'Módulos Colocados por el Equipo', stat_states: 'Estados', stat_states_worked: 'Estados Trabajados',
+    stat_band_kicker: 'nuestro equipo tiene experiencia combinada en:',
+    stat_megawatts_long: 'Megavatios Instalados por Nuestro Equipo', stat_modules_team_long: 'Módulos Colocados por el Equipo', stat_states_team_long: 'Estados Trabajados por el Equipo',
+    stats_disclaimer: 'Estas cifras reflejan la experiencia personal de campo combinada de los miembros de nuestro equipo a lo largo de sus carreras y empleadores anteriores — no necesariamente proyectos realizados por Sunrise Construction & Development.',
+    scroll: 'Desplazar',
+    services_kicker: 'Nuestro Alcance Principal', services_title: 'INSTALACIÓN MECÁNICA LLAVE EN MANO',
+    services_intro_pre: 'Brindamos ', services_intro_strong: 'servicios transparentes y llave en mano de instalación mecánica para EPCs en el sector solar', services_intro_post: ' — pilotes, racks, módulos y trackers entregados con evidencia en tiempo real.',
+    services_outro: 'Más allá del alcance principal, nuestro equipo y socios ofrecen servicios complementarios para completar soluciones de construcción integrales.',
+    caps_kicker: 'Lo Que Entregamos', caps_title: 'CAPACIDADES',
+    cap_01_t: 'Cumplimiento ISNet', cap_01_b: 'Cumplimiento total ISNetworld que asegura que los protocolos de seguridad, registros de capacitación y cobertura de seguro cumplan con los estándares más estrictos para solar a gran escala.',
+    cap_02_t: 'Programa de Aprendices', cap_02_b: 'Programas de aprendizaje certificados que combinan experiencia en obra con capacitación técnica para formar fuerza laboral local calificada en cada región donde operamos.',
+    cap_03_t: 'Subcontratación EPC', cap_03_b: 'Instalación de tracking de precisión, hincado de pilotes y ensamble mecánico para EPCs a gran escala con precisión líder en la industria.',
+    port_kicker: 'Experiencia del Equipo', port_title: 'PORTAFOLIO DE PROYECTOS DEL EQUIPO',
+    port_intro: 'Un portafolio personal de proyectos en los que los miembros de nuestro equipo han trabajado a lo largo de sus carreras.',
+    port_disclaimer: 'Estos proyectos representan la experiencia individual de campo de los miembros de nuestro equipo — no necesariamente trabajo realizado por Sunrise Construction & Development.',
+    cov_national: 'Cobertura Nacional', cov_utility: 'Escala Industrial', cov_isnet: 'Certificado ISNet', cov_safety: 'Seguridad Primero',
+    careers_kicker: 'Únete a la Misión', careers_title: 'CONSTRUYE CON NOSOTROS',
+    careers_copy: 'Estamos construyendo el futuro de la energía solar en 9 estados. Si estás listo para unirte a un equipo cuyos miembros aportan más de 500 MW de experiencia personal combinada y más de 1.2M módulos colocados, queremos saber de ti.',
+    careers_thanks_title: 'SOLICITUD RECIBIDA', careers_thanks_copy: 'Revisaremos tu solicitud y te contactaremos si hay una coincidencia. ¡Gracias!',
+    careers_submit_another: 'Enviar Otra Solicitud',
+    careers_label_name: 'Nombre Completo', careers_label_email: 'Correo Electrónico', careers_label_phone: 'Teléfono', careers_label_position: 'Puesto de Interés', careers_label_experience: 'Años de Experiencia', careers_label_message: 'Cuéntanos sobre ti', careers_label_resume: 'Currículum (opcional)',
+    careers_choose_file: 'Elegir Archivo', careers_submit: 'Enviar Solicitud',
+    careers_ph_name: 'Tu nombre completo', careers_ph_email: 'tu@correo.com', careers_ph_phone: '(xxx) xxx-xxxx', careers_ph_message: 'Habilidades relevantes, certificaciones, disponibilidad...',
+    careers_select_position: 'Selecciona un puesto', careers_select_experience: 'Selecciona experiencia',
+    careers_label_gender: 'Género', careers_label_languages: 'Idiomas que habla',
+    opt_gender_male: 'Masculino', opt_gender_female: 'Femenino',
+    opt_lang_en: 'Inglés', opt_lang_es: 'Español', opt_lang_both: 'Ambos (Inglés y Español)',
+    careers_select_default: 'Selecciona…',
+    contact_kicker: 'Trabajemos Juntos', contact_title: 'CONTÁCTANOS',
+    contact_start_kicker: 'Inicia una Conversación',
+    contact_label_hq: 'Sede', contact_label_phone_lbl: 'Teléfono', contact_label_email_lbl: 'Correo',
+    contact_thanks_title: 'MENSAJE ENVIADO', contact_thanks_copy: 'Hemos recibido tu consulta y te responderemos en breve.',
+    contact_send_another: 'Enviar Otro Mensaje',
+    contact_label_first: 'Nombre', contact_label_last: 'Apellido', contact_label_company: 'Empresa / EPC', contact_label_email: 'Correo Electrónico', contact_label_details: 'Detalles del Proyecto',
+    contact_ph_first: 'Juan', contact_ph_last: 'García', contact_ph_company: 'Nombre de la Empresa', contact_ph_email: 'juan@empresa.com', contact_ph_details: 'Capacidad MW, ubicación, calendario...',
+    contact_send: 'Enviar Mensaje →',
+    login_subtitle: 'Sunrise Construction & Development', login_email: 'CORREO', login_password: 'CONTRASEÑA',
+    login_email_ph: 'nombre@sunriseconstructionco.com', login_password_ph: 'Ingresa tu contraseña',
+    login_signin: 'Iniciar Sesión', login_accept_invite: 'ACEPTAR INVITACIÓN Y CREAR CUENTA', login_invite_only: 'Acceso solo por invitación · Personal y clientes',
+  },
+};
+function tt(k, lng){ var d = I18N[lng] || I18N.en; return (d[k] != null ? d[k] : (I18N.en[k] != null ? I18N.en[k] : k)); }
+
+// Language picker shown on first load before the site renders
+function LangPicker({ onPick }){
+  var BB={fontFamily:"'Bebas Neue',sans-serif"};
+  var NB={fontFamily:"'Barlow Condensed',sans-serif"};
   return (
-    <div ref={mountRef} style={{width:'100%',height:height,position:'relative',cursor:'grab'}}>
-      {!loaded && !error && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(249,115,22,.55)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,letterSpacing:'3px',textTransform:'uppercase'}}>Loading site model…</div>}
-      {error && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(249,115,22,.6)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,letterSpacing:'2px',textTransform:'uppercase'}}>Model unavailable</div>}
+    <div style={{position:'fixed',inset:0,zIndex:9999,background:'radial-gradient(120% 80% at 50% -10%, #14182a 0%, #0a0a14 55%, #06060f 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{maxWidth:480,width:'100%',textAlign:'center'}}>
+        <img src={LOGO_SRC} alt="SRC" style={{width:78,height:78,objectFit:'contain',marginBottom:18,filter:'drop-shadow(0 0 20px rgba(249,115,22,.3))'}}/>
+        <div style={{...BB,fontSize:34,letterSpacing:3,color:'#F5F0EB',marginBottom:6}}>SUNRISE</div>
+        <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#F97316',marginBottom:28}}>Construction & Development</div>
+        <div style={{...NB,fontSize:14,letterSpacing:'2px',textTransform:'uppercase',color:'#cfcabf',marginBottom:6}}>Choose Your Language</div>
+        <div style={{...NB,fontSize:13,color:'#8a857c',marginBottom:24,fontStyle:'italic'}}>Elija Su Idioma</div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <button onClick={function(){onPick('en')}} style={{background:'#F97316',color:'#1a1206',border:'none',padding:'16px 0',...NB,fontWeight:700,fontSize:16,letterSpacing:'3px',textTransform:'uppercase',cursor:'pointer',clipPath:'polygon(14px 0%,100% 0%,calc(100% - 14px) 100%,0% 100%)',boxShadow:'0 0 30px rgba(249,115,22,.3)'}}>English (US) →</button>
+          <button onClick={function(){onPick('es')}} style={{background:'transparent',color:'#F5F0EB',border:'1px solid rgba(245,240,235,.35)',padding:'16px 0',...NB,fontWeight:700,fontSize:16,letterSpacing:'3px',textTransform:'uppercase',cursor:'pointer',clipPath:'polygon(14px 0%,100% 0%,calc(100% - 14px) 100%,0% 100%)'}}>Español (México) →</button>
+        </div>
+      </div>
     </div>
-  )
+  );
 }
 
 // ── ICON COMPONENTS — no template literals inside JSX ────────────────────────
@@ -566,7 +602,37 @@ const fmt=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleDateString
 const fmtTime=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
 
 async function sGet(key){try{const r=await storage.get(key);return r?JSON.parse(r.value):null}catch(e){return null}}
-async function sSet(key,val){try{await storage.set(key,JSON.stringify(val))}catch(e){console.error('storage set error',e)}}
+async function sSet(key,val){try{await storage.set(key,JSON.stringify(val))}catch(e){console.error('storage set error',e)}auditChange(key)}
+
+// ═══ ACTIVITY / AUDIT LOG ═══
+const ACTIVITY_ENDPOINT='/.netlify/functions/activity'
+function _auditSend(ev){
+  try{
+    var u=(typeof window!=='undefined'&&window.__auditUser)||{}
+    var full=Object.assign({id:'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),ts:Date.now(),user:u.name||'Anonymous',email:u.email||'',role:u.role||'',tool:(typeof window!=='undefined'&&window.__auditTool)||''},ev)
+    try{var arr=JSON.parse(localStorage.getItem('act-queue')||'[]');arr.push(full);while(arr.length>120)arr.shift();localStorage.setItem('act-queue',JSON.stringify(arr))}catch(e){}
+    try{fetch(ACTIVITY_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({events:[full]}),keepalive:true}).catch(function(){})}catch(e){}
+    return full
+  }catch(e){return null}
+}
+if(typeof window!=='undefined'&&!window.__audit)window.__audit=_auditSend
+function logAudit(ev){try{if(typeof window!=='undefined'&&window.__audit)window.__audit(ev)}catch(e){}}
+function auditKeyInfo(key){
+  if(/^eq_/.test(key))return{tool:'equipment',detail:'Equipment Manager record updated'}
+  if(/^precon_/.test(key))return{tool:'precon',detail:'PreCon Controls data updated'}
+  if(/^tk_/.test(key))return{tool:'timekeeping',detail:'Timekeeping data updated'}
+  if(/^hr_/.test(key)||/^ss_/.test(key))return{tool:'hr',detail:'Screening Solutions data updated'}
+  if(key==='career_submissions')return{tool:'careers',detail:'Careers application submitted'}
+  if(key==='contact_submissions')return{tool:'crm',detail:'Contact / partner inquiry'}
+  if(/^portal_/.test(key))return{tool:'admin',detail:'Account / portal settings change'}
+  return{tool:'other',detail:'Data updated ('+key+')'}
+}
+var _auditTimers={}
+function auditChange(key){
+  if(!key||/^act-/.test(key))return
+  clearTimeout(_auditTimers[key])
+  _auditTimers[key]=setTimeout(function(){var info=auditKeyInfo(key);logAudit({type:'change',tool:info.tool,key:key,detail:info.detail})},1200)
+}
 
 const PROFILE_COLORS=['#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#1abc9c','#34495e','#f39c12']
 
@@ -1402,6 +1468,44 @@ async function saveProjects(projects) {
   try { await sSet("precon_bids", projects); } catch (e) { console.error(e); }
   syncBidsToFieldReporting(projects);
   syncBidsToCompliance(projects);
+  syncBidsToDocuments(projects);
+}
+
+// ── Document Portal helpers (shared by PreCon bid sync + Compliance upload) ──
+const DP_ENDPOINT = '/.netlify/functions/documents';
+const DP_CHUNK_BYTES = 3 * 1024 * 1024;
+function dpBlobToB64(blob){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(String(fr.result).split(',')[1]||'')};fr.onerror=rej;fr.readAsDataURL(blob)})}
+function dpProjectFolderId(bidId){return 'proj_'+bidId}
+async function dpEnsureFolder(folderId, name, parentId, createdBy){
+  try{
+    var f={id:folderId,name:name||'Project',parentId:parentId||null,createdAt:Date.now(),createdBy:createdBy||'auto'};
+    await fetch(DP_ENDPOINT+'?folder=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({folder:f}),keepalive:true});
+  }catch(e){}
+}
+async function dpUploadFile(file, folderId, uploadedBy){
+  if(!file||!folderId)return null;
+  try{
+    var id='d_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    var total=Math.max(1,Math.ceil(file.size/DP_CHUNK_BYTES));
+    for(var i=0;i<total;i++){
+      var slice=file.slice(i*DP_CHUNK_BYTES,(i+1)*DP_CHUNK_BYTES);
+      var data=await dpBlobToB64(slice);
+      var r=await fetch(DP_ENDPOINT+'?file=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,kind:'orig',index:i,data:data})});
+      if(!r.ok)throw new Error('chunk '+i);
+    }
+    var isPdf=(file.type||'').indexOf('pdf')>=0||/\.pdf$/i.test(file.name);
+    var doc={id:id,type:isPdf?'pdf':'file',name:file.name,folderId:folderId,uploadedBy:uploadedBy||'',uploadedAt:Date.now(),mime:file.type||'application/octet-stream',size:file.size,chunks:total};
+    await fetch(DP_ENDPOINT+'?upsert=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({doc:doc}),keepalive:true});
+    return doc;
+  }catch(e){console.error('dpUploadFile error:',e);return null;}
+}
+function syncBidsToDocuments(bids){
+  (bids||[]).forEach(function(bid){
+    if(!bid||bid.archived)return;
+    var p=bid.params||{};
+    var name=p.projectName||('Bid '+bid.id);
+    dpEnsureFolder(dpProjectFolderId(bid.id), name, null, 'PreCon');
+  });
 }
 
 function syncBidsToFieldReporting(bids) {
@@ -2568,6 +2672,13 @@ function ComplianceCenter({ onExit }) {
       var contracts = (proj.contracts || []).concat([{ id: cuid(), name: file.name, date: new Date().toISOString(), size: file.size, itemCount: newItems.length }]);
       updateField('contracts', contracts);
       saveItems(selId, items.concat(newItems));
+      // ── auto-file the uploaded contract into the project folder in Document Portal ──
+      if (proj.bidId) {
+        try {
+          await dpEnsureFolder(dpProjectFolderId(proj.bidId), proj.name || ('Project '+proj.bidId), null, 'Compliance');
+          dpUploadFile(file, dpProjectFolderId(proj.bidId), 'Compliance').then(function(){}).catch(function(){});
+        } catch (e) { console.error('Document Portal upload failed:', e); }
+      }
     } catch(e) { setError(e.message); }
     setScanning(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -2780,147 +2891,706 @@ function ComplianceCenter({ onExit }) {
 // ═══════════════════════════════════════════════════════════════════════
 //  CRM MODULE
 // ═══════════════════════════════════════════════════════════════════════
-function CRMModule({ onExit }) {
-  const [tab, setTab] = useState('applicants');
-  const [applicants, setApplicants] = useState([]);
-  const [partners, setPartners] = useState([]);
+const CRM_ENDPOINT='/.netlify/functions/submissions';
+const CRM_STATUSES=['New','Contacted','In Progress','Closed'];
+function fmtCRMDate(ts){if(!ts)return'—';var d=new Date(ts);if(isNaN(d.getTime()))return'—';return d.toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+function isoDay(ts){var d=new Date(ts);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function daysAgoTs(n){return Date.now()-n*86400000}
+
+function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
+  const [tab, setTab] = useState('applicants'); // applicants | partners
+  const [items, setItems] = useState([]); // unified, kind:'career'|'partner'
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mob, setMob] = useState(window.innerWidth < 768);
-  const BB = {fontFamily:"'Bebas Neue',sans-serif"};
-  const NB = {fontFamily:"'Barlow Condensed',sans-serif"};
-  const A = '#F97316';
-  const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.08)';
-  const STATUSES = ['New','Contacted','In Progress','Closed'];
+  const [sortBy, setSortBy] = useState('newest'); // newest|oldest|name_asc|name_desc|status|position|company
+  const [fStatus, setFStatus] = useState('');
+  const [fPosition, setFPosition] = useState('');
+  const [fExperience, setFExperience] = useState('');
+  const [fRange, setFRange] = useState(''); // ''|7|30|90
+  const [fStage, setFStage] = useState(''); // ''|contacted|interested|notInterested|unavailable|seekingNow
+  const [openId, setOpenId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [draftNotes, setDraftNotes] = useState('');
+  const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.08)';
+  const userName=(portalUser&&portalUser.name)||'Admin';
 
+  useEffect(function(){var h=function(){setMob(window.innerWidth<768)};window.addEventListener('resize',h);return function(){window.removeEventListener('resize',h)}},[]);
+
+  // load: cloud first, fall back to local sSet mirrors
   useEffect(function(){
-    var h = function(){ setMob(window.innerWidth < 768); };
-    window.addEventListener('resize', h);
-    return function(){ window.removeEventListener('resize', h); };
-  },[]);
-
-  useEffect(function(){
-    sGet('career_submissions').then(function(d){ setApplicants(d||[]); });
-    sGet('contact_submissions').then(function(d){ setPartners(d||[]); });
-  },[]);
-
-  function updateStatus(type, id, status) {
-    if (type === 'applicant') {
-      var updated = applicants.map(function(a){ return a.id===id ? Object.assign({},a,{status:status}) : a; });
-      setApplicants(updated);
-      sSet('career_submissions', updated);
-    } else {
-      var updated2 = partners.map(function(p){ return p.id===id ? Object.assign({},p,{status:status}) : p; });
-      setPartners(updated2);
-      sSet('contact_submissions', updated2);
+    var alive=true;setLoading(true);
+    function localFallback(){
+      Promise.all([sGet('career_submissions'),sGet('contact_submissions')]).then(function(r){
+        if(!alive)return;
+        var career=(r[0]||[]).map(function(x){return Object.assign({kind:'career',status:x.status||'New',log:x.log||[{ts:new Date(x.submittedAt||Date.now()).getTime(),action:'submitted'}]},x)});
+        var partner=(r[1]||[]).map(function(x){return Object.assign({kind:'partner',status:x.status||'New',log:x.log||[{ts:new Date(x.submittedAt||Date.now()).getTime(),action:'submitted'}]},x)});
+        setItems(career.concat(partner));setLoading(false);
+      });
     }
+    fetch(CRM_ENDPOINT,{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+      if(!alive)return;
+      if(j&&Array.isArray(j.items)&&j.items.length){setItems(j.items.map(function(x){return Object.assign({status:x.status||'New',log:x.log||[]},x)}));setLoading(false)}
+      else localFallback();
+    }).catch(localFallback);
+    return function(){alive=false};
+  },[]);
+
+  function patchItem(id, patch){
+    var by=userName;
+    function describe(p){
+      if(p.status)return 'status → '+p.status;
+      if(p.stages&&p.stages.hired)return 'HIRED → pre-employment screening queued';
+      if(p.hiredAt==='')return 'unhired';
+      if(p.stages){var on=Object.keys(p.stages).filter(function(k){return p.stages[k]}).join(', ');return on?'stage → '+on:'stage cleared'}
+      if(p.unavailableUntil!==undefined)return p.unavailableUntil?('unavailable until '+p.unavailableUntil):'available now';
+      if(p.payAmount!==undefined)return p.payAmount?('pay rate → $'+p.payAmount):'pay cleared';
+      if(p.notes!==undefined)return 'admin note updated';
+      return 'updated';
+    }
+    setItems(function(prev){return prev.map(function(x){if(x.id!==id)return x;var next=Object.assign({},x,patch);next.log=(Array.isArray(x.log)?x.log:[]).concat([{ts:Date.now(),action:describe(patch),by:by}]);return next})});
+    try{fetch(CRM_ENDPOINT+'?update=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,patch:patch,by:by}),keepalive:true}).catch(function(){})}catch(e){}
+    // local mirror so old fallback path stays in sync
+    var keyMap={career:'career_submissions',partner:'contact_submissions'};
+    var kind=(items.find(function(x){return x.id===id})||{}).kind;
+    var lsKey=keyMap[kind];if(lsKey){sGet(lsKey).then(function(prev){var arr=(prev||[]).map(function(x){return x.id===id?Object.assign({},x,patch):x});sSet(lsKey,arr)})}
+    logAudit({type:'change',tool:'crm',detail:'CRM '+(kind==='career'?'applicant':'partner')+' updated'+(patch.status?(' → '+patch.status):'')});
   }
 
-  var cardStyle = {background:CARD,border:'1px solid '+BORDER,padding:mob?'16px 14px':'20px 24px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'};
-  var labelStyle = {...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:4,display:'block'};
+  // derived lists by tab
+  var byTab=items.filter(function(x){return tab==='applicants'?x.kind==='career':x.kind==='partner'});
 
-  var filteredApplicants = applicants.filter(function(a){
-    if (!search) return true;
-    var s = search.toLowerCase();
-    return (a.name||'').toLowerCase().indexOf(s)>=0 || (a.email||'').toLowerCase().indexOf(s)>=0 || (a.position||'').toLowerCase().indexOf(s)>=0;
+  // option lists for filters
+  var positionOpts=Array.from(new Set(byTab.map(function(x){return x.position}).filter(Boolean))).sort();
+  var expOpts=Array.from(new Set(byTab.map(function(x){return x.experience}).filter(Boolean))).sort();
+
+  // apply filters + search
+  var filtered=byTab.filter(function(x){
+    if(fStatus&&((x.status||'New')!==fStatus))return false;
+    if(tab==='applicants'){
+      if(fPosition&&x.position!==fPosition)return false;
+      if(fExperience&&x.experience!==fExperience)return false;
+      if(fStage){
+        var st=x.stages||{};
+        if(fStage==='unavailable'){if(!x.unavailableUntil)return false}
+        else if(!st[fStage])return false;
+      }
+    }
+    if(fRange){var cut=daysAgoTs(parseInt(fRange,10));if(new Date(x.submittedAt||0).getTime()<cut)return false}
+    if(search){
+      var s=search.toLowerCase();
+      var hay=[x.name,x.firstName,x.lastName,x.email,x.phone,x.company,x.position,x.experience,x.gender,x.languages,x.message,x.details,x.notes].filter(Boolean).join(' ').toLowerCase();
+      if(hay.indexOf(s)<0)return false;
+    }
+    return true;
   });
 
-  var filteredPartners = partners.filter(function(p){
-    if (!search) return true;
-    var s = search.toLowerCase();
-    return (p.firstName||'').toLowerCase().indexOf(s)>=0 || (p.lastName||'').toLowerCase().indexOf(s)>=0 || (p.company||'').toLowerCase().indexOf(s)>=0 || (p.email||'').toLowerCase().indexOf(s)>=0;
+  // sort
+  function nameOf(x){return tab==='applicants'?(x.name||''):(((x.firstName||'')+' '+(x.lastName||'')).trim())}
+  filtered.sort(function(a,b){
+    if(sortBy==='newest')return new Date(b.submittedAt||0)-new Date(a.submittedAt||0);
+    if(sortBy==='oldest')return new Date(a.submittedAt||0)-new Date(b.submittedAt||0);
+    if(sortBy==='name_asc')return nameOf(a).localeCompare(nameOf(b));
+    if(sortBy==='name_desc')return nameOf(b).localeCompare(nameOf(a));
+    if(sortBy==='status')return (a.status||'New').localeCompare(b.status||'New');
+    if(sortBy==='position')return (a.position||'').localeCompare(b.position||'');
+    if(sortBy==='company')return (a.company||'').localeCompare(b.company||'');
+    return 0;
   });
+
+  function exportExcel(){
+    var rows;
+    if(tab==='applicants'){
+      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',Hired:sg.hired?'Y':'',HiredAt:x.hiredAt?fmtCRMDate(x.hiredAt):'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',ApplicantMessage:x.message||'',ID:x.id||''}});
+    }else{
+      rows=filtered.map(function(x){return {'First Name':x.firstName||'','Last Name':x.lastName||'',Company:x.company||'',Email:x.email||'',Phone:x.phone||'',Status:x.status||'New',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Details:x.details||'',ID:x.id||''}});
+    }
+    var wb=XLSX.utils.book_new();var ws=XLSX.utils.json_to_sheet(rows);
+    var maxColWidths={};rows.forEach(function(r){Object.keys(r).forEach(function(k){var L=Math.min(60,Math.max((maxColWidths[k]||k.length),String(r[k]||'').length));maxColWidths[k]=L})});
+    ws['!cols']=Object.keys(rows[0]||{}).map(function(k){return {wch:maxColWidths[k]+2}});
+    XLSX.utils.book_append_sheet(wb,ws,tab==='applicants'?'Applicants':'Partners');
+    var d=new Date();var stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    XLSX.writeFile(wb,(tab==='applicants'?'Applicants':'Partners')+'_'+stamp+'.xlsx');
+    logAudit({type:'action',tool:'crm',detail:'Exported '+rows.length+' '+(tab==='applicants'?'applicants':'partners')+' to Excel'});
+  }
+
+  function exportPDF(){
+    var doc=new jsPDF({orientation:'portrait',unit:'pt',format:'letter'});
+    var M=40;var pw=doc.internal.pageSize.getWidth();var ph=doc.internal.pageSize.getHeight();
+    var title=(tab==='applicants'?'CAREER APPLICANTS':'PARTNER INQUIRIES')+' — '+filtered.length+' record'+(filtered.length===1?'':'s');
+    doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(20,20,28);doc.text(title,M,M+6);
+    doc.setDrawColor(249,115,22);doc.setLineWidth(2.5);doc.line(M,M+14,M+260,M+14);
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(120,120,120);
+    doc.text('SUNRISE CONSTRUCTION & DEVELOPMENT  ·  Exported '+fmtCRMDate(Date.now())+'  ·  by '+userName,M,M+28);
+    var y=M+52;
+    filtered.forEach(function(x,idx){
+      var lines=[];
+      if(tab==='applicants'){
+        var sg=x.stages||{};
+        var langMap={en:'English',es:'Spanish',both:'English & Spanish'};
+        var stagesOn=[];
+        if(sg.contacted)stagesOn.push('Contacted');
+        if(sg.interested)stagesOn.push('Interested');
+        if(sg.notInterested)stagesOn.push('Not Interested');
+        if(x.unavailableUntil)stagesOn.push('Unavailable until '+x.unavailableUntil);
+        if(sg.seekingNow)stagesOn.push('Seeking work now');
+        if(sg.hired)stagesOn.push('HIRED'+(x.hiredAt?' ('+new Date(x.hiredAt).toLocaleDateString()+')':''));
+        lines.push({k:'Name',v:x.name||'—'});
+        lines.push({k:'Email',v:x.email||'—'});
+        lines.push({k:'Phone',v:x.phone||'—'});
+        lines.push({k:'Position',v:x.position||'—'});
+        lines.push({k:'Experience',v:x.experience||'—'});
+        if(x.gender)lines.push({k:'Gender',v:x.gender});
+        if(x.languages)lines.push({k:'Languages',v:langMap[x.languages]||x.languages});
+        lines.push({k:'Status',v:x.status||'New'});
+        if(stagesOn.length)lines.push({k:'Hiring Stage',v:stagesOn.join(', ')});
+        if(x.payAmount)lines.push({k:'Pay Rate',v:'$'+x.payAmount});
+        lines.push({k:'Submitted',v:fmtCRMDate(x.submittedAt)});
+        if(x.resume)lines.push({k:'Resume',v:x.resume});
+        if(x.message)lines.push({k:'Applicant Message',v:x.message});
+        if(x.notes)lines.push({k:'Admin Notes',v:x.notes});
+      }else{
+        lines.push({k:'Name',v:((x.firstName||'')+' '+(x.lastName||'')).trim()||'—'});
+        lines.push({k:'Company',v:x.company||'—'});
+        lines.push({k:'Email',v:x.email||'—'});
+        if(x.phone)lines.push({k:'Phone',v:x.phone});
+        lines.push({k:'Status',v:x.status||'New'});
+        lines.push({k:'Submitted',v:fmtCRMDate(x.submittedAt)});
+        if(x.details)lines.push({k:'Project Details',v:x.details});
+        if(x.notes)lines.push({k:'Admin Notes',v:x.notes});
+      }
+      if(Array.isArray(x.log)&&x.log.length){lines.push({k:'Activity',v:x.log.slice(-4).map(function(e){return fmtCRMDate(e.ts)+' — '+(e.action||'')+(e.by?' ('+e.by+')':'')}).join('  |  ')})}
+      // measure block
+      doc.setFontSize(10);
+      var blockH=18;
+      lines.forEach(function(l){var wrap=doc.splitTextToSize(String(l.v),pw-M*2-80);blockH+=Math.max(12,wrap.length*12)+2});
+      if(y+blockH+12>ph-M){doc.addPage();y=M}
+      // header bar
+      doc.setFillColor(249,115,22);doc.rect(M,y,4,blockH-6,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(20,20,28);
+      doc.text('#'+(idx+1)+'  ·  '+(tab==='applicants'?(x.name||''):(((x.firstName||'')+' '+(x.lastName||'')).trim())),M+12,y+10);
+      var ly=y+24;
+      lines.forEach(function(l){
+        doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(120,120,120);doc.text(l.k.toUpperCase(),M+12,ly);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(30,30,40);
+        var wrap=doc.splitTextToSize(String(l.v),pw-M*2-80);doc.text(wrap,M+92,ly);
+        ly+=Math.max(12,wrap.length*12)+2;
+      });
+      y=ly+12;doc.setDrawColor(230);doc.setLineWidth(.5);doc.line(M,y-6,pw-M,y-6);
+    });
+    if(filtered.length===0){doc.setFontSize(12);doc.setTextColor(120,120,120);doc.text('No records match the current filters.',M,y)}
+    var d=new Date();var stamp=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    doc.save((tab==='applicants'?'Applicants':'Partners')+'_'+stamp+'.pdf');
+    logAudit({type:'action',tool:'crm',detail:'Exported '+filtered.length+' '+(tab==='applicants'?'applicants':'partners')+' to PDF'});
+  }
+
+  function clearFilters(){setSearch('');setSortBy('newest');setFStatus('');setFPosition('');setFExperience('');setFRange('');setFStage('')}
+
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'14px':'18px 22px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'};
+  var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:4,display:'block'};
+  var selStyle={...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer',outline:'none'};
+  var counts={applicants:items.filter(function(x){return x.kind==='career'}).length,partners:items.filter(function(x){return x.kind==='partner'}).length};
 
   return (
-    <div style={{minHeight:'100vh',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
       <div style={{maxWidth:1200,margin:'0 auto'}}>
-        <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28,transition:'opacity .2s'}} onClick={onExit} onMouseEnter={function(e){e.currentTarget.style.opacity='.7'}} onMouseLeave={function(e){e.currentTarget.style.opacity='1'}}>
-          ← Back to Dashboard
+        <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:20,transition:'opacity .2s'}} onClick={onExit}>← Back to Dashboard</div>
+        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:4}}>
+          <div style={{...BB,fontSize:mob?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2}}>CRM</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <button onClick={exportPDF} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:filtered.length?A:'rgba(249,115,22,.3)',color:filtered.length?'#1a1206':'#888',border:'none',cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export PDF</button>
+            <button onClick={exportExcel} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',color:filtered.length?A:'#888',border:'1px solid '+(filtered.length?A:'rgba(0,0,0,.15)'),cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export Excel</button>
+          </div>
         </div>
-        <div style={{...BB,fontSize:mob?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,marginBottom:4}}>CRM</div>
-        <div style={{...NB,fontSize:13,color:MID,letterSpacing:'1.5px',marginBottom:28}}>Applicant & partner inquiry tracking</div>
+        <div style={{...NB,fontSize:13,color:MID,letterSpacing:'1.5px',marginBottom:24}}>Cloud-saved applicant & partner inquiry tracking · auto-sorted most-recent · timestamped activity log</div>
 
-        <div style={{display:'flex',gap:0,marginBottom:24,borderBottom:'1px solid '+BORDER}}>
-          {[{k:'applicants',l:'Applicants ('+applicants.length+')'},{k:'partners',l:'Partners ('+partners.length+')'}].map(function(t){
-            return <button key={t.k} onClick={function(){setTab(t.k);setSearch('')}} style={{padding:mob?'8px 14px':'10px 20px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,transition:'all .2s',background:tab===t.k?A:'transparent',color:tab===t.k?'#fff':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>;
+        <div style={{display:'flex',gap:0,marginBottom:18,borderBottom:'1px solid '+BORDER}}>
+          {[{k:'applicants',l:'Applicants Looking For Work ('+counts.applicants+')'},{k:'partners',l:'Clients Reaching Out ('+counts.partners+')'}].map(function(t){
+            return <button key={t.k} onClick={function(){setTab(t.k);clearFilters();setOpenId(null)}} style={{padding:mob?'9px 12px':'11px 18px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,background:tab===t.k?A:'transparent',color:tab===t.k?'#fff':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>
           })}
         </div>
 
-        <div style={{marginBottom:20}}>
-          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search by name, email, or company..." style={{width:'100%',maxWidth:400,padding:'10px 14px',background:CARD,border:'1px solid '+BORDER,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
+        <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'minmax(220px,1fr) repeat(auto-fit,minmax(150px,1fr))',gap:10,marginBottom:8}}>
+          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search name, email, phone, company, position…" style={{padding:'10px 14px',background:CARD,border:'1px solid '+BORDER,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
+          <select value={sortBy} onChange={function(e){setSortBy(e.target.value)}} style={selStyle}>
+            <option value="newest">Sort: Most Recent</option>
+            <option value="oldest">Sort: Oldest First</option>
+            <option value="name_asc">Sort: Name A → Z</option>
+            <option value="name_desc">Sort: Name Z → A</option>
+            <option value="status">Sort: Status</option>
+            {tab==='applicants'&&<option value="position">Sort: Position</option>}
+            {tab==='partners'&&<option value="company">Sort: Company</option>}
+          </select>
+          <select value={fStatus} onChange={function(e){setFStatus(e.target.value)}} style={selStyle}>
+            <option value="">All Statuses</option>
+            {CRM_STATUSES.map(function(s){return <option key={s} value={s}>{s}</option>})}
+          </select>
+          {tab==='applicants'&&<select value={fPosition} onChange={function(e){setFPosition(e.target.value)}} style={selStyle}>
+            <option value="">All Positions</option>
+            {positionOpts.map(function(p){return <option key={p} value={p}>{p}</option>})}
+          </select>}
+          {tab==='applicants'&&expOpts.length>0&&<select value={fExperience} onChange={function(e){setFExperience(e.target.value)}} style={selStyle}>
+            <option value="">All Experience</option>
+            {expOpts.map(function(p){return <option key={p} value={p}>{p}</option>})}
+          </select>}
+          {tab==='applicants'&&<select value={fStage} onChange={function(e){setFStage(e.target.value)}} style={selStyle}>
+            <option value="">All Stages</option>
+            <option value="contacted">Contacted</option>
+            <option value="interested">Interested</option>
+            <option value="notInterested">Not Interested</option>
+            <option value="unavailable">Won't be available until…</option>
+            <option value="seekingNow">Seeking work now</option>
+            <option value="hired">Hired</option>
+          </select>}
+          <select value={fRange} onChange={function(e){setFRange(e.target.value)}} style={selStyle}>
+            <option value="">All Time</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div style={{...NB,fontSize:12,color:MID,marginBottom:18,display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+          <div>Showing <strong style={{color:TEXT}}>{filtered.length}</strong> of {byTab.length} {tab==='applicants'?'applicants':'partner inquiries'}{loading?' · loading…':''}</div>
+          {(search||fStatus||fPosition||fExperience||fRange||fStage||sortBy!=='newest')&&<div onClick={clearFilters} style={{color:A,cursor:'pointer',textDecoration:'underline'}}>Clear filters</div>}
         </div>
 
-        {tab==='applicants' && (
-          <div>
-            {filteredApplicants.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:DIM}}><div style={{...BB,fontSize:24,marginBottom:8}}>NO APPLICANTS</div><div style={{...NB,fontSize:13}}>Career applications from the landing page will appear here.</div></div>
-            ) : (
-              <div style={{display:'grid',gap:12}}>
-                {filteredApplicants.sort(function(a,b){return new Date(b.submittedAt)-new Date(a.submittedAt)}).map(function(a){
-                  var st = a.status || 'New';
-                  var stColor = st==='Closed'?DIM:st==='Contacted'?'#3b82f6':st==='In Progress'?'#22c55e':A;
-                  return (
-                    <div key={a.id} style={cardStyle}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:mob?'flex-start':'center',flexDirection:mob?'column':'row',gap:mob?10:0,marginBottom:12}}>
-                        <div>
-                          <div style={{...BB,fontSize:20,letterSpacing:1}}>{a.name}</div>
-                          <div style={{...NB,fontSize:12,color:MID}}>{a.email} {a.phone && '· '+a.phone}</div>
-                        </div>
-                        <div style={{display:'flex',alignItems:'center',gap:10}}>
-                          <span style={{...NB,fontSize:10,letterSpacing:'1px',padding:'4px 10px',background:stColor+'18',color:stColor,fontWeight:600}}>{st.toUpperCase()}</span>
-                          <select value={st} onChange={function(e){updateStatus('applicant',a.id,e.target.value)}} style={{...NB,fontSize:11,padding:'4px 8px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer'}}>
-                            {STATUSES.map(function(s){return <option key={s} value={s}>{s}</option>})}
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1fr 1fr 1fr',gap:10}}>
-                        <div><span style={labelStyle}>Position</span><div style={{...NB,fontSize:13}}>{a.position||'—'}</div></div>
-                        <div><span style={labelStyle}>Experience</span><div style={{...NB,fontSize:13}}>{a.experience||'—'}</div></div>
-                        <div><span style={labelStyle}>Submitted</span><div style={{...NB,fontSize:13}}>{a.submittedAt?new Date(a.submittedAt).toLocaleDateString():' —'}</div></div>
-                      </div>
-                      {a.message && <div style={{marginTop:10}}><span style={labelStyle}>Message</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5}}>{a.message}</div></div>}
+        {filtered.length===0?(
+          <div style={{textAlign:'center',padding:60,color:DIM,background:CARD,border:'1px solid '+BORDER}}>
+            <div style={{...BB,fontSize:24,marginBottom:8}}>{byTab.length===0?'NO '+(tab==='applicants'?'APPLICANTS':'PARTNER INQUIRIES')+' YET':'NO MATCHES'}</div>
+            <div style={{...NB,fontSize:13}}>{byTab.length===0?(tab==='applicants'?'Career applications from the landing page will appear here automatically.':'Partner inquiries from the landing page contact form will appear here.'):'Adjust filters to see more.'}</div>
+          </div>
+        ):(
+          <div style={{display:'grid',gap:12}}>
+            {filtered.map(function(x){
+              var st=x.status||'New';
+              var stColor=st==='Closed'?DIM:st==='Contacted'?'#3b82f6':st==='In Progress'?'#22c55e':A;
+              var isApp=x.kind==='career';
+              var displayName=isApp?(x.name||'—'):((((x.firstName||'')+' '+(x.lastName||'')).trim())||'—');
+              return (
+                <div key={x.id} style={cardStyle}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:mob?'flex-start':'center',flexDirection:mob?'column':'row',gap:mob?10:0,marginBottom:10}}>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{...BB,fontSize:20,letterSpacing:1}}>{displayName}</div>
+                      <div style={{...NB,fontSize:12,color:MID}}>{x.email||'—'}{x.phone?' · '+x.phone:''}{!isApp&&x.company?' · '+x.company:''}</div>
+                      <div style={{...NB,fontSize:11,color:DIM,marginTop:2}}>{fmtCRMDate(x.submittedAt)}</div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <span style={{...NB,fontSize:10,letterSpacing:'1px',padding:'4px 10px',background:stColor+'1f',color:stColor,fontWeight:700}}>{st.toUpperCase()}</span>
+                      <select value={st} onChange={function(e){patchItem(x.id,{status:e.target.value})}} style={{...NB,fontSize:11,padding:'4px 8px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer'}}>
+                        {CRM_STATUSES.map(function(s){return <option key={s} value={s}>{s}</option>})}
+                      </select>
+                      <button onClick={function(){setOpenId(openId===x.id?null:x.id)}} style={{...NB,fontSize:11,padding:'5px 10px',background:'transparent',border:'1px solid '+BORDER,color:MID,cursor:'pointer'}}>{openId===x.id?'Hide log':'View log ('+((x.log||[]).length)+')'}</button>
+                    </div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:mob?'1fr':(isApp?'1fr 1fr 1fr 1fr 1fr':'1fr 1fr'),gap:10}}>
+                    {isApp?(<>
+                      <div><span style={labelStyle}>Position</span><div style={{...NB,fontSize:13}}>{x.position||'—'}</div></div>
+                      <div><span style={labelStyle}>Experience</span><div style={{...NB,fontSize:13}}>{x.experience||'—'}</div></div>
+                      <div><span style={labelStyle}>Gender</span><div style={{...NB,fontSize:13,textTransform:'capitalize'}}>{x.gender||'—'}</div></div>
+                      <div><span style={labelStyle}>Languages</span><div style={{...NB,fontSize:13}}>{x.languages==='en'?'English':x.languages==='es'?'Spanish':x.languages==='both'?'English & Spanish':'—'}</div></div>
+                      <div><span style={labelStyle}>Resume</span><div style={{...NB,fontSize:13}}>{x.resume||'—'}</div></div>
+                    </>):(<>
+                      <div><span style={labelStyle}>Company / EPC</span><div style={{...NB,fontSize:13}}>{x.company||'—'}</div></div>
+                      <div><span style={labelStyle}>Phone</span><div style={{...NB,fontSize:13}}>{x.phone||'—'}</div></div>
+                    </>)}
+                  </div>
+                  {(isApp?x.message:x.details)&&<div style={{marginTop:10}}><span style={labelStyle}>{isApp?'Applicant Message':'Project Details'}</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5,whiteSpace:'pre-wrap'}}>{isApp?x.message:x.details}</div></div>}
+                  {isApp&&(function(){
+                    var sg=x.stages||{};
+                    var hired=!!sg.hired;
+                    var STAGES_DEF=[{k:'contacted',l:'Contacted'},{k:'interested',l:'Interested'},{k:'notInterested',l:'Not Interested'},{k:'unavailable',l:"Won't be available until…"},{k:'seekingNow',l:'Seeking work now'}];
+                    function toggle(k){
+                      if(k==='unavailable'){
+                        if(x.unavailableUntil){patchItem(x.id,{unavailableUntil:''})}
+                        else{var d=window.prompt('Available starting (YYYY-MM-DD):','');if(d===null)return;patchItem(x.id,{unavailableUntil:d})}
+                        return;
+                      }
+                      var ns=Object.assign({},sg);ns[k]=!ns[k];
+                      if(k==='interested'&&ns.interested)ns.notInterested=false;
+                      if(k==='notInterested'&&ns.notInterested)ns.interested=false;
+                      patchItem(x.id,{stages:ns});
+                    }
+                    function hireToggle(){
+                      if(hired){
+                        if(!window.confirm('Unmark '+(x.name||'this applicant')+' as hired? (This will not remove them from Screening Solutions or their portal account.)'))return;
+                        var ns=Object.assign({},sg);delete ns.hired;
+                        patchItem(x.id,{stages:ns,hiredAt:''});
+                        return;
+                      }
+                      if(!window.confirm('Mark '+(x.name||'this applicant')+' as HIRED?\n\nThis will:\n  1. Queue a pre-employment drug screening (due within 7 days) in Screening Solutions\n  2. Send an onboarding portal invite to '+(x.email||'their email')+'\n     (they will upload SSN + ID and sign the handbook)'))return;
+                      var hiredAt=Date.now();
+                      var empId=x.hiredEmployeeId||('HIRE-'+(x.id||'').slice(0,8).toUpperCase());
+                      var ns=Object.assign({},sg,{hired:true,contacted:true});
+                      patchItem(x.id,{stages:ns,hiredAt:new Date(hiredAt).toISOString(),hiredEmployeeId:empId});
+                      try{
+                        var q=JSON.parse(localStorage.getItem('crm_pending_hires')||'[]');
+                        if(!q.some(function(it){return it.sourceCrmId===x.id})){
+                          q.push({sourceCrmId:x.id,employeeId:empId,name:x.name||'',email:x.email||'',phone:x.phone||'',position:x.position||'Staff',gender:x.gender||'',languages:x.languages||'',payAmount:x.payAmount||'',hiredAt:hiredAt});
+                          localStorage.setItem('crm_pending_hires',JSON.stringify(q));
+                        }
+                      }catch(e){}
+                      if(typeof sendOnboardingInvite==='function') sendOnboardingInvite(x);
+                      logAudit({type:'change',tool:'crm',detail:'Hired '+(x.name||'applicant')+' → screening + onboarding invite sent'});
+                    }
+                    function resendInvite(){
+                      if(typeof sendOnboardingInvite==='function') sendOnboardingInvite(x);
+                    }
+                    return (
+                      <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                          <span style={labelStyle}>Hiring Stage</span>
+                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#16a34a',color:'#fff',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
+                          {hired&&<button onClick={resendInvite} style={{marginLeft:'auto',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'5px 12px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(7px 0%,100% 0%,calc(100% - 7px) 100%,0% 100%)'}}>Resend Onboarding Invite</button>}
+                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
+                        </div>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
+                          {STAGES_DEF.map(function(s){
+                            var on=(s.k==='unavailable')?!!x.unavailableUntil:!!sg[s.k];
+                            var labelText=s.l+(s.k==='unavailable'&&x.unavailableUntil?(' '+x.unavailableUntil):'');
+                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),background:on?'rgba(249,115,22,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
+                              <input type="checkbox" checked={on} onChange={function(){toggle(s.k)}} style={{accentColor:A,margin:0}}/>{labelText}
+                            </label>
+                          })}
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1fr 2fr',gap:10,marginTop:12}}>
+                          <div>
+                            <span style={labelStyle}>Pay Rate ($)</span>
+                            <input type="text" defaultValue={x.payAmount||''} placeholder={sg.contacted?'e.g. 28/hr or 65,000':'(set after contact)'} onBlur={function(e){var v=e.target.value.trim();if(v!==(x.payAmount||''))patchItem(x.id,{payAmount:v})}} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none'}}/>
+                          </div>
+                          <div>
+                            <span style={labelStyle}>Admin Notes</span>
+                            <textarea defaultValue={x.notes||''} placeholder="Internal notes (not visible to applicant)…" onBlur={function(e){var v=e.target.value;if(v!==(x.notes||''))patchItem(x.id,{notes:v})}} rows={2} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none',resize:'vertical'}}/>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {!isApp&&(
+                    <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
+                      <span style={labelStyle}>Admin Notes</span>
+                      <textarea defaultValue={x.notes||''} placeholder="Internal notes about this partner inquiry…" onBlur={function(e){var v=e.target.value;if(v!==(x.notes||''))patchItem(x.id,{notes:v})}} rows={2} style={{...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,width:'100%',outline:'none',resize:'vertical',marginTop:4}}/>
+                    </div>
+                  )}
+                  {openId===x.id&&<div style={{marginTop:12,paddingTop:10,borderTop:'1px solid '+BORDER}}>
+                    <span style={labelStyle}>Activity Log</span>
+                    {(x.log||[]).slice().reverse().map(function(e,ei){return <div key={ei} style={{...NB,fontSize:12,color:MID,padding:'4px 0'}}><span style={{color:TEXT,fontWeight:600}}>{e.action||'—'}</span> · {fmtCRMDate(e.ts)}{e.by?' · '+e.by:''}</div>})}
+                    {(!x.log||!x.log.length)&&<div style={{...NB,fontSize:12,color:DIM}}>No activity recorded yet.</div>}
+                  </div>}
+                </div>
+              );
+            })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
 
-        {tab==='partners' && (
+const ONBOARDING_ENDPOINT='/.netlify/functions/onboarding';
+const HANDBOOK_TEXT=`SUNRISE CONSTRUCTION & DEVELOPMENT — EMPLOYEE HANDBOOK ACKNOWLEDGEMENT
+
+By signing below I acknowledge that I have received, read, and understand the Sunrise Construction & Development employee handbook and agree to abide by its policies, including but not limited to:
+
+  · Safety, PPE, and site-conduct requirements (including ISNetworld compliance and stop-work authority)
+  · Drug-free workplace and pre-employment / random drug screening
+  · Anti-harassment, equal opportunity, and respectful workplace expectations
+  · Attendance, timekeeping, and overtime procedures
+  · Confidentiality of client, project, and personnel information
+  · At-will employment — either party may terminate the employment relationship at any time
+
+I understand that violations of these policies may result in disciplinary action up to and including termination. I confirm the documents I uploaded (Social Security card and government-issued ID) are accurate copies of my own valid identification.`;
+
+function scalePhoto(file, maxDim, quality){
+  return new Promise(function(resolve, reject){
+    var img = new Image(); var src = URL.createObjectURL(file);
+    img.onload = function(){
+      var w = img.naturalWidth||1, h = img.naturalHeight||1;
+      var f = Math.min(1, (maxDim||1400) / Math.max(w,h));
+      w = Math.max(1, Math.round(w*f)); h = Math.max(1, Math.round(h*f));
+      var c = document.createElement('canvas'); c.width=w; c.height=h;
+      try { c.getContext('2d').drawImage(img,0,0,w,h); var url = c.toDataURL('image/jpeg', quality||0.82); URL.revokeObjectURL(src); resolve(url); }
+      catch(e){ URL.revokeObjectURL(src); reject(e); }
+    };
+    img.onerror = function(){ URL.revokeObjectURL(src); reject(new Error('image load failed')); };
+    img.src = src;
+  });
+}
+
+function OnboardingPage({ portalUser, onComplete, onExit }){
+  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';const OK='#16a34a';
+  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [idKind, setIdKind] = useState('license');
+  const [sigName, setSigName] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [msg, setMsg] = useState('');
+  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  useEffect(function(){
+    var alive = true;
+    fetch(ONBOARDING_ENDPOINT+'?userId='+encodeURIComponent(portalUser.id),{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+      if(!alive)return;
+      var d = (j && j.doc) || null;
+      setDoc(d||{});
+      if(d && d.id && d.id.kind) setIdKind(d.id.kind);
+      setLoading(false);
+    }).catch(function(){ if(alive){ setDoc({}); setLoading(false); }});
+    return function(){alive=false};
+  },[portalUser.id]);
+
+  function persist(patch){
+    setSaving(true);
+    var next = Object.assign({}, doc || {}, patch);
+    setDoc(next);
+    return fetch(ONBOARDING_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({userId:portalUser.id, name:portalUser.name||'', email:portalUser.email||'', patch:patch}),keepalive:true})
+      .then(function(r){return r.ok?r.json():null}).then(function(j){ setSaving(false); if(j&&j.doc){setDoc(j.doc); return j.doc;} return next; })
+      .catch(function(){ setSaving(false); setMsg('Saved on this device — could not reach server. Try again when online.'); return next; });
+  }
+
+  function uploadPhoto(slot){
+    return function(e){
+      var f = e.target.files && e.target.files[0]; if(!f) return;
+      setMsg('Processing '+(f.name||'image')+'…');
+      scalePhoto(f, 1400, 0.82).then(function(url){
+        var rec = { url: url, name: f.name||'', uploadedAt: Date.now() };
+        if(slot==='id') rec.kind = idKind;
+        var patch = {}; patch[slot] = rec;
+        return persist(patch);
+      }).then(function(){ setMsg(''); }).catch(function(){ setMsg('Could not read that image. Try a JPG or PNG.'); });
+    };
+  }
+
+  function signHandbook(){
+    if(!agreed){setMsg('Tick the acknowledgement box to sign.');return}
+    if(!sigName.trim()){setMsg('Type your full legal name to sign.');return}
+    if(sigName.trim().toLowerCase() !== (portalUser.name||'').trim().toLowerCase()){
+      if(!window.confirm('The name you typed ("'+sigName.trim()+'") does not exactly match your account name ("'+(portalUser.name||'')+'"). Sign anyway?'))return;
+    }
+    persist({ handbook: { signedName: sigName.trim(), signedAt: Date.now(), version: 1 } }).then(function(){ setMsg('Signed.'); });
+  }
+
+  if(loading) return <div style={{position:'fixed',inset:0,background:BG,display:'flex',alignItems:'center',justifyContent:'center',...NB,color:MID}}>Loading your onboarding…</div>;
+
+  var hasSSN = !!(doc && doc.ssn && doc.ssn.url);
+  var hasID = !!(doc && doc.id && doc.id.url);
+  var hasSig = !!(doc && doc.handbook && doc.handbook.signedAt);
+  var all = hasSSN && hasID && hasSig;
+  var completedAt = doc && doc.completedAt;
+
+  var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:6,display:'block'};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'18px':'24px',marginBottom:14};
+  var stepHead=function(n,t,done){return (
+    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(0,0,0,.06)',color:done?'#fff':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
+      <div style={{...BB,fontSize:22,letterSpacing:1,color:TEXT}}>{t}</div>
+    </div>
+  )};
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px':'48px'}}>
+      <div style={{maxWidth:780,margin:'0 auto'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18,flexWrap:'wrap',gap:10}}>
           <div>
-            {filteredPartners.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:DIM}}><div style={{...BB,fontSize:24,marginBottom:8}}>NO PARTNER INQUIRIES</div><div style={{...NB,fontSize:13}}>Contact form submissions from the landing page will appear here.</div></div>
-            ) : (
-              <div style={{display:'grid',gap:12}}>
-                {filteredPartners.sort(function(a,b){return new Date(b.submittedAt)-new Date(a.submittedAt)}).map(function(p){
-                  var st = p.status || 'New';
-                  var stColor = st==='Closed'?DIM:st==='Contacted'?'#3b82f6':st==='In Progress'?'#22c55e':A;
-                  return (
-                    <div key={p.id} style={cardStyle}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:mob?'flex-start':'center',flexDirection:mob?'column':'row',gap:mob?10:0,marginBottom:12}}>
-                        <div>
-                          <div style={{...BB,fontSize:20,letterSpacing:1}}>{(p.firstName||'')+' '+(p.lastName||'')}</div>
-                          <div style={{...NB,fontSize:12,color:MID}}>{p.email} {p.company && '· '+p.company}</div>
-                        </div>
-                        <div style={{display:'flex',alignItems:'center',gap:10}}>
-                          <span style={{...NB,fontSize:10,letterSpacing:'1px',padding:'4px 10px',background:stColor+'18',color:stColor,fontWeight:600}}>{st.toUpperCase()}</span>
-                          <select value={st} onChange={function(e){updateStatus('partner',p.id,e.target.value)}} style={{...NB,fontSize:11,padding:'4px 8px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer'}}>
-                            {STATUSES.map(function(s){return <option key={s} value={s}>{s}</option>})}
-                          </select>
-                        </div>
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'1fr 1fr',gap:10}}>
-                        <div><span style={labelStyle}>Company / EPC</span><div style={{...NB,fontSize:13}}>{p.company||'—'}</div></div>
-                        <div><span style={labelStyle}>Submitted</span><div style={{...NB,fontSize:13}}>{p.submittedAt?new Date(p.submittedAt).toLocaleDateString():'—'}</div></div>
-                      </div>
-                      {p.details && <div style={{marginTop:10}}><span style={labelStyle}>Project Details</span><div style={{...NB,fontSize:13,color:MID,lineHeight:1.5}}>{p.details}</div></div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>Welcome to Sunrise Construction & Development</div>
+            <div style={{...BB,fontSize:mob?'clamp(30px,8vw,42px)':'clamp(36px,5vw,52px)',letterSpacing:2,lineHeight:1}}>EMPLOYEE ONBOARDING</div>
+            <div style={{...NB,fontSize:13,color:MID,marginTop:6}}>{(portalUser.name||'')} · {portalUser.email||''}</div>
           </div>
-        )}
+          {onExit&&<button onClick={onExit} style={{...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',border:'1px solid '+BORDER,color:MID,padding:'8px 14px',cursor:'pointer'}}>Sign Out</button>}
+        </div>
+
+        {completedAt&&<div style={{background:'rgba(22,163,74,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
+        {!completedAt&&<div style={{...NB,fontSize:14,color:MID,marginBottom:18,lineHeight:1.6}}>Please complete the three steps below. Your documents are stored securely and used only for employment verification and HR records.</div>}
+
+        <div style={cardStyle}>
+          {stepHead(1,'Upload Social Security Card', hasSSN)}
+          <div style={{...NB,fontSize:13,color:MID,marginBottom:10}}>A clear photo of the front of your Social Security card. Used for I-9 employment verification only.</div>
+          {hasSSN?(
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <img src={doc.ssn.url} alt="SSN" style={{maxWidth:240,maxHeight:160,objectFit:'contain',border:'1px solid '+BORDER}}/>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{...NB,fontSize:13,color:TEXT}}>{doc.ssn.name||'ssn.jpg'}</div>
+                <div style={{...NB,fontSize:11,color:MID}}>Uploaded {new Date(doc.ssn.uploadedAt).toLocaleString()}</div>
+                {!completedAt&&<label style={{display:'inline-block',marginTop:10,...NB,fontSize:12,letterSpacing:'1.5px',textTransform:'uppercase',color:A,cursor:'pointer',borderBottom:'1px solid '+A,paddingBottom:1}}>Replace<input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/></label>}
+              </div>
+            </div>
+          ):(
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+              📷 Upload Social Security Card Photo
+              <input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/>
+            </label>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          {stepHead(2,'Upload Government ID', hasID)}
+          <div style={{...NB,fontSize:13,color:MID,marginBottom:10}}>A photo of your driver's license <strong>or</strong> passport (whichever you prefer).</div>
+          {!hasID&&<div style={{display:'flex',gap:14,marginBottom:10}}>
+            <label style={{display:'inline-flex',alignItems:'center',gap:6,...NB,fontSize:13,cursor:'pointer'}}><input type="radio" name="idkind" value="license" checked={idKind==='license'} onChange={function(){setIdKind('license')}}/>Driver's License</label>
+            <label style={{display:'inline-flex',alignItems:'center',gap:6,...NB,fontSize:13,cursor:'pointer'}}><input type="radio" name="idkind" value="passport" checked={idKind==='passport'} onChange={function(){setIdKind('passport')}}/>Passport</label>
+          </div>}
+          {hasID?(
+            <div style={{display:'flex',gap:14,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <img src={doc.id.url} alt="ID" style={{maxWidth:240,maxHeight:160,objectFit:'contain',border:'1px solid '+BORDER}}/>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{...NB,fontSize:13,color:TEXT,textTransform:'capitalize'}}>{(doc.id.kind||'ID')} — {doc.id.name||'id.jpg'}</div>
+                <div style={{...NB,fontSize:11,color:MID}}>Uploaded {new Date(doc.id.uploadedAt).toLocaleString()}</div>
+                {!completedAt&&<label style={{display:'inline-block',marginTop:10,...NB,fontSize:12,letterSpacing:'1.5px',textTransform:'uppercase',color:A,cursor:'pointer',borderBottom:'1px solid '+A,paddingBottom:1}}>Replace<input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/></label>}
+              </div>
+            </div>
+          ):(
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+              📷 Upload {idKind==='license'?"Driver's License":'Passport'} Photo
+              <input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/>
+            </label>
+          )}
+        </div>
+
+        <div style={cardStyle}>
+          {stepHead(3,'Employee Handbook Acknowledgement', hasSig)}
+          <div style={{...NB,fontSize:13,color:TEXT,whiteSpace:'pre-wrap',lineHeight:1.6,background:'#fafafa',border:'1px solid '+BORDER,padding:'14px 16px',maxHeight:260,overflowY:'auto',marginBottom:12}}>{HANDBOOK_TEXT}</div>
+          {hasSig?(
+            <div style={{padding:'12px 14px',background:'rgba(22,163,74,.08)',border:'1px solid '+OK}}>
+              <div style={{...NB,fontSize:13,color:TEXT}}>Signed by <strong>{doc.handbook.signedName}</strong></div>
+              <div style={{...NB,fontSize:11,color:MID}}>on {new Date(doc.handbook.signedAt).toLocaleString()}</div>
+            </div>
+          ):(<>
+            <label style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:10,cursor:'pointer'}}>
+              <input type="checkbox" checked={agreed} onChange={function(){setAgreed(!agreed)}} style={{accentColor:A,marginTop:3}}/>
+              <span style={{...NB,fontSize:13,color:TEXT}}>I acknowledge that I have read, understand, and agree to the Sunrise Construction & Development Employee Handbook.</span>
+            </label>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              <input value={sigName} onChange={function(e){setSigName(e.target.value)}} placeholder="Type your full legal name as signature" style={{flex:1,minWidth:200,...NB,fontSize:15,padding:'10px 12px',background:CARD,border:'1px solid '+BORDER,color:TEXT,outline:'none'}}/>
+              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(249,115,22,.3)',color:agreed&&sigName.trim()?'#1a1206':'#888',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
+            </div>
+          </>)}
+        </div>
+
+        {msg&&<div style={{...NB,fontSize:12,color:msg.indexOf('failed')>=0||msg.indexOf('Try')>=0||msg.indexOf('Could not')>=0||msg.indexOf('Please')>=0||msg.indexOf('Tick')>=0||msg.indexOf('Type')>=0?'#dc2626':MID,marginBottom:10}}>{msg}</div>}
+
+        {!completedAt&&!all&&<div style={{...NB,fontSize:13,color:MID,padding:'14px 0',textAlign:'center',fontStyle:'italic'}}>Complete all three steps to finish onboarding. {!hasSSN&&'· Upload SSN '}{!hasID&&'· Upload ID '}{!hasSig&&'· Sign handbook'}</div>}
+        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#1a1206',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
+      </div>
+    </div>
+  );
+}
+
+/* MY TIME CARD — employee-facing weekly calendar of their own punches */
+function MyTimeCard({ portalUser, onExit }){
+  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';
+  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const [worker, setWorker] = useState(null);
+  const [punches, setPunches] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [weekStart, setWeekStart] = useState(function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d});
+  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  useEffect(function(){
+    var alive=true;setLoading(true);
+    Promise.all([sGet('tk_workers'),sGet('tk_punches')]).then(function(r){
+      if(!alive)return;
+      var ws=r[0]||[];var ps=r[1]||{};
+      var em=(portalUser.email||'').toLowerCase();
+      var w = ws.find(function(x){return (x.email||'').toLowerCase()===em});
+      setWorker(w||null);setPunches(ps);setLoading(false);
+    });
+    return function(){alive=false};
+  },[portalUser.email]);
+
+  function dayKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+  function hoursOf(arr){
+    if(!arr||!arr.length)return 0;
+    var ms=0,openIn=null;
+    for(var i=0;i<arr.length;i++){var p=arr[i];if(p.type==='in')openIn=new Date(p.time).getTime();else if(p.type==='out'&&openIn!=null){ms+=new Date(p.time).getTime()-openIn;openIn=null}}
+    return ms/3600000;
+  }
+  function fmtH(h){if(!h)return '0:00';var hh=Math.floor(h);var mm=Math.round((h-hh)*60);if(mm===60){hh++;mm=0}return hh+':'+String(mm).padStart(2,'0')}
+  function fmtTime(iso){try{return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}catch(e){return ''}}
+
+  function shiftWeek(n){var d=new Date(weekStart);d.setDate(d.getDate()+n*7);setWeekStart(d)}
+  function thisWeek(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());setWeekStart(d)}
+  var today=new Date();today.setHours(0,0,0,0);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+6);
+  var isCurrent=dayKey(weekStart)===dayKey((function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d})());
+
+  var days=[];var weekTotal=0;
+  if(worker){
+    for(var i=0;i<7;i++){
+      var d=new Date(weekStart);d.setDate(weekStart.getDate()+i);
+      var key=worker.id+'_'+dayKey(d);
+      var arr=punches[key]||[];
+      var h=hoursOf(arr);weekTotal+=h;
+      days.push({date:d,key:dayKey(d),punches:arr,hours:h,isToday:dayKey(d)===dayKey(today),isFuture:d>today});
+    }
+  }
+  var DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+      <div style={{maxWidth:960,margin:'0 auto'}}>
+        <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:18}} onClick={onExit}>← Back to Dashboard</div>
+        <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:6}}>
+          <div style={{...BB,fontSize:mob?'clamp(30px,8vw,46px)':'clamp(36px,5vw,56px)',letterSpacing:2}}>MY TIME CARD</div>
+          <div style={{...NB,fontSize:13,color:MID}}>{(portalUser.name||'')} · {portalUser.email||''}</div>
+        </div>
+        <div style={{...NB,fontSize:13,color:MID,marginBottom:22}}>Your weekly hours, pulled directly from your timekeeping punches. Read-only — speak with your supervisor for corrections.</div>
+
+        {loading?(
+          <div style={{textAlign:'center',padding:40,color:DIM,background:CARD,border:'1px solid '+BORDER}}>Loading…</div>
+        ):!worker?(
+          <div style={{textAlign:'center',padding:40,background:CARD,border:'1px solid '+BORDER}}>
+            <div style={{...BB,fontSize:24,marginBottom:8}}>NO TIME CARD YET</div>
+            <div style={{...NB,fontSize:13,color:MID,maxWidth:480,margin:'0 auto'}}>Your account isn't linked to a worker record in Timekeeping yet. Ask your supervisor to add you (using <strong>{portalUser.email||'your email'}</strong>) and your hours will appear here automatically.</div>
+          </div>
+        ):(<>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,marginBottom:14,flexWrap:'wrap'}}>
+            <button onClick={function(){shiftWeek(-1)}} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>← Prev Week</button>
+            <div style={{textAlign:'center'}}>
+              <div style={{...BB,fontSize:22,letterSpacing:1.5,color:TEXT}}>{weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – {weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+              {!isCurrent&&<div onClick={thisWeek} style={{cursor:'pointer',...NB,fontSize:11,letterSpacing:'1.5px',textTransform:'uppercase',color:A,marginTop:2,borderBottom:'1px solid '+A,display:'inline-block'}}>Jump to This Week</div>}
+            </div>
+            <button onClick={function(){shiftWeek(1)}} disabled={weekEnd>=today} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:weekEnd>=today?DIM:A,border:'1px solid '+(weekEnd>=today?BORDER:A),cursor:weekEnd>=today?'default':'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>Next Week →</button>
+          </div>
+
+          <div style={{background:CARD,border:'1px solid '+BORDER,marginBottom:16}}>
+            {days.map(function(d,di){return (
+              <div key={d.key} style={{display:'grid',gridTemplateColumns:mob?'80px 1fr 64px':'140px 1fr 90px',gap:12,padding:'14px 16px',borderTop:di===0?'none':'1px solid '+BORDER,background:d.isToday?'rgba(249,115,22,.05)':'transparent'}}>
+                <div>
+                  <div style={{...BB,fontSize:mob?16:18,color:d.isFuture?DIM:TEXT,letterSpacing:1}}>{mob?DAY_NAMES[d.date.getDay()].slice(0,3).toUpperCase():DAY_NAMES[d.date.getDay()].toUpperCase()}</div>
+                  <div style={{...NB,fontSize:11,color:MID,letterSpacing:1}}>{d.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+                  {d.isToday&&<div style={{...NB,fontSize:9,letterSpacing:'1.5px',textTransform:'uppercase',color:A,marginTop:2,fontWeight:700}}>Today</div>}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {d.punches.length===0?(
+                    <div style={{...NB,fontSize:12,color:DIM,fontStyle:'italic'}}>{d.isFuture?'—':'No punches recorded'}</div>
+                  ):d.punches.map(function(p,pi){return (
+                    <div key={pi} style={{...NB,fontSize:13,color:TEXT,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)',color:p.type==='in'?'#16a34a':'#dc2626',fontWeight:700,textTransform:'uppercase'}}>{p.type==='in'?'IN':'OUT'}</span>
+                      {fmtTime(p.time)}
+                    </div>
+                  )})}
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{...BB,fontSize:22,color:d.hours>0?TEXT:DIM,lineHeight:1}}>{fmtH(d.hours)}</div>
+                  <div style={{...NB,fontSize:10,letterSpacing:'1.5px',textTransform:'uppercase',color:MID,marginTop:2}}>{d.hours>0?'hrs':''}</div>
+                </div>
+              </div>
+            )})}
+          </div>
+
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(2,2,12,.92)',color:'#F5F0EB',padding:'18px 22px',clipPath:'polygon(14px 0%,100% 0%,calc(100% - 14px) 100%,0% 100%)'}}>
+            <div>
+              <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#cfcabf'}}>Week Total</div>
+              <div style={{...NB,fontSize:12,color:'#8a857c',marginTop:2}}>{weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – {weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{...BB,fontSize:48,color:A,lineHeight:1,textShadow:'0 0 24px rgba(249,115,22,.4)'}}>{fmtH(weekTotal)}</div>
+              <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#cfcabf',marginTop:2}}>{weekTotal>40?(weekTotal-40).toFixed(2)+' hrs OT':'hours'}</div>
+            </div>
+          </div>
+        </>)}
       </div>
     </div>
   );
@@ -4371,10 +5041,13 @@ export default function App(){
   const[mob,setMob]=useState(typeof window!=='undefined'?window.innerWidth<768:false)
   const[page,setPage]=useState('landing')
   const[user,setUser]=useState(null)
+  const[lang,setLangState]=useState(function(){try{var v=localStorage.getItem('site-lang');return v==='en'||v==='es'?v:null}catch(e){return null}})
+  function setLang(L){setLangState(L);try{localStorage.setItem('site-lang',L)}catch(e){}}
+  const T=function(k){return tt(k,lang||'en')}
   const[loginErr,setLoginErr]=useState('')
   const[loginUser,setLoginUser]=useState('')
   const[loginPass,setLoginPass]=useState('')
-  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',experience:'',message:''})
+  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})
   const[careerSubmitted,setCareerSubmitted]=useState(false)
   const[contactForm,setContactForm]=useState({firstName:'',lastName:'',company:'',email:'',details:''})
   const[contactSubmitted,setContactSubmitted]=useState(false)
@@ -4384,7 +5057,15 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents'],assignedProjects:[],taskScope:{}})
+  const[assignUser,setAssignUser]=useState(null)
+  const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
+  const[actEvents,setActEvents]=useState([])
+  const[actLoading,setActLoading]=useState(false)
+  const[actView,setActView]=useState('log')
+  const[actUserFilter,setActUserFilter]=useState('')
+  const[actToolFilter,setActToolFilter]=useState('')
+  const[projOpts,setProjOpts]=useState(function(){return listProjects()})
   const[reqReason,setReqReason]=useState('')
   const[reqTool,setReqTool]=useState('')
   const[showPw,setShowPw]=useState(false)
@@ -4397,12 +5078,13 @@ export default function App(){
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
     // Check for invite token in URL
     try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
+    try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
   },[])
 
   function svPU(u){setPortalUsers(u);sSet('portal_users',u)}
@@ -4413,10 +5095,10 @@ export default function App(){
   function doPortalLogin(){
     setLoginErr('')
     if(!loginEmail.trim()||!loginPass.trim()){setLoginErr('Enter email and password');return}
-    if(loginEmail.indexOf('@sunriseconstructionco.com')<0){setLoginErr('Only @sunriseconstructionco.com emails allowed');return}
     var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
     if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
-    setUser(u);setPage('dashboard')
+    window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
+    setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
   }
 
   function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
@@ -4431,6 +5113,7 @@ export default function App(){
     var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{passwordHash:nh}):x})
     svPU(nu)
     setUser(Object.assign({},user,{passwordHash:nh}))
+    logAudit({type:'action',tool:'admin',detail:'Changed account password'})
     setPwOld('');setPwNew('');setPwConf('');setPwMsg('ok')
     setTimeout(function(){setShowPw(false);setPwMsg('')},1300)
   }
@@ -4442,22 +5125,92 @@ export default function App(){
       if(!inv||!inv.email){setLoginErr('Invalid invite');return}
       if(portalUsers.find(function(x){return x.email===inv.email})){setLoginErr('Account already exists. Sign in.');return}
       if(!loginPass.trim()){setLoginErr('Set a password');return}
-      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
+      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},onboardingRequired:!!inv.onboardingRequired,onboardingComplete:false,passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
-      setUser(u);setPage('dashboard')
+      window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'action',tool:'admin',detail:'Accepted invite & created account'})
+      setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
     }catch(e2){setLoginErr('Invalid invite link')}
   }
 
   function sendInvite(){
-    if(!invForm.email||invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
+    if(!invForm.email){return}
+    var isClient=invForm.role==='client'
+    if(!isClient&&invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
     if(portalUsers.find(function(x){return x.email===invForm.email})){return}
-    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:invForm.tools,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    var isMember=invForm.role==='member'
+    var tools=isClient?[]:invForm.tools
+    var assignedProjects=(isClient||isMember)?(invForm.assignedProjects||[]):[]
+    var taskScope=isMember?(invForm.taskScope||{}):{}
+    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
-    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:inv.tools,invitedBy:inv.invitedBy}))
+    logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+invForm.email})
+    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent('SRC%26D Employee Portal Invitation')+'&body='+encodeURIComponent('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link),'_blank')
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan']})
+    var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
+    var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link)
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents'],assignedProjects:[],taskScope:{}})
+  }
+
+  function sendOnboardingInvite(applicant){
+    var email=(applicant&&applicant.email||'').trim()
+    if(!email){window.alert('This applicant has no email — cannot send an onboarding invite.');return false}
+    if(portalUsers.find(function(x){return x.email===email})){window.alert(email+' already has a portal account.');return false}
+    if(invites.find(function(x){return x.email===email&&!x.used})){if(!window.confirm('An unused invite already exists for '+email+'. Send another?'))return false}
+    var inv={id:uid(),name:applicant.name||'',email:email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    svInv(invites.concat([inv]))
+    var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,invitedBy:inv.invitedBy}))
+    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var subj='Welcome to Sunrise Construction & Development — Complete Your Onboarding'
+    var bodyTxt='Welcome to the team, '+(inv.name||'')+'!\n\nClick the link below to set your password and complete your onboarding (upload Social Security card, government ID, and sign the employee handbook):\n\n'+link+'\n\n— SRC&D'
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    logAudit({type:'action',tool:'admin',detail:'Sent onboarding invite to '+email})
+    return true
+  }
+
+  function openAssign(u){setAssignUser(u);setAssignForm({assignedProjects:(u.assignedProjects||[]).slice(),taskScope:Object.assign({},u.taskScope||{})})}
+  function saveAssign(){
+    if(!assignUser){return}
+    var nu=portalUsers.map(function(x){return x.id===assignUser.id?Object.assign({},x,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}):x})
+    svPU(nu)
+    logAudit({type:'action',tool:'admin',detail:'Updated project/task assignments for '+assignUser.name})
+    if(user&&user.id===assignUser.id){setUser(Object.assign({},user,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}))}
+    setAssignUser(null)
+  }
+  function renderAssignEditor(val,onChange){
+    var ap=val.assignedProjects||[];var ts=val.taskScope||{}
+    if(!projOpts.length){return <div style={{...NB,fontSize:12,color:'#999'}}>No projects yet. Create one in the Task Tracker first.</div>}
+    return projOpts.map(function(p){
+      var on=ap.indexOf(p.id)>=0
+      var scope=ts[p.id]!==undefined?ts[p.id]:TASK_DEFS.map(function(t){return t.id})
+      return (
+        <div key={p.id} style={{border:'1px solid '+(on?'rgba(249,115,22,.4)':'rgba(0,0,0,.12)'),padding:'10px 12px',marginBottom:8,background:on?'rgba(249,115,22,.05)':'transparent'}}>
+          <div onClick={function(){
+            var nap=on?ap.filter(function(x){return x!==p.id}):ap.concat([p.id])
+            var nts=Object.assign({},ts)
+            if(on){delete nts[p.id]}else if(nts[p.id]===undefined){nts[p.id]=TASK_DEFS.map(function(t){return t.id})}
+            onChange({assignedProjects:nap,taskScope:nts})
+          }} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+            <span style={{width:16,height:16,border:'1px solid '+(on?A:'rgba(0,0,0,.3)'),background:on?A:'transparent',display:'inline-block',flexShrink:0}}/>
+            <span style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{p.name||'Project'}</span>
+          </div>
+          {on&&<div style={{marginTop:8,paddingLeft:24}}>
+            <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#999',marginBottom:5}}>Tasks they can update</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {TASK_DEFS.map(function(t){
+                var to=scope.indexOf(t.id)>=0
+                return <div key={t.id} onClick={function(){
+                  var ns=to?scope.filter(function(x){return x!==t.id}):scope.concat([t.id])
+                  var nts=Object.assign({},ts);nts[p.id]=ns;onChange({assignedProjects:ap,taskScope:nts})
+                }} style={{padding:'4px 10px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:to?'rgba(249,115,22,.15)':'transparent',color:to?A:'#666',border:'1px solid '+(to?A:'rgba(0,0,0,.15)')}}>{t.label}</div>
+              })}
+            </div>
+            {scope.length===0&&<div style={{...NB,fontSize:11,color:'#dc2626',marginTop:5}}>No tasks selected — view only on this project.</div>}
+          </div>}
+        </div>
+      )
+    })
   }
 
   function submitAccessReq(){
@@ -4472,6 +5225,7 @@ export default function App(){
     svReqs(accessReqs.map(function(r){return r.id===reqId?Object.assign({},r,{status:'approved'}):r}))
     var pu=portalUsers.map(function(u){if(u.id===req.userId){var t=u.tools?u.tools.concat([req.tool]):[req.tool];return Object.assign({},u,{tools:t})}return u})
     svPU(pu)
+    logAudit({type:'action',tool:'admin',detail:'Approved '+(TOOL_LABELS[req.tool]||req.tool)+' access for '+req.userName})
     if(user&&user.id===req.userId){setUser(Object.assign({},user,{tools:(user.tools||[]).concat([req.tool])}))}
   }
 
@@ -4481,9 +5235,39 @@ export default function App(){
   var userTools=user&&user.tools?user.tools:[]
   function hasTool(t){return isPortalAdmin||userTools.indexOf(t)>=0}
 
-  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker'}
+  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal'}
 
   const boxRef=useRef()
+
+  // ── audit context + time/session tracking ──
+  useEffect(function(){window.__auditUser=user?{name:user.name,email:user.email,role:user.role}:null},[user])
+  useEffect(function(){window.__auditTool=page},[page])
+  const toolStartRef=useRef(null)
+  useEffect(function(){
+    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
+    var prev=toolStartRef.current
+    if(prev&&prev.tool!==page){logAudit({type:'tool_exit',tool:prev.tool,label:TOOL_LABELS[prev.tool]||prev.tool,detail:'Left '+(TOOL_LABELS[prev.tool]||prev.tool),durMs:Date.now()-prev.ts});toolStartRef.current=null}
+    if(user&&TOOLS[page]&&!toolStartRef.current){toolStartRef.current={tool:page,ts:Date.now()};logAudit({type:'tool_enter',tool:page,label:TOOL_LABELS[page]||page,detail:'Opened '+(TOOL_LABELS[page]||page)})}
+  },[page,user])
+  useEffect(function(){
+    function flush(){var p=toolStartRef.current;if(p){logAudit({type:'tool_exit',tool:p.tool,label:TOOL_LABELS[p.tool]||p.tool,detail:'Session ended',durMs:Date.now()-p.ts});toolStartRef.current=null}}
+    window.addEventListener('beforeunload',flush)
+    return function(){window.removeEventListener('beforeunload',flush)}
+  },[])
+  // logout detection
+  const prevUserRef=useRef(user)
+  useEffect(function(){var pu=prevUserRef.current;if(pu&&!user){window.__auditUser={name:pu.name,email:pu.email,role:pu.role};logAudit({type:'logout',detail:'Signed out'});window.__auditUser=null}prevUserRef.current=user},[user])
+  // load activity log when admin opens the Activity tab
+  useEffect(function(){
+    if(adminTab!=='activity'||!(user&&user.role==='admin'))return
+    var alive=true;setActLoading(true)
+    fetch('/.netlify/functions/activity?days=30',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+      if(!alive)return;var ev=(j&&Array.isArray(j.events))?j.events.slice():[]
+      try{var q=JSON.parse(localStorage.getItem('act-queue')||'[]');var seen={};ev.forEach(function(e){if(e)seen[e.id]=1});q.forEach(function(e){if(e&&e.id&&!seen[e.id])ev.push(e)})}catch(e){}
+      ev.sort(function(a,b){return (b.ts||0)-(a.ts||0)});setActEvents(ev);setActLoading(false)
+    }).catch(function(){if(!alive)return;try{var q=JSON.parse(localStorage.getItem('act-queue')||'[]');q.sort(function(a,b){return (b.ts||0)-(a.ts||0)});setActEvents(q)}catch(e){setActEvents([])}setActLoading(false)})
+    return function(){alive=false}
+  },[adminTab,user])
 
   useEffect(()=>{
     const onResize=()=>setMob(window.innerWidth<768)
@@ -4492,7 +5276,7 @@ export default function App(){
   },[])
 
   useEffect(()=>{
-    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); }
+    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); if(e.data && e.data.type==='FR_AUDIT') logAudit({type:'change',tool:'field',detail:(e.data.detail||'Field Manager update')}); }
     window.addEventListener('message', onMsg);
     return ()=> window.removeEventListener('message', onMsg);
   },[])
@@ -4524,6 +5308,8 @@ export default function App(){
   const fIn=e=>{e.target.style.borderColor='rgba(249,115,22,.5)';e.target.style.boxShadow='0 0 0 3px rgba(249,115,22,.08)'}
   const fOut=e=>{e.target.style.borderColor='rgba(0,0,0,.12)';e.target.style.boxShadow=''}
 
+  if(!lang) return <LangPicker onPick={setLang}/>;
+
   return(
     <div style={{position:'fixed',inset:0,fontFamily:"'Barlow',sans-serif"}}>
       <style>{CSS}</style>
@@ -4544,15 +5330,16 @@ export default function App(){
 
           {/* Nav links — hidden on mobile */}
           {!m&&<div style={{display:'flex',gap:22}}>
-            {['Safety','Capabilities','Portfolio','Careers','Contact'].map(l=>(
-              <a key={l} href={'#'+l.toLowerCase()} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',whiteSpace:'nowrap',textDecoration:'none',transition:'color .2s'}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{l}</a>
+            {[{k:'nav_safety',h:'safety'},{k:'nav_capabilities',h:'capabilities'},{k:'nav_portfolio',h:'portfolio'},{k:'nav_careers',h:'careers'},{k:'nav_contact',h:'contact'}].map(l=>(
+              <a key={l.k} href={'#'+l.h} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',whiteSpace:'nowrap',textDecoration:'none',transition:'color .2s'}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T(l.k)}</a>
             ))}
           </div>}
 
-          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>Login</div>}
-          {page!=='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>Back to Site</div>}
+          {!m&&<div onClick={function(){setLang(lang==='en'?'es':'en')}} title={T('lang_change')} style={{...NB,fontSize:10,letterSpacing:'1.5px',textTransform:'uppercase',color:'#777',cursor:'pointer',padding:'4px 9px',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap'}} onMouseEnter={e=>{e.currentTarget.style.color=A;e.currentTarget.style.borderColor='rgba(249,115,22,.4)'}} onMouseLeave={e=>{e.currentTarget.style.color='#777';e.currentTarget.style.borderColor='rgba(255,255,255,.12)'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>}
+          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_login')}</div>}
+          {page!=='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_back_to_site')}</div>}
           <a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:m?'2px':'3px',textTransform:'uppercase',textDecoration:'none',padding:m?'8px 12px':'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
-            {m?'Get In Touch':'Partner Now'}
+            {T('cta_partner')}
           </a>
         </nav>
 
@@ -4573,21 +5360,21 @@ export default function App(){
               </div>
               {loginErr&&<div style={{background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.3)',color:'#EF4444',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
               <div style={{marginBottom:16}}>
-                <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>EMAIL</div>
-                <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="name@sunriseconstructionco.com"/>
+                <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_email')}</div>
+                <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_email_ph')}/>
               </div>
               <div style={{marginBottom:24}}>
-                <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>PASSWORD</div>
-                <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="Enter password" onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}}/>
+                <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_password')}</div>
+                <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_password_ph')} onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}}/>
               </div>
               <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#FB923C'}} onMouseLeave={function(e){e.target.style.background=A}}>
-                Sign In
+                {T('login_signin')}
               </div>
               {window._pendingInvite&&<div style={{cursor:'pointer',background:'#22c55e',color:'#fff',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',marginTop:12,transition:'background .2s'}} onClick={function(){doInviteSignup(window._pendingInvite);window._pendingInvite=null}}>
-                ACCEPT INVITE & CREATE ACCOUNT
+                {T('login_accept_invite')}
               </div>}
               <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#555'}}>
-                Invite-only access · @sunriseconstructionco.com
+                {T('login_invite_only')}
               </div>
             </div>
           </div>
@@ -4650,6 +5437,7 @@ export default function App(){
               })()}
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
                 {[
+                  {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
                   {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
                   {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
                   {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
@@ -4660,7 +5448,8 @@ export default function App(){
                   {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
                   {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
                   {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
-                ].filter(function(tile){return hasTool(tile.key)}).map(function(tile){
+                  {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark'},
+                ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
                   return (
                     <div key={tile.key} onClick={function(){setPage(tile.key)}} style={{
                       background:'#ffffff',backdropFilter:'blur(12px)',
@@ -4720,8 +5509,8 @@ export default function App(){
               <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</div>
               <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>ADMIN DASHBOARD</div>
               <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-                {['invite','users','requests','editor'].map(function(t){return (
-                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t}</div>
+                {['invite','users','requests','activity','editor'].map(function(t){return (
+                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t==='activity'?'Activity & Time':t}</div>
                 )})}
               </div>
               {adminTab==='invite'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
@@ -4730,11 +5519,24 @@ export default function App(){
                 <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>EMAIL</div><input value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="name@sunriseconstructionco.com"/></div>
                 <div style={{marginBottom:12}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>ROLE</div>
-                  <div style={{display:'flex',gap:8}}>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                     <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'member'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='member'?A:'transparent',color:invForm.role==='member'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='member'?A:'rgba(0,0,0,.15)')}}>Member</div>
                     <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'admin'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='admin'?A:'transparent',color:invForm.role==='admin'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='admin'?A:'rgba(0,0,0,.15)')}}>Admin</div>
+                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'client'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='client'?A:'transparent',color:invForm.role==='client'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='client'?A:'rgba(0,0,0,.15)')}}>Client</div>
                   </div>
+                  {invForm.role==='client'&&<div style={{...NB,fontSize:11,color:'#777',letterSpacing:'1px',marginTop:8}}>Clients get a read-only portal for their assigned projects only — any email domain is allowed.</div>}
                 </div>
+                {invForm.role==='client'?(
+                <div style={{marginBottom:16}}>
+                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>ASSIGNED PROJECTS</div>
+                  {projOpts.length===0?<div style={{...NB,fontSize:12,color:'#999'}}>No projects found. Create one in the Task Tracker first.</div>:
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                    {projOpts.map(function(p){var on=(invForm.assignedProjects||[]).indexOf(p.id)>=0;return (
+                      <div key={p.id} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{p.name||'Project'}</div>
+                    )})}
+                  </div>}
+                </div>
+                ):(<>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TOOL ACCESS</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
@@ -4743,6 +5545,12 @@ export default function App(){
                     )})}
                   </div>
                 </div>
+                {invForm.tools.indexOf('pileplan')>=0&&<div style={{marginBottom:16}}>
+                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TASK TRACKER — PROJECTS & TASKS</div>
+                  {renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}
+                  <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'.5px',marginTop:4}}>Employees see and edit only the projects you select here.</div>
+                </div>}
+                </>)}
                 <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
               </div>}
               {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
@@ -4752,15 +5560,31 @@ export default function App(){
                     <div>
                       <div style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{u2.name}</div>
                       <div style={{...NB,fontSize:11,color:'#888'}}>{u2.email} · {u2.role}</div>
-                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')}</div>
+                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')||'—'}</div>
+                      {u2.role!=='admin'&&<div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
                     </div>
                     <div style={{display:'flex',gap:6}}>
-                      <div onClick={function(){var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:x.role==='admin'?'member':'admin'}):x});svPU(nu)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
-                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}))}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
+                      {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
+                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:nr}):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
+                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}));logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
                     </div>
                   </div>
                 )})}
               </div>}
+              {assignUser&&(
+                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setAssignUser(null)}}>
+                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:460,maxHeight:'86vh',overflowY:'auto',padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
+                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Assign Projects</div>
+                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
+                    {renderAssignEditor(assignForm,function(v){setAssignForm(v)})}
+                    {assignUser.role==='client'&&<div style={{...NB,fontSize:11,color:'#888',marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
+                    <div style={{display:'flex',gap:10,marginTop:20}}>
+                      <button onClick={saveAssign} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Save</button>
+                      <button onClick={function(){setAssignUser(null)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {adminTab==='requests'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
                 <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>ACCESS REQUESTS</div>
                 {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div style={{...NB,fontSize:13,color:'#888'}}>No pending requests</div>}
@@ -4780,6 +5604,66 @@ export default function App(){
                     </div>
                   </div>
                 )})}
+              </div>}
+              {adminTab==='activity'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
+                {(function(){
+                  function fmtDur(ms){ms=Math.max(0,ms||0);var s=Math.round(ms/1000);var h=Math.floor(s/3600);var mn=Math.floor((s%3600)/60);if(h)return h+'h '+mn+'m';if(mn)return mn+'m';return s+'s'}
+                  function evLabel(e){return e.label||TOOL_LABELS[e.tool]||(e.tool||'—')}
+                  function evWhen(ts){return new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
+                  var users={},tools={};actEvents.forEach(function(e){if(e.user)users[e.user]=1;if(e.tool)tools[e.tool]=1})
+                  var userList=Object.keys(users).sort(),toolList=Object.keys(tools).sort()
+                  var filtered=actEvents.filter(function(e){return (!actUserFilter||e.user===actUserFilter)&&(!actToolFilter||e.tool===actToolFilter)})
+                  var typeColor={login:'#16a34a',logout:'#888',tool_enter:'#2563eb',tool_exit:'#7c3aed',change:'#ea580c',action:A}
+                  // time aggregation from tool_exit durations
+                  var exits=actEvents.filter(function(e){return e.type==='tool_exit'&&(!actUserFilter||e.user===actUserFilter)})
+                  var dayMap={}
+                  exits.forEach(function(e){var d=new Date(e.ts);var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');var key=day+'|'+(e.user||'?');if(!dayMap[key])dayMap[key]={day:day,user:e.user,total:0,tools:{},sessions:0};dayMap[key].total+=e.durMs||0;dayMap[key].sessions++;var tl=evLabel(e);dayMap[key].tools[tl]=(dayMap[key].tools[tl]||0)+(e.durMs||0)})
+                  var rows=Object.keys(dayMap).map(function(k){return dayMap[k]}).sort(function(a,b){return a.day<b.day?1:a.day>b.day?-1:(a.user<b.user?-1:1)})
+                  return (<>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:16}}>
+                      <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e'}}>ACTIVITY & TIME</div>
+                      <div style={{display:'flex',gap:6}}>
+                        <div onClick={function(){setActView('log')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='log'?A:'transparent',color:actView==='log'?'#fff':'#666',border:'1px solid '+(actView==='log'?A:'rgba(0,0,0,.15)')}}>Activity Log</div>
+                        <div onClick={function(){setActView('time')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='time'?A:'transparent',color:actView==='time'?'#fff':'#666',border:'1px solid '+(actView==='time'?A:'rgba(0,0,0,.15)')}}>Time Tracking</div>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+                      <select value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
+                      {actView==='log'&&<select value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
+                      {actLoading&&<span style={{...NB,fontSize:12,color:'#888',alignSelf:'center'}}>Loading…</span>}
+                    </div>
+                    {actView==='log'?(
+                      <div style={{maxHeight:520,overflowY:'auto',border:'1px solid rgba(0,0,0,.06)'}}>
+                        {filtered.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:16}}>{actLoading?'Loading activity…':'No activity recorded yet.'}</div>}
+                        {filtered.slice(0,500).map(function(e){return (
+                          <div key={e.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
+                            <span style={{width:8,height:8,borderRadius:'50%',background:typeColor[e.type]||'#999',flexShrink:0}}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{...NB,fontSize:14,color:'#1a1a2e',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.detail||e.type}</div>
+                              <div style={{...NB,fontSize:11,color:'#888'}}><span style={{color:A}}>{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
+                            </div>
+                          </div>
+                        )})}
+                      </div>
+                    ):(
+                      <div style={{maxHeight:520,overflowY:'auto'}}>
+                        {rows.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
+                        {rows.map(function(r,ri){return (
+                          <div key={ri} style={{border:'1px solid rgba(0,0,0,.08)',padding:'10px 12px',marginBottom:8}}>
+                            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:6}}>
+                              <div style={{...NB,fontSize:15,color:'#1a1a2e',fontWeight:600}}><span style={{color:A}}>{r.user}</span> · {r.day}</div>
+                              <div style={{...BB,fontSize:20,color:'#1a1a2e'}}>{fmtDur(r.total)} <span style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px'}}>· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
+                            </div>
+                            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} style={{...NB,fontSize:11,letterSpacing:'.5px',color:'#555',background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.18)',padding:'3px 9px'}}>{tl}: {fmtDur(r.tools[tl])}</span>})}
+                            </div>
+                          </div>
+                        )})}
+                      </div>
+                    )}
+                    <div style={{...NB,fontSize:11,color:'#999',marginTop:12}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
+                  </>)
+                })()}
               </div>}
               {adminTab==='editor'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
                 <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>SITE EDITOR</div>
@@ -4847,8 +5731,12 @@ export default function App(){
         {page==='stakeholders'&&<StakeholderReports onExit={function(){setPage('dashboard')}}/>}
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
-        {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}}/>}
-        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
+        {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
+        {page==='documents'&&user&&<DocumentPortal user={user} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
+        {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{onboardingComplete:true}):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
+        {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
+        {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
@@ -4869,29 +5757,29 @@ export default function App(){
         <section style={{minHeight:'100vh',display:'flex',flexDirection:'column',justifyContent:'center',position:'relative',padding:m?'90px 24px 60px':'120px 48px 80px',zIndex:5}}>
           <div style={{maxWidth:m?'100%':1200,margin:'0 auto',width:'100%'}}>
             <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,...NB,fontSize:m?10:12,letterSpacing:'4px',textTransform:'uppercase',color:A}}>
-              <div style={{width:28,height:1,background:A}}/>Elite Solar Subcontractor
+              <div style={{width:28,height:1,background:A}}/>{T('hero_kicker')}
             </div>
             <h1 style={{...BB,fontSize:m?'clamp(58px,16vw,88px)':'clamp(70px,10.5vw,155px)',lineHeight:.9,letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>
-              <span style={{display:'block',WebkitTextFillColor:'transparent',WebkitTextStroke:'2.5px rgba(245,240,235,.65)',textShadow:'0 0 18px rgba(249,115,22,.35)'}}>WE</span>
-              <span style={{display:'block',color:'#F5F0EB',textShadow:'0 0 80px rgba(249,115,22,.28)'}}>DOMINATE</span>
-              <span style={{display:'block',WebkitTextFillColor:'transparent',WebkitTextStroke:'2.5px rgba(245,240,235,.65)',textShadow:'0 0 18px rgba(249,115,22,.35)'}}>SOLAR</span>
+              <span style={{display:'block',WebkitTextFillColor:'transparent',WebkitTextStroke:'2.5px rgba(245,240,235,.65)',textShadow:'0 0 18px rgba(249,115,22,.35)'}}>{T('hero_we')}</span>
+              <span style={{display:'block',color:'#F5F0EB',textShadow:'0 0 80px rgba(249,115,22,.28)'}}>{T('hero_dominate')}</span>
+              <span style={{display:'block',WebkitTextFillColor:'transparent',WebkitTextStroke:'2.5px rgba(245,240,235,.65)',textShadow:'0 0 18px rgba(249,115,22,.35)'}}>{T('hero_solar')}</span>
             </h1>
             <p style={{fontSize:m?15:17,fontWeight:300,color:'#666',maxWidth:460,lineHeight:1.75,margin:m?'18px 0':'26px 0'}}>
-              The technical powerhouse delivering dominance, precision, and efficiency for the nation's largest utility-scale projects.
+              {T('hero_sub')}
             </p>
             <div style={{display:'flex',gap:m?14:20,alignItems:'center',flexWrap:'wrap'}}>
               <a href="#contact" style={{display:'inline-flex',alignItems:'center',gap:10,background:A,color:'#1a1206',...NB,fontSize:m?12:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',textDecoration:'none',padding:m?'13px 24px':'15px 34px',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)',transition:'all .25s'}} onMouseEnter={e=>{e.currentTarget.style.background='#FB923C'}} onMouseLeave={e=>{e.currentTarget.style.background=A}}>
-                Partner Now →
+                {T('cta_partner')} →
               </a>
               <a href="#portfolio" style={{...NB,fontSize:m?12:13,letterSpacing:'2.5px',textTransform:'uppercase',color:'#666',textDecoration:'none',borderBottom:'1px solid rgba(255,255,255,.2)',paddingBottom:3,transition:'color .2s'}}>
-                View Portfolio →
+                {T('cta_view_portfolio')} →
               </a>
             </div>
 
             {/* Stats — inline on mobile, absolute on desktop */}
             {m?(
               <div style={{display:'flex',gap:32,marginTop:36,paddingTop:28,borderTop:'1px solid rgba(255,255,255,.06)'}}>
-                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Placed'},{n:'9',l:'States'}].map(s=>(
+                {[{n:'500+',l:T('stat_mw_combined')},{n:'1.2M+',l:T('stat_modules_team')},{n:'9',l:T('stat_states_worked')}].map(s=>(
                   <div key={s.n}>
                     <div style={{...BB,fontSize:32,color:A,lineHeight:1}}>{s.n}</div>
                     <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:3}}>{s.l}</div>
@@ -4900,7 +5788,7 @@ export default function App(){
               </div>
             ):(
               <div style={{position:'absolute',right:48,bottom:'14%',display:'flex',flexDirection:'column',gap:26}}>
-                {[{n:'500+',l:'Megawatts Installed'},{n:'1.2M+',l:'Modules Placed'}].map(s=>(
+                {[{n:'500+',l:T('stat_mw_combined')},{n:'1.2M+',l:T('stat_modules_team')}].map(s=>(
                   <div key={s.n} style={{textAlign:'right'}}>
                     <div style={{...BB,fontSize:50,color:A,lineHeight:1,textShadow:'0 0 30px rgba(249,115,22,.4)'}}>{s.n}</div>
                     <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:4}}>{s.l}</div>
@@ -4912,7 +5800,7 @@ export default function App(){
 
           {/* Scroll indicator — desktop only */}
           {!m&&<div style={{position:'absolute',bottom:34,left:48,display:'flex',alignItems:'center',gap:12,...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#bbb',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)'}}>
-            <div style={{width:38,height:1,background:'#333',overflow:'hidden',position:'relative'}}><div style={{position:'absolute',inset:0,background:A,animation:'scrollLine 2s ease-in-out infinite'}}/></div>Scroll
+            <div style={{width:38,height:1,background:'#333',overflow:'hidden',position:'relative'}}><div style={{position:'absolute',inset:0,background:A,animation:'scrollLine 2s ease-in-out infinite'}}/></div>{T('scroll')}
           </div>}
         </section>
 
@@ -4921,12 +5809,12 @@ export default function App(){
           <div style={{maxWidth:1100,margin:'0 auto',background:'rgba(2,2,12,.82)',backdropFilter:'blur(16px)',border:'1px solid rgba(249,115,22,.1)',padding:m?'28px 20px':'46px 40px'}}>
             <div style={{textAlign:'center',marginBottom:m?22:32}}>
               <div style={{...NB,fontSize:m?10:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:8,display:'inline-flex',alignItems:'center',gap:12}}>
-                <div style={{width:22,height:1,background:A}}/>our team has combined experience over:<div style={{width:22,height:1,background:A}}/>
+                <div style={{width:22,height:1,background:A}}/>{T('stat_band_kicker')}<div style={{width:22,height:1,background:A}}/>
               </div>
             </div>
             {m?(
               <div style={{display:'flex',justifyContent:'space-around',gap:16}}>
-                {[{n:'500+',l:'MW Combined Experience'},{n:'1.2M+',l:'Modules Placed'},{n:'9',l:'States Worked'}].map(s=>(
+                {[{n:'500+',l:T('stat_mw_combined')},{n:'1.2M+',l:T('stat_modules_team')},{n:'9',l:T('stat_states_worked')}].map(s=>(
                   <div key={s.n} style={{textAlign:'center'}}>
                     <div style={{...BB,fontSize:38,color:'#F5F0EB',lineHeight:1}}>{s.n}</div>
                     <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:6}}>{s.l}</div>
@@ -4935,13 +5823,14 @@ export default function App(){
               </div>
             ):(
               <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto 1fr',alignItems:'center'}}>
-                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>500+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>Megawatts Our Team Installed</div></div>
+                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>500+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>{T('stat_megawatts_long')}</div></div>
                 <div style={{width:1,height:70,background:'linear-gradient(to bottom,transparent,rgba(249,115,22,.4),transparent)',margin:'0 12px'}}/>
-                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>1.2M+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>Modules Team Placed</div></div>
+                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>1.2M+</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>{T('stat_modules_team_long')}</div></div>
                 <div style={{width:1,height:70,background:'linear-gradient(to bottom,transparent,rgba(249,115,22,.4),transparent)',margin:'0 12px'}}/>
-                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>9</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>States Team Worked</div></div>
+                <div style={{textAlign:'center'}}><div style={{...BB,fontSize:60,color:'#F5F0EB',lineHeight:1}}>9</div><div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginTop:8}}>{T('stat_states_team_long')}</div></div>
               </div>
             )}
+            <p style={{...NB,fontSize:m?11:12,fontWeight:300,fontStyle:'italic',color:'#8C8680',lineHeight:1.6,textAlign:'center',marginTop:m?20:28,maxWidth:760,marginLeft:'auto',marginRight:'auto'}}>{T('stats_disclaimer')}</p>
           </div>
         </Sec>
 
@@ -4949,11 +5838,11 @@ export default function App(){
         <Sec id="services">
           <div style={{maxWidth:1200,margin:'0 auto'}}>
             <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-              <div style={{width:22,height:1,background:A}}/>Our Core Scope
+              <div style={{width:22,height:1,background:A}}/>{T('services_kicker')}
             </div>
-            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?18:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>TURNKEY MECHANICAL INSTALLATION</h2>
-            <p style={{...NB,fontSize:m?16:19,fontWeight:300,color:'#E8E2DC',lineHeight:1.7,marginBottom:m?18:24,maxWidth:860}}>We provide <strong style={{color:A,fontWeight:600}}>transparent, turnkey mechanical installation services for EPCs in the solar sector</strong> &mdash; piles, racking, modules, and trackers delivered with real-time proof.</p>
-            <p style={{...NB,fontSize:m?14:15,fontWeight:300,color:'#9C9690',lineHeight:1.7,maxWidth:760,fontStyle:'italic'}}>Beyond the core scope, our team and partners offer supporting services to round out full-scope construction solutions.</p>
+            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?18:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('services_title')}</h2>
+            <p style={{...NB,fontSize:m?16:19,fontWeight:300,color:'#E8E2DC',lineHeight:1.7,marginBottom:m?18:24,maxWidth:860}}>{T('services_intro_pre')}<strong style={{color:A,fontWeight:600}}>{T('services_intro_strong')}</strong>{T('services_intro_post')}</p>
+            <p style={{...NB,fontSize:m?14:15,fontWeight:300,color:'#9C9690',lineHeight:1.7,maxWidth:760,fontStyle:'italic'}}>{T('services_outro')}</p>
             <ExtendedServices m={m} A={A} BB={BB} NB={NB}/>
           </div>
         </Sec>
@@ -4989,11 +5878,11 @@ export default function App(){
         <Sec id="capabilities">
           <div style={{maxWidth:1200,margin:'0 auto'}}>
             <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-              <div style={{width:22,height:1,background:A}}/>What We Deliver
+              <div style={{width:22,height:1,background:A}}/>{T('caps_kicker')}
             </div>
-            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?24:48,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>CAPABILITIES</h2>
+            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?24:48,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('caps_title')}</h2>
             <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(3,1fr)',gap:2}}>
-              {CAPS.map((c,ci)=><CapCard key={ci} c={c} ci={ci}/>)}
+              {[{n:'01',t:T('cap_01_t'),b:T('cap_01_b')},{n:'02',t:T('cap_02_t'),b:T('cap_02_b')},{n:'03',t:T('cap_03_t'),b:T('cap_03_b')}].map((c,ci)=><CapCard key={ci} c={c} ci={ci}/>)}
             </div>
           </div>
         </Sec>
@@ -5004,10 +5893,11 @@ export default function App(){
             <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:m?24:48,flexWrap:'wrap',gap:14}}>
               <div>
                 <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:22,height:1,background:A}}/>Track Record
+                  <div style={{width:22,height:1,background:A}}/>{T('port_kicker')}
                 </div>
-                <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>PROJECT PORTFOLIO</h2>
-                <p style={{...NB,fontSize:m?14:16,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?20:32,maxWidth:600}}>Our team's personal portfolio's.</p>
+                <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('port_title')}</h2>
+                <p style={{...NB,fontSize:m?14:16,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?12:16,maxWidth:600}}>{T('port_intro')}</p>
+                <p style={{...NB,fontSize:m?12:13,fontWeight:300,fontStyle:'italic',lineHeight:1.6,color:'#8C8680',marginBottom:m?20:32,maxWidth:600}}>{T('port_disclaimer')}</p>
               </div>
               {!m&&<p style={{maxWidth:280,fontSize:15,fontWeight:300,color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',lineHeight:1.7}}></p>}
             </div>
@@ -5017,36 +5907,14 @@ export default function App(){
           </div>
         </Sec>
 
-        {/* ── TRACKING / SITE PROGRESS MAP ── */}
-        <Sec id="tracking">
-          <div style={{maxWidth:1400,margin:'0 auto'}}>
-            <TaskTrackerPreview/>
-            <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?14:20,marginTop:m?14:20}}>
-              <div style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.18)',background:'rgba(8,8,20,.65)',backdropFilter:'blur(8px)'}}>
-                <GLBViewer src="/models/midway.glb" height={m?200:280}/>
-                <div style={{position:'absolute',top:10,left:12,...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'rgba(249,115,22,.7)',pointerEvents:'none'}}>▲ LIVE SITE MODEL</div>
-                <div style={{position:'absolute',bottom:10,right:12,...NB,fontSize:9,letterSpacing:'1.5px',textTransform:'uppercase',color:'rgba(249,115,22,.55)',pointerEvents:'none'}}>MIDWAY · 11/4/25</div>
-                <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.45) 100%)',pointerEvents:'none'}}/>
-              </div>
-              <div style={{display:'flex',flexDirection:'column',justifyContent:'center',padding:m?'20px 0':0}}>
-                <p style={{fontSize:m?14:16,fontWeight:300,color:'#777',lineHeight:1.8,marginBottom:12}}>Precision is the backbone of utility-scale operations. Our industry-leading production tracking provides EPCs with absolute transparency — position by position, scope by scope.</p>
-                <div style={{display:'inline-flex',alignItems:'center',gap:14,background:'rgba(249,115,22,.07)',border:'1px solid rgba(249,115,22,.2)',padding:m?'14px 20px':'18px 28px',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)',alignSelf:'flex-start'}}>
-                  <div style={{...BB,fontSize:m?38:50,color:A,lineHeight:1}}>99.8<span style={{fontSize:m?18:24}}>%</span></div>
-                  <div style={{...NB,fontSize:m?10:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666'}}>Production<br/>Tracking Accuracy</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Sec>
-
         {/* ── COVERAGE ── */}
         <div style={{background:A,padding:m?'20px 20px':'28px 48px',display:'flex',alignItems:'center',justifyContent:'center',gap:m?12:34,flexWrap:'wrap',position:'relative',zIndex:5}}>
-          {['National Coverage','Utility-Scale','ISNet Compliant','Safety First'].map(t=>(
+          {[T('cov_national'),T('cov_utility'),T('cov_isnet'),T('cov_safety')].map(t=>(
             <div key={t} style={{display:'flex',alignItems:'center',gap:8,...NB,fontSize:m?10:13,letterSpacing:m?'2px':'3px',textTransform:'uppercase',color:'#fff',textShadow:'none',fontWeight:700}}>
               <div style={{width:4,height:4,background:'#fff',borderRadius:'50%'}}/>{t}
             </div>
           ))}
-          <a href="#contact" style={{background:'#080808',color:A,padding:m?'10px 20px':'12px 32px',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',textDecoration:'none',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}} onMouseEnter={e=>e.currentTarget.style.background='#1a1a1a'} onMouseLeave={e=>e.currentTarget.style.background='#080808'}>Partner Now →</a>
+          <a href="#contact" style={{background:'#080808',color:A,padding:m?'10px 20px':'12px 32px',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',textDecoration:'none',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}} onMouseEnter={e=>e.currentTarget.style.background='#1a1a1a'} onMouseLeave={e=>e.currentTarget.style.background='#080808'}>{T('cta_partner')} →</a>
         </div>
 
         {/* ── CONTACT ── */}
@@ -5054,10 +5922,10 @@ export default function App(){
           <div style={{maxWidth:1200,margin:'0 auto',display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?36:88}}>
             <div>
               <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-                <div style={{width:22,height:1,background:A}}/>Make a Connection
+                <div style={{width:22,height:1,background:A}}/>{T('contact_kicker')}
               </div>
-              <h2 style={{...BB,fontSize:'clamp(32px,7vw,66px)',letterSpacing:2,marginBottom:m?20:34,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>GET IN TOUCH</h2>
-              {[{l:'Headquarters',v:'12856 N Hwy 183, Ste B PMB 2011\nAustin, TX 78750'},{l:'Phone',v:'+1 (619) 870-4491'},{l:'Email',v:'Kaleb.LeBaron@sunriseconstructionco.com'}].map(c=>(
+              <h2 style={{...BB,fontSize:'clamp(32px,7vw,66px)',letterSpacing:2,marginBottom:m?20:34,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('contact_title')}</h2>
+              {[{l:T('contact_label_hq'),v:'12856 N Hwy 183, Ste B PMB 2011\nAustin, TX 78750'},{l:T('contact_label_phone_lbl'),v:'+1 (619) 870-4491'},{l:T('contact_label_email_lbl'),v:'Kaleb.LeBaron@sunriseconstructionco.com'}].map(c=>(
                 <div key={c.l} style={{padding:'16px 0',borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>{c.l}</div>
                   <div style={{fontSize:m?13:15,fontWeight:300,color:'#F5F0EB',whiteSpace:'pre-line',wordBreak:'break-all'}}>{c.v}</div>
@@ -5066,40 +5934,40 @@ export default function App(){
             </div>
             <div>
               <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:18,display:'flex',alignItems:'center',gap:12}}>
-                <div style={{width:22,height:1,background:A}}/>Start a Conversation
+                <div style={{width:22,height:1,background:A}}/>{T('contact_start_kicker')}
               </div>
               {contactSubmitted?(
                 <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'24px 20px':'32px 28px',textAlign:'center'}}>
-                  <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>MESSAGE SENT</div>
-                  <div style={{...NB,fontSize:14,color:'#ccc'}}>Thank you for reaching out. Our team will be in touch shortly.</div>
-                  <div onClick={function(){setContactSubmitted(false);setContactForm({firstName:'',lastName:'',company:'',email:'',details:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>Send Another Message</div>
+                  <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>{T('contact_thanks_title')}</div>
+                  <div style={{...NB,fontSize:14,color:'#ccc'}}>{T('contact_thanks_copy')}</div>
+                  <div onClick={function(){setContactSubmitted(false);setContactForm({firstName:'',lastName:'',company:'',email:'',details:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('contact_send_another')}</div>
                 </div>
               ):(
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                   <div>
-                    <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>First Name</div>
-                    <input value={contactForm.firstName} onChange={function(e){setContactForm(Object.assign({},contactForm,{firstName:e.target.value}))}} placeholder="John" style={IST} onFocus={fIn} onBlur={fOut}/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>{T('contact_label_first')}</div>
+                    <input value={contactForm.firstName} onChange={function(e){setContactForm(Object.assign({},contactForm,{firstName:e.target.value}))}} placeholder={T('contact_ph_first')} style={IST} onFocus={fIn} onBlur={fOut}/>
                   </div>
                   <div>
-                    <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>Last Name</div>
-                    <input value={contactForm.lastName} onChange={function(e){setContactForm(Object.assign({},contactForm,{lastName:e.target.value}))}} placeholder="Smith" style={IST} onFocus={fIn} onBlur={fOut}/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>{T('contact_label_last')}</div>
+                    <input value={contactForm.lastName} onChange={function(e){setContactForm(Object.assign({},contactForm,{lastName:e.target.value}))}} placeholder={T('contact_ph_last')} style={IST} onFocus={fIn} onBlur={fOut}/>
                   </div>
                 </div>
                 <div>
-                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>Company / EPC</div>
-                  <input value={contactForm.company} onChange={function(e){setContactForm(Object.assign({},contactForm,{company:e.target.value}))}} placeholder="Company Name" style={IST} onFocus={fIn} onBlur={fOut}/>
+                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>{T('contact_label_company')}</div>
+                  <input value={contactForm.company} onChange={function(e){setContactForm(Object.assign({},contactForm,{company:e.target.value}))}} placeholder={T('contact_ph_company')} style={IST} onFocus={fIn} onBlur={fOut}/>
                 </div>
                 <div>
-                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>Email</div>
-                  <input type="email" value={contactForm.email} onChange={function(e){setContactForm(Object.assign({},contactForm,{email:e.target.value}))}} placeholder="john@company.com" style={IST} onFocus={fIn} onBlur={fOut}/>
+                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>{T('contact_label_email')}</div>
+                  <input type="email" value={contactForm.email} onChange={function(e){setContactForm(Object.assign({},contactForm,{email:e.target.value}))}} placeholder={T('contact_ph_email')} style={IST} onFocus={fIn} onBlur={fOut}/>
                 </div>
                 <div>
-                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>Project Details</div>
-                  <textarea value={contactForm.details} onChange={function(e){setContactForm(Object.assign({},contactForm,{details:e.target.value}))}} placeholder="MW capacity, location, timeline..." style={{...IST,minHeight:m?80:105,resize:'vertical'}} onFocus={fIn} onBlur={fOut}/>
+                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ccc',textShadow:'0 1px 3px rgba(0,0,0,0.95), 0 0 12px rgba(0,0,0,1)',marginBottom:6}}>{T('contact_label_details')}</div>
+                  <textarea value={contactForm.details} onChange={function(e){setContactForm(Object.assign({},contactForm,{details:e.target.value}))}} placeholder={T('contact_ph_details')} style={{...IST,minHeight:m?80:105,resize:'vertical'}} onFocus={fIn} onBlur={fOut}/>
                 </div>
-                <div onClick={function(){if(!contactForm.firstName||!contactForm.email){return}var sub=Object.assign({},contactForm,{id:uid(),submittedAt:new Date().toISOString(),type:'partner'});sGet('contact_submissions').then(function(prev){sSet('contact_submissions',(prev||[]).concat([sub]))});setContactSubmitted(true)}} onMouseEnter={function(e){e.currentTarget.style.background='#FB923C'}} onMouseLeave={function(e){e.currentTarget.style.background=contactForm.firstName&&contactForm.email?A:'rgba(249,115,22,.3)'}} style={{display:'inline-flex',alignItems:'center',gap:10,background:contactForm.firstName&&contactForm.email?A:'rgba(249,115,22,.3)',color:contactForm.firstName&&contactForm.email?'#1a1206':'#888',cursor:contactForm.firstName&&contactForm.email?'pointer':'default',...NB,fontSize:m?12:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:m?'13px 24px':'15px 34px',border:'none',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)',transition:'all .25s',alignSelf:'flex-start'}}>
-                  Send Message →
+                <div onClick={function(){if(!contactForm.firstName||!contactForm.email){return}var sub=Object.assign({},contactForm,{id:uid(),submittedAt:new Date().toISOString(),type:'partner',kind:'partner',status:'New'});sGet('contact_submissions').then(function(prev){sSet('contact_submissions',(prev||[]).concat([sub]))});try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:sub}),keepalive:true}).catch(function(){})}catch(e){}logAudit({type:'change',tool:'crm',detail:'Partner inquiry from '+(sub.firstName||'')+' '+(sub.lastName||'')});setContactSubmitted(true)}} onMouseEnter={function(e){e.currentTarget.style.background='#FB923C'}} onMouseLeave={function(e){e.currentTarget.style.background=contactForm.firstName&&contactForm.email?A:'rgba(249,115,22,.3)'}} style={{display:'inline-flex',alignItems:'center',gap:10,background:contactForm.firstName&&contactForm.email?A:'rgba(249,115,22,.3)',color:contactForm.firstName&&contactForm.email?'#1a1206':'#888',cursor:contactForm.firstName&&contactForm.email?'pointer':'default',...NB,fontSize:m?12:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:m?'13px 24px':'15px 34px',border:'none',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)',transition:'all .25s',alignSelf:'flex-start'}}>
+                  {T('contact_send')}
                 </div>
               </div>
               )}
@@ -5112,37 +5980,37 @@ export default function App(){
         <Sec id="careers">
           <div style={{maxWidth:900,margin:'0 auto'}}>
             <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-              <div style={{width:22,height:1,background:A}}/>Join Our Team
+              <div style={{width:22,height:1,background:A}}/>{T('careers_kicker')}
             </div>
-            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?16:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>CAREERS</h2>
+            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?16:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('careers_title')}</h2>
             <p style={{...NB,fontSize:m?14:16,lineHeight:1.8,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?24:36,maxWidth:600}}>
-              We're building the future of solar energy across 9 states. If you're ready to join a team that's installed 500+ MW and placed 1.2M+ modules, we want to hear from you.
+              {T('careers_copy')}
             </p>
             {careerSubmitted?(
               <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'24px 20px':'32px 28px',textAlign:'center'}}>
-                <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>APPLICATION RECEIVED</div>
-                <div style={{...NB,fontSize:14,color:'#ccc'}}>Thank you for your interest. Our team will review your application and reach out if there's a match.</div>
-                <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',experience:'',message:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>Submit Another Application</div>
+                <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>{T('careers_thanks_title')}</div>
+                <div style={{...NB,fontSize:14,color:'#ccc'}}>{T('careers_thanks_copy')}</div>
+                <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
               </div>
             ):(
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?12:20}}>
                 <div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>FULL NAME *</div>
-                    <input value={careerForm.name} onChange={function(e){setCareerForm(Object.assign({},careerForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="Your full name"/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_name')} *</div>
+                    <input value={careerForm.name} onChange={function(e){setCareerForm(Object.assign({},careerForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_name')}/>
                   </div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>EMAIL *</div>
-                    <input value={careerForm.email} onChange={function(e){setCareerForm(Object.assign({},careerForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="your@email.com"/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_email')} *</div>
+                    <input value={careerForm.email} onChange={function(e){setCareerForm(Object.assign({},careerForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_email')}/>
                   </div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>PHONE</div>
-                    <input value={careerForm.phone} onChange={function(e){setCareerForm(Object.assign({},careerForm,{phone:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="(xxx) xxx-xxxx"/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_phone')}</div>
+                    <input value={careerForm.phone} onChange={function(e){setCareerForm(Object.assign({},careerForm,{phone:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_phone')}/>
                   </div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>POSITION OF INTEREST</div>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_position')}</div>
                     <select value={careerForm.position} onChange={function(e){setCareerForm(Object.assign({},careerForm,{position:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">Select a position...</option>
+                      <option value="">{T('careers_select_position')}</option>
                       <option value="Civil Foreman">Civil Foreman</option>
                       <option value="Pile Crew Lead">Pile Crew Lead</option>
                       <option value="Tracker Installer">Tracker Installer</option>
@@ -5160,9 +6028,9 @@ export default function App(){
                 </div>
                 <div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>YEARS OF EXPERIENCE</div>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_experience')}</div>
                     <select value={careerForm.experience} onChange={function(e){setCareerForm(Object.assign({},careerForm,{experience:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">Select...</option>
+                      <option value="">{T('careers_select_experience')}…</option>
                       <option value="0-1">0-1 years</option>
                       <option value="2-4">2-4 years</option>
                       <option value="5-9">5-9 years</option>
@@ -5170,11 +6038,28 @@ export default function App(){
                     </select>
                   </div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TELL US ABOUT YOURSELF</div>
-                    <textarea value={careerForm.message} onChange={function(e){setCareerForm(Object.assign({},careerForm,{message:e.target.value}))}} rows={4} style={{...IST,resize:'vertical'}} onFocus={fIn} onBlur={fOut} placeholder="Relevant skills, certifications, availability..."/>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_gender')}</div>
+                    <select value={careerForm.gender} onChange={function(e){setCareerForm(Object.assign({},careerForm,{gender:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                      <option value="">{T('careers_select_default')}</option>
+                      <option value="male">{T('opt_gender_male')}</option>
+                      <option value="female">{T('opt_gender_female')}</option>
+                    </select>
                   </div>
                   <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>RESUME (PDF)</div>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_languages')}</div>
+                    <select value={careerForm.languages} onChange={function(e){setCareerForm(Object.assign({},careerForm,{languages:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                      <option value="">{T('careers_select_default')}</option>
+                      <option value="en">{T('opt_lang_en')}</option>
+                      <option value="es">{T('opt_lang_es')}</option>
+                      <option value="both">{T('opt_lang_both')}</option>
+                    </select>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_message')}</div>
+                    <textarea value={careerForm.message} onChange={function(e){setCareerForm(Object.assign({},careerForm,{message:e.target.value}))}} rows={4} style={{...IST,resize:'vertical'}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_message')}/>
+                  </div>
+                  <div style={{marginBottom:14}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_resume')}</div>
                     <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'rgba(249,115,22,.06)',border:'1px dashed rgba(249,115,22,.3)',cursor:'pointer',transition:'background .2s'}} onMouseEnter={function(e){e.currentTarget.style.background='rgba(249,115,22,.12)'}} onMouseLeave={function(e){e.currentTarget.style.background='rgba(249,115,22,.06)'}}>
                       <span style={{...NB,fontSize:13,color:A,letterSpacing:'1px'}}>Upload Resume</span>
                       <input type="file" accept=".pdf,.doc,.docx" style={{display:'none'}} onChange={function(e){if(e.target.files&&e.target.files[0]){setCareerForm(Object.assign({},careerForm,{resume:e.target.files[0].name}))}}}/>
@@ -5183,8 +6068,8 @@ export default function App(){
                   </div>
                 </div>
                 <div style={{gridColumn:m?'1':'1 / -1',marginTop:m?8:16}}>
-                  <div onClick={function(){if(!careerForm.name||!careerForm.email){return}var submission=Object.assign({},careerForm,{id:uid(),submittedAt:new Date().toISOString()});sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});setCareerSubmitted(true)}} style={{cursor:careerForm.name&&careerForm.email?'pointer':'default',background:careerForm.name&&careerForm.email?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}}>
-                    SUBMIT APPLICATION
+                  <div onClick={function(){if(!careerForm.name||!careerForm.email){return}var submission=Object.assign({},careerForm,{id:uid(),submittedAt:new Date().toISOString(),kind:'career',type:'career',status:'New'});sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:submission}),keepalive:true}).catch(function(){})}catch(e){}logAudit({type:'change',tool:'careers',detail:'Career application from '+(submission.name||'')});setCareerSubmitted(true)}} style={{cursor:careerForm.name&&careerForm.email?'pointer':'default',background:careerForm.name&&careerForm.email?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}}>
+                    {T('careers_submit').toUpperCase()}
                   </div>
                   <div style={{textAlign:'center',marginTop:12,...NB,fontSize:11,color:'#666',letterSpacing:'1px'}}>
                     We are an equal opportunity employer. All positions require travel to project sites across the US.
