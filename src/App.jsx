@@ -1468,6 +1468,44 @@ async function saveProjects(projects) {
   try { await sSet("precon_bids", projects); } catch (e) { console.error(e); }
   syncBidsToFieldReporting(projects);
   syncBidsToCompliance(projects);
+  syncBidsToDocuments(projects);
+}
+
+// ── Document Portal helpers (shared by PreCon bid sync + Compliance upload) ──
+const DP_ENDPOINT = '/.netlify/functions/documents';
+const DP_CHUNK_BYTES = 3 * 1024 * 1024;
+function dpBlobToB64(blob){return new Promise(function(res,rej){var fr=new FileReader();fr.onload=function(){res(String(fr.result).split(',')[1]||'')};fr.onerror=rej;fr.readAsDataURL(blob)})}
+function dpProjectFolderId(bidId){return 'proj_'+bidId}
+async function dpEnsureFolder(folderId, name, parentId, createdBy){
+  try{
+    var f={id:folderId,name:name||'Project',parentId:parentId||null,createdAt:Date.now(),createdBy:createdBy||'auto'};
+    await fetch(DP_ENDPOINT+'?folder=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({folder:f}),keepalive:true});
+  }catch(e){}
+}
+async function dpUploadFile(file, folderId, uploadedBy){
+  if(!file||!folderId)return null;
+  try{
+    var id='d_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    var total=Math.max(1,Math.ceil(file.size/DP_CHUNK_BYTES));
+    for(var i=0;i<total;i++){
+      var slice=file.slice(i*DP_CHUNK_BYTES,(i+1)*DP_CHUNK_BYTES);
+      var data=await dpBlobToB64(slice);
+      var r=await fetch(DP_ENDPOINT+'?file=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,kind:'orig',index:i,data:data})});
+      if(!r.ok)throw new Error('chunk '+i);
+    }
+    var isPdf=(file.type||'').indexOf('pdf')>=0||/\.pdf$/i.test(file.name);
+    var doc={id:id,type:isPdf?'pdf':'file',name:file.name,folderId:folderId,uploadedBy:uploadedBy||'',uploadedAt:Date.now(),mime:file.type||'application/octet-stream',size:file.size,chunks:total};
+    await fetch(DP_ENDPOINT+'?upsert=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({doc:doc}),keepalive:true});
+    return doc;
+  }catch(e){console.error('dpUploadFile error:',e);return null;}
+}
+function syncBidsToDocuments(bids){
+  (bids||[]).forEach(function(bid){
+    if(!bid||bid.archived)return;
+    var p=bid.params||{};
+    var name=p.projectName||('Bid '+bid.id);
+    dpEnsureFolder(dpProjectFolderId(bid.id), name, null, 'PreCon');
+  });
 }
 
 function syncBidsToFieldReporting(bids) {
@@ -2634,6 +2672,13 @@ function ComplianceCenter({ onExit }) {
       var contracts = (proj.contracts || []).concat([{ id: cuid(), name: file.name, date: new Date().toISOString(), size: file.size, itemCount: newItems.length }]);
       updateField('contracts', contracts);
       saveItems(selId, items.concat(newItems));
+      // ── auto-file the uploaded contract into the project folder in Document Portal ──
+      if (proj.bidId) {
+        try {
+          await dpEnsureFolder(dpProjectFolderId(proj.bidId), proj.name || ('Project '+proj.bidId), null, 'Compliance');
+          dpUploadFile(file, dpProjectFolderId(proj.bidId), 'Compliance').then(function(){}).catch(function(){});
+        } catch (e) { console.error('Document Portal upload failed:', e); }
+      }
     } catch(e) { setError(e.message); }
     setScanning(false);
     if (fileRef.current) fileRef.current.value = '';
