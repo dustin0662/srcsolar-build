@@ -151,7 +151,7 @@ const I18N = {
     services_outro: 'Beyond the core scope, our team and partners offer supporting services to round out full-scope construction solutions.',
     photogrammetry_kicker: 'Affordable Tracking Solution',
     photogrammetry_title: '3D PHOTOGRAMMETRY MODELS',
-    photogrammetry_copy: 'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — millimeter-accurate as-built scans of your project, refreshed on the cadence you need and handed straight to your team.',
+    photogrammetry_copy: 'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — as-built scans of your project, refreshed on the cadence you need and handed straight to your team.',
     caps_kicker: 'What We Deliver', caps_title: 'CAPABILITIES',
     cap_01_t: 'ISNet Compliance', cap_01_b: 'Full ISNetworld compliance ensuring safety protocols, training records, and insurance coverage meet the most stringent standards for utility-scale solar.',
     cap_02_t: 'Apprenticeship Enabled', cap_02_b: 'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.',
@@ -205,7 +205,7 @@ const I18N = {
     services_outro: 'Más allá del alcance principal, nuestro equipo y socios ofrecen servicios complementarios para completar soluciones de construcción integrales.',
     photogrammetry_kicker: 'Solución de Seguimiento Accesible',
     photogrammetry_title: 'MODELOS DE FOTOGRAMETRÍA 3D',
-    photogrammetry_copy: 'Ofrecemos modelos de fotogrametría capturados por dron como una solución de seguimiento accesible y un entregable de reporte con evidencia — escaneos as-built milimétricamente precisos de su proyecto, actualizados con la cadencia que necesite y entregados directamente a su equipo.',
+    photogrammetry_copy: 'Ofrecemos modelos de fotogrametría capturados por dron como una solución de seguimiento accesible y un entregable de reporte con evidencia — escaneos as-built de su proyecto, actualizados con la cadencia que necesite y entregados directamente a su equipo.',
     caps_kicker: 'Lo Que Entregamos', caps_title: 'CAPACIDADES',
     cap_01_t: 'Cumplimiento ISNet', cap_01_b: 'Cumplimiento total ISNetworld que asegura que los protocolos de seguridad, registros de capacitación y cobertura de seguro cumplan con los estándares más estrictos para solar a gran escala.',
     cap_02_t: 'Programa de Aprendices', cap_02_b: 'Programas de aprendizaje certificados que combinan experiencia en obra con capacitación técnica para formar fuerza laboral local calificada en cada región donde operamos.',
@@ -570,7 +570,7 @@ function Sec({children,id,style={}}){
 // ── EXTENDED SERVICES (collapsible sub-scopes) ─────────────────────────────
 const EXT_SERVICES=[
   {t:'3rd Party Progress Auditing',d:'Independent, proof-based models showing exactly where every project stands.'},
-  {t:'3D Photogrammetry Reporting',d:'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — millimeter-accurate as-built scans handed to your team in days, not weeks.'},
+  {t:'3D Photogrammetry Reporting',d:'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — as-built scans handed to your team in days, not weeks.'},
   {t:'Survey Solutions',d:'Layout, staking, and as-built survey support across utility-scale solar sites.'},
   {t:'Fencing & Ironworks',d:'Perimeter security and structural ironwork integrated with mechanical scope.'},
   {t:'Electrical & Civil (via Partners)',d:'Full-scale electrical and civil execution through trusted partners — one accountable team, end-to-end scope.'}
