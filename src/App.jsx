@@ -149,6 +149,9 @@ const I18N = {
     services_kicker: 'Our Core Scope', services_title: 'TURNKEY MECHANICAL INSTALLATION',
     services_intro_pre: 'We provide ', services_intro_strong: 'transparent, turnkey mechanical installation services for EPCs in the solar sector', services_intro_post: ' — piles, racking, modules, and trackers delivered with real-time proof.',
     services_outro: 'Beyond the core scope, our team and partners offer supporting services to round out full-scope construction solutions.',
+    photogrammetry_kicker: 'Affordable Tracking Solution',
+    photogrammetry_title: '3D PHOTOGRAMMETRY MODELS',
+    photogrammetry_copy: 'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — millimeter-accurate as-built scans of your project, refreshed on the cadence you need and handed straight to your team.',
     caps_kicker: 'What We Deliver', caps_title: 'CAPABILITIES',
     cap_01_t: 'ISNet Compliance', cap_01_b: 'Full ISNetworld compliance ensuring safety protocols, training records, and insurance coverage meet the most stringent standards for utility-scale solar.',
     cap_02_t: 'Apprenticeship Enabled', cap_02_b: 'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.',
@@ -200,6 +203,9 @@ const I18N = {
     services_kicker: 'Nuestro Alcance Principal', services_title: 'INSTALACIÓN MECÁNICA LLAVE EN MANO',
     services_intro_pre: 'Brindamos ', services_intro_strong: 'servicios transparentes y llave en mano de instalación mecánica para EPCs en el sector solar', services_intro_post: ' — pilotes, racks, módulos y trackers entregados con evidencia en tiempo real.',
     services_outro: 'Más allá del alcance principal, nuestro equipo y socios ofrecen servicios complementarios para completar soluciones de construcción integrales.',
+    photogrammetry_kicker: 'Solución de Seguimiento Accesible',
+    photogrammetry_title: 'MODELOS DE FOTOGRAMETRÍA 3D',
+    photogrammetry_copy: 'Ofrecemos modelos de fotogrametría capturados por dron como una solución de seguimiento accesible y un entregable de reporte con evidencia — escaneos as-built milimétricamente precisos de su proyecto, actualizados con la cadencia que necesite y entregados directamente a su equipo.',
     caps_kicker: 'Lo Que Entregamos', caps_title: 'CAPACIDADES',
     cap_01_t: 'Cumplimiento ISNet', cap_01_b: 'Cumplimiento total ISNetworld que asegura que los protocolos de seguridad, registros de capacitación y cobertura de seguro cumplan con los estándares más estrictos para solar a gran escala.',
     cap_02_t: 'Programa de Aprendices', cap_02_b: 'Programas de aprendizaje certificados que combinan experiencia en obra con capacitación técnica para formar fuerza laboral local calificada en cada región donde operamos.',
@@ -564,7 +570,7 @@ function Sec({children,id,style={}}){
 // ── EXTENDED SERVICES (collapsible sub-scopes) ─────────────────────────────
 const EXT_SERVICES=[
   {t:'3rd Party Progress Auditing',d:'Independent, proof-based models showing exactly where every project stands.'},
-  {t:'3D Photogrammetry Reporting',d:'High-resolution drone-derived scans of as-built site conditions, delivered to your team.'},
+  {t:'3D Photogrammetry Reporting',d:'We offer drone-captured photogrammetry models as an affordable site-tracking solution and proof-based reporting deliverable — millimeter-accurate as-built scans handed to your team in days, not weeks.'},
   {t:'Survey Solutions',d:'Layout, staking, and as-built survey support across utility-scale solar sites.'},
   {t:'Fencing & Ironworks',d:'Perimeter security and structural ironwork integrated with mechanical scope.'},
   {t:'Electrical & Civil (via Partners)',d:'Full-scale electrical and civil execution through trusted partners — one accountable team, end-to-end scope.'}
@@ -5843,6 +5849,14 @@ export default function App(){
             <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?18:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('services_title')}</h2>
             <p style={{...NB,fontSize:m?16:19,fontWeight:300,color:'#E8E2DC',lineHeight:1.7,marginBottom:m?18:24,maxWidth:860}}>{T('services_intro_pre')}<strong style={{color:A,fontWeight:600}}>{T('services_intro_strong')}</strong>{T('services_intro_post')}</p>
             <p style={{...NB,fontSize:m?14:15,fontWeight:300,color:'#9C9690',lineHeight:1.7,maxWidth:760,fontStyle:'italic'}}>{T('services_outro')}</p>
+            <div style={{marginTop:m?22:28,padding:m?'16px 18px':'22px 26px',background:'rgba(249,115,22,.07)',border:'1px solid rgba(249,115,22,.28)',borderLeft:'3px solid '+A,maxWidth:860,display:'flex',gap:m?12:18,alignItems:'flex-start',flexWrap:'wrap'}}>
+              <div style={{...BB,fontSize:m?22:28,letterSpacing:1.5,color:A,lineHeight:1}}>▲</div>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{...NB,fontSize:11,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('photogrammetry_kicker')}</div>
+                <div style={{...BB,fontSize:m?20:24,letterSpacing:1.5,color:'#F5F0EB',marginBottom:m?6:8,lineHeight:1.1}}>{T('photogrammetry_title')}</div>
+                <p style={{...NB,fontSize:m?13:15,fontWeight:300,color:'#CCC8C2',lineHeight:1.6,margin:0}}>{T('photogrammetry_copy')}</p>
+              </div>
+            </div>
             <ExtendedServices m={m} A={A} BB={BB} NB={NB}/>
           </div>
         </Sec>
