@@ -161,6 +161,27 @@ const I18N = {
     port_disclaimer: 'These projects represent the individual field experience of our team members — not necessarily work performed by Sunrise Construction & Development.',
     cov_national: 'National Coverage', cov_utility: 'Utility-Scale', cov_isnet: 'ISNet Compliant', cov_safety: 'Safety First',
     careers_kicker: 'Join the Mission', careers_title: 'BUILD WITH US',
+    now_hiring_kicker: 'Now Hiring',
+    open_positions: 'OPEN POSITIONS',
+    open_positions_intro: "We're actively hiring across our live solar projects in Ohio and Texas. Tap a role to apply.",
+    careers_short_copy: "Solar field crews building utility-scale projects across multiple states. Competitive pay, real travel, real impact.",
+    view_openings: 'View Openings & Apply',
+    apply_now: 'Apply Now',
+    apply_page_title: 'APPLY FOR WORK',
+    apply_back: '← Back to Site',
+    apply_intro: "Select a role and tell us a little about yourself. We review every application and reach out if it's a fit.",
+    careers_label_location: 'Preferred Location',
+    careers_select_location: 'Select a location',
+    loc_oh: 'Ohio',
+    loc_tx: 'Texas',
+    loc_either: 'Either (Ohio or Texas)',
+    pos_laborer: 'Laborer',
+    pos_safety_field: 'Safety Field Tech',
+    pos_quality: 'Quality Inspector',
+    pos_other: 'Future Opportunity (no role open yet)',
+    pos_laborer_desc: 'On-site solar crew member supporting pile driving, racking, and module installation.',
+    pos_safety_field_desc: 'Field-based safety presence — daily JSAs, audits, incident response, and toolbox talks.',
+    pos_quality_desc: 'Walk-throughs, install inspections, and punch-list management against EPC specs and as-built tolerances.',
     careers_copy: "We're building the future of solar energy across 9 states. If you're ready to join a team whose members bring 500+ MW of combined personal experience and 1.2M+ modules placed, we want to hear from you.",
     careers_thanks_title: 'APPLICATION RECEIVED', careers_thanks_copy: "We'll review your application and reach out if it's a match. Thank you!",
     careers_submit_another: 'Submit Another Application',
@@ -215,6 +236,27 @@ const I18N = {
     port_disclaimer: 'Estos proyectos representan la experiencia individual de campo de los miembros de nuestro equipo — no necesariamente trabajo realizado por Sunrise Construction & Development.',
     cov_national: 'Cobertura Nacional', cov_utility: 'Escala Industrial', cov_isnet: 'Certificado ISNet', cov_safety: 'Seguridad Primero',
     careers_kicker: 'Únete a la Misión', careers_title: 'CONSTRUYE CON NOSOTROS',
+    now_hiring_kicker: 'Contratando Ahora',
+    open_positions: 'VACANTES DISPONIBLES',
+    open_positions_intro: 'Estamos contratando activamente en nuestros proyectos solares activos en Ohio y Texas. Toca un puesto para postularte.',
+    careers_short_copy: 'Cuadrillas de campo solar construyendo proyectos a gran escala en varios estados. Pago competitivo, viajes reales, impacto real.',
+    view_openings: 'Ver Vacantes y Postularse',
+    apply_now: 'Postularse',
+    apply_page_title: 'POSTULARSE',
+    apply_back: '← Volver al Sitio',
+    apply_intro: 'Selecciona un puesto y cuéntanos un poco sobre ti. Revisamos cada solicitud y te contactamos si hay una coincidencia.',
+    careers_label_location: 'Ubicación Preferida',
+    careers_select_location: 'Selecciona una ubicación',
+    loc_oh: 'Ohio',
+    loc_tx: 'Texas',
+    loc_either: 'Cualquiera (Ohio o Texas)',
+    pos_laborer: 'Obrero',
+    pos_safety_field: 'Técnico de Seguridad en Campo',
+    pos_quality: 'Inspector de Calidad',
+    pos_other: 'Oportunidad Futura (ningún puesto abierto aún)',
+    pos_laborer_desc: 'Miembro de cuadrilla solar en sitio que apoya el hincado de pilotes, racking e instalación de módulos.',
+    pos_safety_field_desc: 'Presencia de seguridad en campo — JSAs diarios, auditorías, respuesta a incidentes y charlas de seguridad.',
+    pos_quality_desc: 'Recorridos, inspecciones de instalación y manejo de punch-list contra especificaciones del EPC y tolerancias as-built.',
     careers_copy: 'Estamos construyendo el futuro de la energía solar en 9 estados. Si estás listo para unirte a un equipo cuyos miembros aportan más de 500 MW de experiencia personal combinada y más de 1.2M módulos colocados, queremos saber de ti.',
     careers_thanks_title: 'SOLICITUD RECIBIDA', careers_thanks_copy: 'Revisaremos tu solicitud y te contactaremos si hay una coincidencia. ¡Gracias!',
     careers_submit_another: 'Enviar Otra Solicitud',
@@ -5053,7 +5095,7 @@ export default function App(){
   const[loginErr,setLoginErr]=useState('')
   const[loginUser,setLoginUser]=useState('')
   const[loginPass,setLoginPass]=useState('')
-  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})
+  const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',location:'',experience:'',gender:'',languages:'',message:''})
   const[careerSubmitted,setCareerSubmitted]=useState(false)
   const[contactForm,setContactForm]=useState({firstName:'',lastName:'',company:'',email:'',details:''})
   const[contactSubmitted,setContactSubmitted]=useState(false)
@@ -5757,6 +5799,131 @@ export default function App(){
           </div>
         )}
 
+        {/* ── APPLY FOR WORK PAGE ── */}
+        {page==='apply'&&(
+          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'82px 16px 60px':'120px 48px 80px'}}>
+            <div style={{maxWidth:960,margin:'0 auto'}}>
+              <div onClick={function(){setPage('landing');try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:m?14:22}}>{T('apply_back')}</div>
+              <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:10,display:'flex',alignItems:'center',gap:12}}>
+                <div style={{width:22,height:1,background:A}}/>{T('now_hiring_kicker')}
+              </div>
+              <h2 style={{...BB,fontSize:m?'clamp(34px,9vw,56px)':'clamp(40px,5vw,68px)',letterSpacing:2,marginBottom:m?12:18,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('apply_page_title')}</h2>
+              <p style={{...NB,fontSize:m?14:16,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?22:30,maxWidth:660}}>{T('apply_intro')}</p>
+
+              {/* Open positions cards */}
+              <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:10}}>{T('open_positions')}</div>
+              <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(3,1fr)',gap:m?10:14,marginBottom:m?28:36}}>
+                {[{k:'pos_laborer',d:'pos_laborer_desc'},{k:'pos_safety_field',d:'pos_safety_field_desc'},{k:'pos_quality',d:'pos_quality_desc'}].map(function(role){
+                  var label=T(role.k);var selected=careerForm.position===label;
+                  return (
+                    <div key={role.k} onClick={function(){setCareerForm(Object.assign({},careerForm,{position:label}))}} style={{cursor:'pointer',background:selected?'rgba(249,115,22,.12)':'rgba(8,8,20,.6)',backdropFilter:'blur(10px)',border:'1px solid '+(selected?A:'rgba(249,115,22,.22)'),padding:m?'16px 18px':'20px 22px',transition:'all .25s'}} onMouseEnter={function(e){if(!selected){e.currentTarget.style.borderColor=A}}} onMouseLeave={function(e){if(!selected){e.currentTarget.style.borderColor='rgba(249,115,22,.22)'}}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+                        <span style={{...NB,fontSize:9,letterSpacing:'2px',padding:'3px 8px',background:'rgba(34,197,94,.18)',color:'#22c55e',fontWeight:700,textTransform:'uppercase'}}>Open</span>
+                        <span style={{...NB,fontSize:10,letterSpacing:'1.5px',padding:'3px 8px',background:'rgba(249,115,22,.1)',color:A,textTransform:'uppercase'}}>OH · TX</span>
+                      </div>
+                      <div style={{...BB,fontSize:m?18:21,letterSpacing:1.2,color:'#F5F0EB',marginBottom:6,lineHeight:1.1}}>{label.toUpperCase()}</div>
+                      <div style={{...NB,fontSize:m?12:13,fontWeight:300,color:'#CCC8C2',lineHeight:1.55}}>{T(role.d)}</div>
+                      {selected&&<div style={{marginTop:10,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,fontWeight:700}}>✓ Selected</div>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Application form */}
+              {careerSubmitted?(
+                <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'26px 22px':'36px 32px',textAlign:'center'}}>
+                  <div style={{...BB,fontSize:30,letterSpacing:2,color:'#22c55e',marginBottom:10}}>{T('careers_thanks_title')}</div>
+                  <div style={{...NB,fontSize:14,color:'#ccc',maxWidth:480,margin:'0 auto'}}>{T('careers_thanks_copy')}</div>
+                  <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',location:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:18,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
+                </div>
+              ):(
+                <div style={{background:'rgba(8,8,20,.55)',backdropFilter:'blur(10px)',border:'1px solid rgba(249,115,22,.18)',padding:m?'20px':'28px 32px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?12:18}}>
+                    <div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_name')} *</div>
+                        <input value={careerForm.name} onChange={function(e){setCareerForm(Object.assign({},careerForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_name')}/>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_email')} *</div>
+                        <input value={careerForm.email} onChange={function(e){setCareerForm(Object.assign({},careerForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_email')}/>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_phone')}</div>
+                        <input value={careerForm.phone} onChange={function(e){setCareerForm(Object.assign({},careerForm,{phone:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_phone')}/>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_position')} *</div>
+                        <select value={careerForm.position} onChange={function(e){setCareerForm(Object.assign({},careerForm,{position:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                          <option value="">{T('careers_select_position')}</option>
+                          <option value={T('pos_laborer')}>{T('pos_laborer')} — OH · TX</option>
+                          <option value={T('pos_safety_field')}>{T('pos_safety_field')} — OH · TX</option>
+                          <option value={T('pos_quality')}>{T('pos_quality')} — OH · TX</option>
+                          <option value="Other">{T('pos_other')}</option>
+                        </select>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_location')}</div>
+                        <select value={careerForm.location} onChange={function(e){setCareerForm(Object.assign({},careerForm,{location:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                          <option value="">{T('careers_select_location')}</option>
+                          <option value="Ohio">{T('loc_oh')}</option>
+                          <option value="Texas">{T('loc_tx')}</option>
+                          <option value="Either">{T('loc_either')}</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_experience')}</div>
+                        <select value={careerForm.experience} onChange={function(e){setCareerForm(Object.assign({},careerForm,{experience:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                          <option value="">{T('careers_select_experience')}…</option>
+                          <option value="0-1">0-1 years</option>
+                          <option value="2-4">2-4 years</option>
+                          <option value="5-9">5-9 years</option>
+                          <option value="10+">10+ years</option>
+                        </select>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_gender')}</div>
+                        <select value={careerForm.gender} onChange={function(e){setCareerForm(Object.assign({},careerForm,{gender:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                          <option value="">{T('careers_select_default')}</option>
+                          <option value="male">{T('opt_gender_male')}</option>
+                          <option value="female">{T('opt_gender_female')}</option>
+                        </select>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_languages')}</div>
+                        <select value={careerForm.languages} onChange={function(e){setCareerForm(Object.assign({},careerForm,{languages:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
+                          <option value="">{T('careers_select_default')}</option>
+                          <option value="en">{T('opt_lang_en')}</option>
+                          <option value="es">{T('opt_lang_es')}</option>
+                          <option value="both">{T('opt_lang_both')}</option>
+                        </select>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_message')}</div>
+                        <textarea value={careerForm.message} onChange={function(e){setCareerForm(Object.assign({},careerForm,{message:e.target.value}))}} rows={4} style={{...IST,resize:'vertical'}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_message')}/>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_resume')}</div>
+                        <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'rgba(249,115,22,.06)',border:'1px dashed rgba(249,115,22,.3)',cursor:'pointer'}}>
+                          <span style={{...NB,fontSize:13,color:A,letterSpacing:'1px'}}>{T('careers_choose_file')}</span>
+                          <input type="file" accept=".pdf,.doc,.docx" style={{display:'none'}} onChange={function(e){if(e.target.files&&e.target.files[0]){setCareerForm(Object.assign({},careerForm,{resume:e.target.files[0].name}))}}}/>
+                          {careerForm.resume&&<span style={{...NB,fontSize:11,color:'#888'}}>{careerForm.resume}</span>}
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{marginTop:m?8:14}}>
+                    <div onClick={function(){if(!careerForm.name||!careerForm.email||!careerForm.position){return}var submission=Object.assign({},careerForm,{id:uid(),submittedAt:new Date().toISOString(),kind:'career',type:'career',status:'New'});sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:submission}),keepalive:true}).catch(function(){})}catch(e){}logAudit({type:'change',tool:'careers',detail:'Career application from '+(submission.name||'')+' for '+(submission.position||'?')+(submission.location?(' ('+submission.location+')'):'')});setCareerSubmitted(true);try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:careerForm.name&&careerForm.email&&careerForm.position?'pointer':'default',background:careerForm.name&&careerForm.email&&careerForm.position?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email&&careerForm.position?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>{T('careers_submit').toUpperCase()}</div>
+                    <div style={{textAlign:'center',marginTop:12,...NB,fontSize:11,color:'#666',letterSpacing:'1px'}}>We are an equal opportunity employer. All positions require travel to project sites.</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── LANDING PAGE CONTENT ── */}
         {page==='landing'&&<>
         {/* ── HERO ── */}
@@ -5992,105 +6159,29 @@ export default function App(){
         {/* ── FOOTER ── */}
         {/* ── CAREERS ── */}
         <Sec id="careers">
-          <div style={{maxWidth:900,margin:'0 auto'}}>
+          <div style={{maxWidth:1100,margin:'0 auto'}}>
             <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-              <div style={{width:22,height:1,background:A}}/>{T('careers_kicker')}
+              <div style={{width:22,height:1,background:A}}/>{T('now_hiring_kicker')}
             </div>
-            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?16:24,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('careers_title')}</h2>
-            <p style={{...NB,fontSize:m?14:16,lineHeight:1.8,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?24:36,maxWidth:600}}>
-              {T('careers_copy')}
-            </p>
-            {careerSubmitted?(
-              <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'24px 20px':'32px 28px',textAlign:'center'}}>
-                <div style={{...BB,fontSize:28,letterSpacing:2,color:'#22c55e',marginBottom:8}}>{T('careers_thanks_title')}</div>
-                <div style={{...NB,fontSize:14,color:'#ccc'}}>{T('careers_thanks_copy')}</div>
-                <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:16,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
-              </div>
-            ):(
-              <div style={{display:'grid',gridTemplateColumns:m?'1fr':'1fr 1fr',gap:m?12:20}}>
-                <div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_name')} *</div>
-                    <input value={careerForm.name} onChange={function(e){setCareerForm(Object.assign({},careerForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_name')}/>
+            <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?16:20,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('careers_title')}</h2>
+            <p style={{...NB,fontSize:m?14:16,lineHeight:1.8,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',marginBottom:m?20:28,maxWidth:640}}>{T('open_positions_intro')}</p>
+            <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(3,1fr)',gap:m?12:16,marginBottom:m?22:32}}>
+              {[{k:'pos_laborer',d:'pos_laborer_desc'},{k:'pos_safety_field',d:'pos_safety_field_desc'},{k:'pos_quality',d:'pos_quality_desc'}].map(function(role){
+                var label=T(role.k);
+                return (
+                  <div key={role.k} onClick={function(){setCareerForm(Object.assign({},careerForm,{position:label}));setPage('apply');try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:'pointer',background:'rgba(8,8,20,.6)',backdropFilter:'blur(10px)',border:'1px solid rgba(249,115,22,.22)',padding:m?'18px 20px':'22px 24px',transition:'all .25s'}} onMouseEnter={function(e){e.currentTarget.style.borderColor=A;e.currentTarget.style.transform='translateY(-3px)'}} onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.22)';e.currentTarget.style.transform='translateY(0)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+                      <span style={{...NB,fontSize:9,letterSpacing:'2px',padding:'3px 9px',background:'rgba(34,197,94,.18)',color:'#22c55e',fontWeight:700,textTransform:'uppercase'}}>Open</span>
+                      <span style={{...NB,fontSize:10,letterSpacing:'1.5px',padding:'3px 9px',background:'rgba(249,115,22,.1)',color:A,textTransform:'uppercase'}}>OH · TX</span>
+                    </div>
+                    <div style={{...BB,fontSize:m?20:24,letterSpacing:1.2,color:'#F5F0EB',marginBottom:6,lineHeight:1.1}}>{label.toUpperCase()}</div>
+                    <div style={{...NB,fontSize:m?13:14,fontWeight:300,color:'#CCC8C2',lineHeight:1.55}}>{T(role.d)}</div>
+                    <div style={{marginTop:m?12:14,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,display:'flex',alignItems:'center',gap:6,fontWeight:700}}>{T('apply_now')} <span style={{fontSize:14}}>→</span></div>
                   </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_email')} *</div>
-                    <input value={careerForm.email} onChange={function(e){setCareerForm(Object.assign({},careerForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_email')}/>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_phone')}</div>
-                    <input value={careerForm.phone} onChange={function(e){setCareerForm(Object.assign({},careerForm,{phone:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_phone')}/>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_position')}</div>
-                    <select value={careerForm.position} onChange={function(e){setCareerForm(Object.assign({},careerForm,{position:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">{T('careers_select_position')}</option>
-                      <option value="Civil Foreman">Civil Foreman</option>
-                      <option value="Pile Crew Lead">Pile Crew Lead</option>
-                      <option value="Tracker Installer">Tracker Installer</option>
-                      <option value="Electrician">Electrician</option>
-                      <option value="Equipment Operator">Equipment Operator</option>
-                      <option value="Site Superintendent">Site Superintendent</option>
-                      <option value="Project Manager">Project Manager</option>
-                      <option value="Safety Manager">Safety Manager</option>
-                      <option value="QA/QC Inspector">QA/QC Inspector</option>
-                      <option value="Field Engineer">Field Engineer</option>
-                      <option value="General Laborer">General Laborer</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_experience')}</div>
-                    <select value={careerForm.experience} onChange={function(e){setCareerForm(Object.assign({},careerForm,{experience:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">{T('careers_select_experience')}…</option>
-                      <option value="0-1">0-1 years</option>
-                      <option value="2-4">2-4 years</option>
-                      <option value="5-9">5-9 years</option>
-                      <option value="10+">10+ years</option>
-                    </select>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_gender')}</div>
-                    <select value={careerForm.gender} onChange={function(e){setCareerForm(Object.assign({},careerForm,{gender:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">{T('careers_select_default')}</option>
-                      <option value="male">{T('opt_gender_male')}</option>
-                      <option value="female">{T('opt_gender_female')}</option>
-                    </select>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_languages')}</div>
-                    <select value={careerForm.languages} onChange={function(e){setCareerForm(Object.assign({},careerForm,{languages:e.target.value}))}} style={{...IST,appearance:'auto'}} onFocus={fIn} onBlur={fOut}>
-                      <option value="">{T('careers_select_default')}</option>
-                      <option value="en">{T('opt_lang_en')}</option>
-                      <option value="es">{T('opt_lang_es')}</option>
-                      <option value="both">{T('opt_lang_both')}</option>
-                    </select>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_message')}</div>
-                    <textarea value={careerForm.message} onChange={function(e){setCareerForm(Object.assign({},careerForm,{message:e.target.value}))}} rows={4} style={{...IST,resize:'vertical'}} onFocus={fIn} onBlur={fOut} placeholder={T('careers_ph_message')}/>
-                  </div>
-                  <div style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_resume')}</div>
-                    <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'rgba(249,115,22,.06)',border:'1px dashed rgba(249,115,22,.3)',cursor:'pointer',transition:'background .2s'}} onMouseEnter={function(e){e.currentTarget.style.background='rgba(249,115,22,.12)'}} onMouseLeave={function(e){e.currentTarget.style.background='rgba(249,115,22,.06)'}}>
-                      <span style={{...NB,fontSize:13,color:A,letterSpacing:'1px'}}>Upload Resume</span>
-                      <input type="file" accept=".pdf,.doc,.docx" style={{display:'none'}} onChange={function(e){if(e.target.files&&e.target.files[0]){setCareerForm(Object.assign({},careerForm,{resume:e.target.files[0].name}))}}}/>
-                      {careerForm.resume&&<span style={{...NB,fontSize:11,color:'#888'}}>{careerForm.resume}</span>}
-                    </label>
-                  </div>
-                </div>
-                <div style={{gridColumn:m?'1':'1 / -1',marginTop:m?8:16}}>
-                  <div onClick={function(){if(!careerForm.name||!careerForm.email){return}var submission=Object.assign({},careerForm,{id:uid(),submittedAt:new Date().toISOString(),kind:'career',type:'career',status:'New'});sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:submission}),keepalive:true}).catch(function(){})}catch(e){}logAudit({type:'change',tool:'careers',detail:'Career application from '+(submission.name||'')});setCareerSubmitted(true)}} style={{cursor:careerForm.name&&careerForm.email?'pointer':'default',background:careerForm.name&&careerForm.email?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}}>
-                    {T('careers_submit').toUpperCase()}
-                  </div>
-                  <div style={{textAlign:'center',marginTop:12,...NB,fontSize:11,color:'#666',letterSpacing:'1px'}}>
-                    We are an equal opportunity employer. All positions require travel to project sites across the US.
-                  </div>
-                </div>
-              </div>
-            )}
+                );
+              })}
+            </div>
+            <button onClick={function(){setCareerForm(Object.assign({},careerForm,{position:''}));setPage('apply');try{window.scrollTo(0,0)}catch(e){}}} style={{display:'inline-flex',alignItems:'center',gap:10,background:A,color:'#1a1206',border:'none',padding:m?'13px 24px':'15px 34px',...NB,fontSize:m?12:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}} onMouseEnter={function(e){e.currentTarget.style.background='#FB923C'}} onMouseLeave={function(e){e.currentTarget.style.background=A}}>{T('view_openings')} →</button>
           </div>
         </Sec>
 
