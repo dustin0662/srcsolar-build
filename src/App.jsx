@@ -3050,7 +3050,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
   function exportExcel(){
     var rows;
     if(tab==='applicants'){
-      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',Hired:sg.hired?'Y':'',HiredAt:x.hiredAt?fmtCRMDate(x.hiredAt):'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:x.resume||'',ApplicantMessage:x.message||'',ID:x.id||''}});
+      rows=filtered.map(function(x){var sg=x.stages||{};var langMap={en:'English',es:'Spanish',both:'English & Spanish'};var rName=x.resume?(typeof x.resume==='object'?x.resume.name||'':String(x.resume)):'';return {Name:x.name||'',Email:x.email||'',Phone:x.phone||'',Position:x.position||'',Experience:x.experience||'',Gender:x.gender||'',Languages:langMap[x.languages]||x.languages||'',Status:x.status||'New',Contacted:sg.contacted?'Y':'',Interested:sg.interested?'Y':'',NotInterested:sg.notInterested?'Y':'',UnavailableUntil:x.unavailableUntil||'',SeekingNow:sg.seekingNow?'Y':'',Hired:sg.hired?'Y':'',HiredAt:x.hiredAt?fmtCRMDate(x.hiredAt):'',PayRate:x.payAmount||'',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Resume:rName,ApplicantMessage:x.message||'',ID:x.id||''}});
     }else{
       rows=filtered.map(function(x){return {'First Name':x.firstName||'','Last Name':x.lastName||'',Company:x.company||'',Email:x.email||'',Phone:x.phone||'',Status:x.status||'New',AdminNotes:x.notes||'',Submitted:fmtCRMDate(x.submittedAt),Details:x.details||'',ID:x.id||''}});
     }
@@ -3095,7 +3095,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
         if(stagesOn.length)lines.push({k:'Hiring Stage',v:stagesOn.join(', ')});
         if(x.payAmount)lines.push({k:'Pay Rate',v:'$'+x.payAmount});
         lines.push({k:'Submitted',v:fmtCRMDate(x.submittedAt)});
-        if(x.resume)lines.push({k:'Resume',v:x.resume});
+        if(x.resume)lines.push({k:'Resume',v:typeof x.resume==='object'?(x.resume.name||'(uploaded)'):String(x.resume)});
         if(x.message)lines.push({k:'Applicant Message',v:x.message});
         if(x.notes)lines.push({k:'Admin Notes',v:x.notes});
       }else{
@@ -3237,7 +3237,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
                       <div><span style={labelStyle}>Experience</span><div style={{...NB,fontSize:13}}>{x.experience||'—'}</div></div>
                       <div><span style={labelStyle}>Gender</span><div style={{...NB,fontSize:13,textTransform:'capitalize'}}>{x.gender||'—'}</div></div>
                       <div><span style={labelStyle}>Languages</span><div style={{...NB,fontSize:13}}>{x.languages==='en'?'English':x.languages==='es'?'Spanish':x.languages==='both'?'English & Spanish':'—'}</div></div>
-                      <div><span style={labelStyle}>Resume</span><div style={{...NB,fontSize:13}}>{x.resume||'—'}</div></div>
+                      <div><span style={labelStyle}>Resume</span>{(function(){var r=x.resume;if(!r)return <div style={{...NB,fontSize:13,color:DIM}}>—</div>;if(typeof r==='object'&&r.docId&&r.chunks)return <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}><a onClick={async function(e){e.preventDefault();try{var parts=[];for(var i=0;i<r.chunks;i++){var rr=await fetch('/.netlify/functions/documents?file=1&id='+encodeURIComponent(r.docId)+'&kind=orig&index='+i,{cache:'no-store'});if(!rr.ok)throw new Error('chunk '+i);var jj=await rr.json();var bin=atob(jj.data||'');var u=new Uint8Array(bin.length);for(var k=0;k<bin.length;k++)u[k]=bin.charCodeAt(k);parts.push(u)}var blob=new Blob(parts,{type:r.mime||'application/octet-stream'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=r.name||'resume';document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},5000)}catch(err){window.alert('Could not download resume: '+err.message)}}} href="#" style={{...NB,fontSize:13,color:A,textDecoration:'underline',cursor:'pointer'}}>📄 {r.name||'resume'}</a><span style={{...NB,fontSize:11,color:DIM}}>{r.size?'('+(r.size<1024?r.size+' B':r.size<1048576?(r.size/1024).toFixed(1)+' KB':(r.size/1048576).toFixed(1)+' MB')+')':''}</span><a onClick={async function(e){e.preventDefault();try{var parts=[];for(var i=0;i<r.chunks;i++){var rr=await fetch('/.netlify/functions/documents?file=1&id='+encodeURIComponent(r.docId)+'&kind=orig&index='+i,{cache:'no-store'});if(!rr.ok)throw new Error('chunk '+i);var jj=await rr.json();var bin=atob(jj.data||'');var u=new Uint8Array(bin.length);for(var k=0;k<bin.length;k++)u[k]=bin.charCodeAt(k);parts.push(u)}var blob=new Blob(parts,{type:r.mime||'application/octet-stream'});var u2=URL.createObjectURL(blob);window.open(u2,'_blank');setTimeout(function(){URL.revokeObjectURL(u2)},60000)}catch(err){window.alert('Could not open resume: '+err.message)}}} href="#" style={{...NB,fontSize:11,color:MID,textDecoration:'underline',cursor:'pointer'}}>view</a></div>;return <div style={{...NB,fontSize:13,color:MID}}>{String(r)} <span style={{fontSize:10,color:DIM,marginLeft:4}}>(legacy upload — no file attached)</span></div>})()}</div>
                     </>):(<>
                       <div><span style={labelStyle}>Company / EPC</span><div style={{...NB,fontSize:13}}>{x.company||'—'}</div></div>
                       <div><span style={labelStyle}>Phone</span><div style={{...NB,fontSize:13}}>{x.phone||'—'}</div></div>
@@ -5097,6 +5097,8 @@ export default function App(){
   const[loginPass,setLoginPass]=useState('')
   const[careerForm,setCareerForm]=useState({name:'',email:'',phone:'',position:'',location:'',experience:'',gender:'',languages:'',message:''})
   const[careerSubmitted,setCareerSubmitted]=useState(false)
+  const[resumeFile,setResumeFile]=useState(null)
+  const[applySubmitting,setApplySubmitting]=useState(false)
   const[contactForm,setContactForm]=useState({firstName:'',lastName:'',company:'',email:'',details:''})
   const[contactSubmitted,setContactSubmitted]=useState(false)
   const[loginEmail,setLoginEmail]=useState('')
@@ -5834,7 +5836,7 @@ export default function App(){
                 <div style={{background:'rgba(34,197,94,.12)',border:'1px solid rgba(34,197,94,.3)',padding:m?'26px 22px':'36px 32px',textAlign:'center'}}>
                   <div style={{...BB,fontSize:30,letterSpacing:2,color:'#22c55e',marginBottom:10}}>{T('careers_thanks_title')}</div>
                   <div style={{...NB,fontSize:14,color:'#ccc',maxWidth:480,margin:'0 auto'}}>{T('careers_thanks_copy')}</div>
-                  <div onClick={function(){setCareerSubmitted(false);setCareerForm({name:'',email:'',phone:'',position:'',location:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:18,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
+                  <div onClick={function(){setCareerSubmitted(false);setResumeFile(null);setCareerForm({name:'',email:'',phone:'',position:'',location:'',experience:'',gender:'',languages:'',message:''})}} style={{display:'inline-block',marginTop:18,...NB,fontSize:12,letterSpacing:'2px',color:A,cursor:'pointer'}}>{T('careers_submit_another')}</div>
                 </div>
               ):(
                 <div style={{background:'rgba(8,8,20,.55)',backdropFilter:'blur(10px)',border:'1px solid rgba(249,115,22,.18)',padding:m?'20px':'28px 32px'}}>
@@ -5908,14 +5910,31 @@ export default function App(){
                         <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('careers_label_resume')}</div>
                         <label style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',background:'rgba(249,115,22,.06)',border:'1px dashed rgba(249,115,22,.3)',cursor:'pointer'}}>
                           <span style={{...NB,fontSize:13,color:A,letterSpacing:'1px'}}>{T('careers_choose_file')}</span>
-                          <input type="file" accept=".pdf,.doc,.docx" style={{display:'none'}} onChange={function(e){if(e.target.files&&e.target.files[0]){setCareerForm(Object.assign({},careerForm,{resume:e.target.files[0].name}))}}}/>
-                          {careerForm.resume&&<span style={{...NB,fontSize:11,color:'#888'}}>{careerForm.resume}</span>}
+                          <input type="file" accept=".pdf,.doc,.docx" style={{display:'none'}} onChange={function(e){var f=e.target.files&&e.target.files[0];if(f){setCareerForm(Object.assign({},careerForm,{resume:f.name}));setResumeFile(f)}}}/>
+                          {careerForm.resume&&<span style={{...NB,fontSize:11,color:'#888'}}>{careerForm.resume}{resumeFile?' · ready to upload':''}</span>}
                         </label>
                       </div>
                     </div>
                   </div>
                   <div style={{marginTop:m?8:14}}>
-                    <div onClick={function(){if(!careerForm.name||!careerForm.email||!careerForm.position){return}var submission=Object.assign({},careerForm,{id:uid(),submittedAt:new Date().toISOString(),kind:'career',type:'career',status:'New'});sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:submission}),keepalive:true}).catch(function(){})}catch(e){}logAudit({type:'change',tool:'careers',detail:'Career application from '+(submission.name||'')+' for '+(submission.position||'?')+(submission.location?(' ('+submission.location+')'):'')});setCareerSubmitted(true);try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:careerForm.name&&careerForm.email&&careerForm.position?'pointer':'default',background:careerForm.name&&careerForm.email&&careerForm.position?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email&&careerForm.position?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>{T('careers_submit').toUpperCase()}</div>
+                    <div onClick={async function(){
+                      if(!careerForm.name||!careerForm.email||!careerForm.position||applySubmitting)return;
+                      setApplySubmitting(true);
+                      var submissionId=uid();
+                      var resumeMeta=careerForm.resume||'';
+                      if(resumeFile){
+                        try{
+                          await dpEnsureFolder('careers_resumes','Career Resumes',null,'Applicant');
+                          var doc=await dpUploadFile(resumeFile,'careers_resumes',(careerForm.name||'Applicant')+' (application)');
+                          if(doc)resumeMeta={docId:doc.id,name:doc.name,mime:doc.mime,size:doc.size,chunks:doc.chunks};
+                        }catch(e){console.error('resume upload failed:',e)}
+                      }
+                      var submission=Object.assign({},careerForm,{id:submissionId,submittedAt:new Date().toISOString(),kind:'career',type:'career',status:'New',resume:resumeMeta});
+                      sGet('career_submissions').then(function(prev){sSet('career_submissions',(prev||[]).concat([submission]))});
+                      try{fetch('/.netlify/functions/submissions?append=1',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:submission}),keepalive:true}).catch(function(){})}catch(e){}
+                      logAudit({type:'change',tool:'careers',detail:'Career application from '+(submission.name||'')+' for '+(submission.position||'?')+(submission.location?(' ('+submission.location+')'):'')+(resumeFile?' · resume attached':'')});
+                      setResumeFile(null);setApplySubmitting(false);setCareerSubmitted(true);try{window.scrollTo(0,0)}catch(e){}
+                    }} style={{cursor:careerForm.name&&careerForm.email&&careerForm.position&&!applySubmitting?'pointer':'default',background:careerForm.name&&careerForm.email&&careerForm.position&&!applySubmitting?A:'rgba(249,115,22,.3)',color:careerForm.name&&careerForm.email&&careerForm.position&&!applySubmitting?'#1a1206':'#888',textAlign:'center',...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>{applySubmitting?(resumeFile?'Uploading resume…':'Submitting…'):T('careers_submit').toUpperCase()}</div>
                     <div style={{textAlign:'center',marginTop:12,...NB,fontSize:11,color:'#666',letterSpacing:'1px'}}>We are an equal opportunity employer. All positions require travel to project sites.</div>
                   </div>
                 </div>
