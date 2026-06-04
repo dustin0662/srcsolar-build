@@ -162,6 +162,9 @@ const I18N = {
     cov_national: 'National Coverage', cov_utility: 'Utility-Scale', cov_isnet: 'ISNet Compliant', cov_safety: 'Safety First',
     careers_kicker: 'Join the Mission', careers_title: 'BUILD WITH US',
     now_hiring_kicker: 'Now Hiring',
+    highlights_kicker: 'Recent Highlights',
+    highlights_title: 'ACP CLEANPOWER HOUSTON',
+    highlights_copy: 'Our team recently attended ACP CleanPower in Houston — it was absolutely wonderful getting to see so many partners and reacquainted with familiar faces.',
     open_positions: 'OPEN POSITIONS',
     open_positions_intro: "We're actively hiring across our live solar projects in Ohio and Texas. Tap a role to apply.",
     careers_short_copy: "Solar field crews building utility-scale projects across multiple states. Competitive pay, real travel, real impact.",
@@ -237,6 +240,9 @@ const I18N = {
     cov_national: 'Cobertura Nacional', cov_utility: 'Escala Industrial', cov_isnet: 'Certificado ISNet', cov_safety: 'Seguridad Primero',
     careers_kicker: 'Únete a la Misión', careers_title: 'CONSTRUYE CON NOSOTROS',
     now_hiring_kicker: 'Contratando Ahora',
+    highlights_kicker: 'Momentos Recientes',
+    highlights_title: 'ACP CLEANPOWER HOUSTON',
+    highlights_copy: 'Nuestro equipo asistió recientemente a ACP CleanPower en Houston — fue absolutamente maravilloso ver a tantos socios y reencontrarnos con caras conocidas.',
     open_positions: 'VACANTES DISPONIBLES',
     open_positions_intro: 'Estamos contratando activamente en nuestros proyectos solares activos en Ohio y Texas. Toca un puesto para postularte.',
     careers_short_copy: 'Cuadrillas de campo solar construyendo proyectos a gran escala en varios estados. Pago competitivo, viajes reales, impacto real.',
@@ -6104,6 +6110,46 @@ export default function App(){
             <div style={{display:'grid',gridTemplateColumns:m?'1fr':mob?'1fr 1fr':'repeat(3,1fr)',gap:2}}>
               {PROJS.map((p,i)=><ProjectCard key={p.name} p={p} i={i}/>)}
             </div>
+          </div>
+        </Sec>
+
+        {/* ── RECENT HIGHLIGHTS ── */}
+        <Sec id="highlights">
+          <div style={{maxWidth:1200,margin:'0 auto'}}>
+            <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:m?20:34,flexWrap:'wrap',gap:14}}>
+              <div>
+                <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:22,height:1,background:A}}/>{T('highlights_kicker')}
+                </div>
+                <h2 style={{...BB,fontSize:'clamp(34px,7vw,68px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)',marginBottom:m?12:18,lineHeight:.95}}>{T('highlights_title')}</h2>
+                <p style={{...NB,fontSize:m?14:17,fontWeight:300,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',maxWidth:680,margin:0}}>{T('highlights_copy')}</p>
+              </div>
+            </div>
+            {m?(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                {[1,2,3,4,5].map(function(n){return (
+                  <div key={n} style={{position:'relative',overflow:'hidden',aspectRatio:'4/3',border:'1px solid rgba(249,115,22,.22)',gridColumn:n===1?'1 / -1':'auto'}}>
+                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}}/>
+                  </div>
+                )})}
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gridTemplateRows:'1fr 1fr',gap:10,height:480}}>
+                <div style={{gridColumn:'1',gridRow:'1 / 3',position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
+                  <img src="/highlights/acp-1.jpg" alt="ACP CleanPower Houston team selfie" loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.04)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
+                  <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'24px 22px 18px',background:'linear-gradient(180deg,transparent 0%,rgba(0,0,0,.75) 100%)'}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>Show Floor</div>
+                    <div style={{...BB,fontSize:22,letterSpacing:1,color:'#F5F0EB',lineHeight:1.1}}>NEW PARTNERS, FAMILIAR FACES</div>
+                  </div>
+                </div>
+                {[2,3,4,5].map(function(n,i){return (
+                  <div key={n} style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
+                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston moment '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.06)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
+                  </div>
+                )})}
+              </div>
+            )}
+            <div style={{...NB,fontSize:11,fontStyle:'italic',color:'#8C8680',letterSpacing:.5,marginTop:m?14:18,textAlign:m?'left':'right'}}>ACP CleanPower 2026 · Houston, TX</div>
           </div>
         </Sec>
 
