@@ -6001,6 +6001,46 @@ export default function App(){
             <div style={{width:38,height:1,background:'#333',overflow:'hidden',position:'relative'}}><div style={{position:'absolute',inset:0,background:A,animation:'scrollLine 2s ease-in-out infinite'}}/></div>{T('scroll')}
           </div>}
         </section>
+        {/* ── RECENT HIGHLIGHTS ── */}
+        <Sec id="highlights">
+          <div style={{maxWidth:1200,margin:'0 auto'}}>
+            <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:m?20:34,flexWrap:'wrap',gap:14}}>
+              <div>
+                <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:22,height:1,background:A}}/>{T('highlights_kicker')}
+                </div>
+                <h2 style={{...BB,fontSize:'clamp(34px,7vw,68px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)',marginBottom:m?12:18,lineHeight:.95}}>{T('highlights_title')}</h2>
+                <p style={{...NB,fontSize:m?14:17,fontWeight:300,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',maxWidth:680,margin:0}}>{T('highlights_copy')}</p>
+              </div>
+            </div>
+            {m?(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                {[1,2,3,4,5].map(function(n){return (
+                  <div key={n} style={{position:'relative',overflow:'hidden',aspectRatio:'4/3',border:'1px solid rgba(249,115,22,.22)',gridColumn:n===1?'1 / -1':'auto'}}>
+                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}}/>
+                  </div>
+                )})}
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gridTemplateRows:'1fr 1fr',gap:10,height:480}}>
+                <div style={{gridColumn:'1',gridRow:'1 / 3',position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
+                  <img src="/highlights/acp-1.jpg" alt="ACP CleanPower Houston team selfie" loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.04)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
+                  <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'24px 22px 18px',background:'linear-gradient(180deg,transparent 0%,rgba(0,0,0,.75) 100%)'}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>Show Floor</div>
+                    <div style={{...BB,fontSize:22,letterSpacing:1,color:'#F5F0EB',lineHeight:1.1}}>NEW PARTNERS, FAMILIAR FACES</div>
+                  </div>
+                </div>
+                {[2,3,4,5].map(function(n,i){return (
+                  <div key={n} style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
+                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston moment '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.06)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
+                  </div>
+                )})}
+              </div>
+            )}
+            <div style={{...NB,fontSize:11,fontStyle:'italic',color:'#8C8680',letterSpacing:.5,marginTop:m?14:18,textAlign:m?'left':'right'}}>ACP CleanPower 2026 · Houston, TX</div>
+          </div>
+        </Sec>
+
 
         {/* ── STATS ── */}
         <Sec id="stats" style={{padding:m?'32px 20px':'56px 48px'}}>
@@ -6110,46 +6150,6 @@ export default function App(){
             <div style={{display:'grid',gridTemplateColumns:m?'1fr':mob?'1fr 1fr':'repeat(3,1fr)',gap:2}}>
               {PROJS.map((p,i)=><ProjectCard key={p.name} p={p} i={i}/>)}
             </div>
-          </div>
-        </Sec>
-
-        {/* ── RECENT HIGHLIGHTS ── */}
-        <Sec id="highlights">
-          <div style={{maxWidth:1200,margin:'0 auto'}}>
-            <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:m?20:34,flexWrap:'wrap',gap:14}}>
-              <div>
-                <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:22,height:1,background:A}}/>{T('highlights_kicker')}
-                </div>
-                <h2 style={{...BB,fontSize:'clamp(34px,7vw,68px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)',marginBottom:m?12:18,lineHeight:.95}}>{T('highlights_title')}</h2>
-                <p style={{...NB,fontSize:m?14:17,fontWeight:300,lineHeight:1.7,color:'#ccc',textShadow:'0 1px 4px rgba(0,0,0,0.9)',maxWidth:680,margin:0}}>{T('highlights_copy')}</p>
-              </div>
-            </div>
-            {m?(
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                {[1,2,3,4,5].map(function(n){return (
-                  <div key={n} style={{position:'relative',overflow:'hidden',aspectRatio:'4/3',border:'1px solid rgba(249,115,22,.22)',gridColumn:n===1?'1 / -1':'auto'}}>
-                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}}/>
-                  </div>
-                )})}
-              </div>
-            ):(
-              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gridTemplateRows:'1fr 1fr',gap:10,height:480}}>
-                <div style={{gridColumn:'1',gridRow:'1 / 3',position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
-                  <img src="/highlights/acp-1.jpg" alt="ACP CleanPower Houston team selfie" loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.04)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
-                  <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'24px 22px 18px',background:'linear-gradient(180deg,transparent 0%,rgba(0,0,0,.75) 100%)'}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>Show Floor</div>
-                    <div style={{...BB,fontSize:22,letterSpacing:1,color:'#F5F0EB',lineHeight:1.1}}>NEW PARTNERS, FAMILIAR FACES</div>
-                  </div>
-                </div>
-                {[2,3,4,5].map(function(n,i){return (
-                  <div key={n} style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.22)'}}>
-                    <img src={'/highlights/acp-'+n+'.jpg'} alt={'ACP CleanPower Houston moment '+n} loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .5s'}} onMouseEnter={function(e){e.currentTarget.style.transform='scale(1.06)'}} onMouseLeave={function(e){e.currentTarget.style.transform='scale(1)'}}/>
-                  </div>
-                )})}
-              </div>
-            )}
-            <div style={{...NB,fontSize:11,fontStyle:'italic',color:'#8C8680',letterSpacing:.5,marginTop:m?14:18,textAlign:m?'left':'right'}}>ACP CleanPower 2026 · Houston, TX</div>
           </div>
         </Sec>
 
