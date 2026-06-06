@@ -4,7 +4,15 @@
    nav, scroll reveals, FAQ and the join form.
    ============================================================ */
 
+import { raptorSVG } from './raptorTruck.js';
+
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------------- Hero truck (same cartoon Raptor, parked) ---------------- */
+(function heroTruck() {
+  const host = document.querySelector('.hero__truck');
+  if (host) host.innerHTML = raptorSVG({ burnout: false });
+})();
 
 /* ---------------- Loading screen ---------------- */
 (function loadingScreen() {
