@@ -13,6 +13,7 @@ export default defineConfig({
           icons: ['lucide-react'],
           xlsx: ['xlsx'],
           jspdf: ['jspdf'],
+          zxing: ['@zxing/browser', '@zxing/library'],
         },
       },
     },
