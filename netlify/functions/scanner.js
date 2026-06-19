@@ -1,38 +1,70 @@
 import { getStore } from '@netlify/blobs';
 
-// Panel Scanner backing store.
-// Blob layout (store: 'scanner'):
-//   'state'        -> { rev, webhook, projects:[...], scans:[...] }
-//   'photo:<id>'   -> compressed jpeg data URL string for a scan
+// Panel Scanner backing store — built for ~20k scans/project and concurrent,
+// login-free field use. Data is sharded so a row's scans are isolated:
+//
+//   'tree'         -> { rev, webhook, projects:[...] }   (structure only, small)
+//   'summary'      -> { [rowId]: { c:count, x:maxPanel } } (lightweight index)
+//   'row:<rowId>'  -> { scans:[ {..} ] }                 (one row's panels)
+//   'photo:<id>'   -> compressed jpeg data URL string
 //
 // projects: [ { id, name, color, createdAt,
 //               sections:[ { id, name, createdAt, panelsPerRow,
 //                            rows:[ { id, name, panelTarget, complete, createdAt } ] } ] } ]
-// scans:    [ { id, projectId, sectionId, rowId, panel, serial, raw, format,
-//               ts, by, photoKey, note, status } ]
+// scan:     { id, projectId, sectionId, rowId, panel, serial, raw, format,
+//             ts, by, photoKey, note, status }
 
-const KEY = 'state';
-const MAX_SCANS = 20000;
+const MAX_PER_ROW = 2000;
 
 const json = (data, status = 200) =>
   Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 
-function empty() {
-  return { rev: 0, webhook: '', projects: [], scans: [] };
+const emptyTree = () => ({ rev: 0, webhook: '', projects: [] });
+
+// Optimistic concurrency: read with etag, mutate, write only if unchanged.
+// mutate(cur) returns the next value, or undefined to abort with no write.
+async function cas(store, key, mutate, makeDefault) {
+  for (let i = 0; i < 8; i++) {
+    let cur = null, etag;
+    try {
+      const res = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' });
+      if (res) { cur = res.data; etag = res.etag; }
+    } catch (e) { /* treat as missing */ }
+    const base = cur != null ? cur : (makeDefault ? makeDefault() : null);
+    const next = mutate(base);
+    if (next === undefined) return base; // no-op
+    const opts = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
+    let w;
+    try { w = await store.setJSON(key, next, opts); } catch (e) { w = { modified: false }; }
+    if (w && w.modified) return next;
+    await new Promise((r) => setTimeout(r, 30 * (i + 1))); // contended — back off and retry
+  }
+  throw new Error('write conflict');
 }
 
-// Fire the configured Apps Script webhook. Best-effort, never blocks the response on failure.
+// Fire the configured Apps Script webhook. Best-effort; never blocks on failure.
 async function forward(webhook, payload) {
   if (!webhook) return;
   try {
-    await fetch(webhook, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch (e) {
-    // swallow — sheet sync is best-effort, the blob record is the source of truth
-  }
+    await fetch(webhook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  } catch (e) { /* sheet sync is best-effort; the blob record is source of truth */ }
+}
+
+function locate(tree, s) {
+  const proj = (tree.projects || []).find((p) => p && p.id === s.projectId);
+  const sec = proj && (proj.sections || []).find((x) => x && x.id === s.sectionId);
+  const row = sec && (sec.rows || []).find((x) => x && x.id === s.rowId);
+  return { proj, sec, row };
+}
+
+function scanRow(tree, s) {
+  const { proj, sec, row } = locate(tree, s);
+  return {
+    id: s.id, serial: s.serial || '', raw: s.raw || s.serial || '', format: s.format || '',
+    project: proj ? proj.name : '', section: sec ? sec.name : '', row: row ? row.name : '',
+    panel: s.panel, timestamp: s.ts ? new Date(s.ts).toISOString() : new Date().toISOString(),
+    by: s.by || '', note: s.note || '', status: s.status || 'ok',
+  };
 }
 
 export default async (req) => {
@@ -45,88 +77,122 @@ export default async (req) => {
     if (photo) {
       const data = await store.get('photo:' + photo);
       if (!data) return new Response('', { status: 404 });
-      return new Response(data, {
-        headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=31536000, immutable' },
-      });
+      return new Response(data, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=31536000, immutable' } });
     }
-    const doc = (await store.get(KEY, { type: 'json' })) || empty();
-    return json(doc);
+    const rowId = url.searchParams.get('row');
+    if (rowId) {
+      const doc = (await store.get('row:' + rowId, { type: 'json' })) || { scans: [] };
+      return json({ scans: doc.scans || [] });
+    }
+    if (url.searchParams.get('summary') !== null) {
+      const sum = (await store.get('summary', { type: 'json' })) || {};
+      return json({ summary: sum });
+    }
+    const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+    return json(tree);
   }
 
   if (req.method === 'POST') {
     let body;
     try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
     const action = url.searchParams.get('action');
-    const cur = (await store.get(KEY, { type: 'json' })) || empty();
 
-    // Replace the whole project/section/row tree.
+    // Replace the project/section/row structure (small, infrequent).
     if (action === 'projects') {
-      cur.projects = Array.isArray(body.projects) ? body.projects : [];
-      cur.rev = (cur.rev || 0) + 1;
-      await store.setJSON(KEY, cur);
-      return json({ ok: true, rev: cur.rev });
+      const next = await cas(store, 'tree', (t) => { t.projects = Array.isArray(body.projects) ? body.projects : []; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
+      return json({ ok: true, rev: next.rev });
     }
 
-    // Save the Apps Script webhook URL.
     if (action === 'webhook') {
-      cur.webhook = typeof body.webhook === 'string' ? body.webhook.trim() : '';
-      cur.rev = (cur.rev || 0) + 1;
-      await store.setJSON(KEY, cur);
-      return json({ ok: true, rev: cur.rev });
+      const next = await cas(store, 'tree', (t) => { t.webhook = typeof body.webhook === 'string' ? body.webhook.trim() : ''; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
+      return json({ ok: true, rev: next.rev });
     }
 
-    // Append a new scan (panel). Photo, if present, is stored as a separate blob.
+    // Append a scan to its row's shard. Concurrency-safe: row + summary use CAS.
     if (action === 'scan') {
       const s = body && body.scan;
-      if (!s || !s.id) return json({ error: 'scan required' }, 400);
-      const dup = (cur.scans || []).some((x) => x && x.id === s.id);
-      if (!dup) {
-        if (body.photo) {
-          try { await store.set('photo:' + s.id, String(body.photo)); s.photoKey = s.id; } catch (e) {}
-        }
-        cur.scans = (cur.scans || []).concat([s]);
-        if (cur.scans.length > MAX_SCANS) cur.scans = cur.scans.slice(cur.scans.length - MAX_SCANS);
-        cur.rev = (cur.rev || 0) + 1;
-        await store.setJSON(KEY, cur);
-        await forward(cur.webhook, Object.assign({ mode: 'create' }, scanRow(cur, s)));
+      if (!s || !s.id || !s.rowId) return json({ error: 'scan + rowId required' }, 400);
+      if (body.photo) { try { await store.set('photo:' + s.id, String(body.photo)); s.photoKey = s.id; } catch (e) {} }
+
+      let added = true;
+      await cas(store, 'row:' + s.rowId, (doc) => {
+        const scans = (doc && doc.scans) || [];
+        if (scans.some((x) => x && x.id === s.id)) { added = false; return undefined; }
+        const nextScans = scans.concat([s]);
+        return { scans: nextScans.length > MAX_PER_ROW ? nextScans.slice(nextScans.length - MAX_PER_ROW) : nextScans };
+      }, () => ({ scans: [] }));
+
+      if (added) {
+        await cas(store, 'summary', (sum) => {
+          const cur = sum[s.rowId] || { c: 0, x: 0 };
+          sum[s.rowId] = { c: cur.c + 1, x: Math.max(cur.x, s.panel || 0) };
+          return sum;
+        }, () => ({}));
+        const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+        await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s)));
       }
-      return json({ ok: true, rev: cur.rev });
+      return json({ ok: true });
     }
 
-    // Correct an existing scan.
+    // Correct an existing scan. rowId may change (moved to another row/section).
     if (action === 'updateScan') {
       const id = body && body.id;
       const patch = (body && body.patch) || {};
-      if (!id) return json({ error: 'id required' }, 400);
+      const fromRow = body && body.fromRow;
+      if (!id || !fromRow) return json({ error: 'id + fromRow required' }, 400);
       if (body.photo) { try { await store.set('photo:' + id, String(body.photo)); patch.photoKey = id; } catch (e) {} }
-      let next = null;
-      cur.scans = (cur.scans || []).map((x) => {
-        if (!x || x.id !== id) return x;
-        next = Object.assign({}, x, patch);
-        return next;
-      });
-      if (next) {
-        cur.rev = (cur.rev || 0) + 1;
-        await store.setJSON(KEY, cur);
-        await forward(cur.webhook, Object.assign({ mode: 'update' }, scanRow(cur, next)));
+
+      const toRow = patch.rowId && patch.rowId !== fromRow ? patch.rowId : null;
+      let updated = null, removedPanel = 0;
+
+      // Apply to source row (or remove if moving).
+      await cas(store, 'row:' + fromRow, (doc) => {
+        const scans = (doc && doc.scans) || [];
+        if (!scans.some((x) => x && x.id === id)) return undefined;
+        if (toRow) {
+          const found = scans.find((x) => x && x.id === id);
+          removedPanel = (found && found.panel) || 0;
+          updated = Object.assign({}, found, patch);
+          return { scans: scans.filter((x) => !x || x.id !== id) };
+        }
+        return { scans: scans.map((x) => { if (!x || x.id !== id) return x; updated = Object.assign({}, x, patch); return updated; }) };
+      }, () => ({ scans: [] }));
+
+      if (toRow && updated) {
+        await cas(store, 'row:' + toRow, (doc) => { const scans = (doc && doc.scans) || []; return { scans: scans.concat([updated]) }; }, () => ({ scans: [] }));
+        // recount both rows from authoritative shards
+        await recount(store, fromRow);
+        await recount(store, toRow);
+      } else if (updated) {
+        await recount(store, fromRow);
       }
-      return json({ ok: true, rev: cur.rev });
+
+      if (updated) {
+        const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+        await forward(tree.webhook, Object.assign({ mode: 'update' }, scanRow(tree, updated)));
+      }
+      return json({ ok: true });
     }
 
-    // Delete a scan and its photo.
     if (action === 'deleteScan') {
       const id = body && body.id;
-      if (!id) return json({ error: 'id required' }, 400);
-      const before = (cur.scans || []).length;
-      const removed = (cur.scans || []).find((x) => x && x.id === id);
-      cur.scans = (cur.scans || []).filter((x) => !x || x.id !== id);
-      if (cur.scans.length !== before) {
+      const fromRow = body && body.fromRow;
+      if (!id || !fromRow) return json({ error: 'id + fromRow required' }, 400);
+      let removed = null;
+      await cas(store, 'row:' + fromRow, (doc) => {
+        const scans = (doc && doc.scans) || [];
+        const found = scans.find((x) => x && x.id === id);
+        if (!found) return undefined;
+        removed = found;
+        return { scans: scans.filter((x) => !x || x.id !== id) };
+      }, () => ({ scans: [] }));
+      if (removed) {
         try { await store.delete('photo:' + id); } catch (e) {}
-        cur.rev = (cur.rev || 0) + 1;
-        await store.setJSON(KEY, cur);
-        if (removed) await forward(cur.webhook, Object.assign({ mode: 'delete' }, scanRow(cur, removed)));
+        await recount(store, fromRow);
+        const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+        await forward(tree.webhook, Object.assign({ mode: 'delete' }, scanRow(tree, removed)));
       }
-      return json({ ok: true, rev: cur.rev });
+      return json({ ok: true });
     }
 
     return json({ error: 'bad request' }, 400);
@@ -135,23 +201,11 @@ export default async (req) => {
   return json({ error: 'method not allowed' }, 405);
 };
 
-// Flatten a scan into the labelled payload sent to the Google Sheet.
-function scanRow(cur, s) {
-  const proj = (cur.projects || []).find((p) => p && p.id === s.projectId);
-  const sec = proj && (proj.sections || []).find((x) => x && x.id === s.sectionId);
-  const row = sec && (sec.rows || []).find((x) => x && x.id === s.rowId);
-  return {
-    id: s.id,
-    serial: s.serial || '',
-    raw: s.raw || s.serial || '',
-    format: s.format || '',
-    project: proj ? proj.name : '',
-    section: sec ? sec.name : '',
-    row: row ? row.name : '',
-    panel: s.panel,
-    timestamp: s.ts ? new Date(s.ts).toISOString() : new Date().toISOString(),
-    by: s.by || '',
-    note: s.note || '',
-    status: s.status || 'ok',
-  };
+// Rebuild a row's summary entry from its authoritative shard.
+async function recount(store, rowId) {
+  const doc = (await store.get('row:' + rowId, { type: 'json' })) || { scans: [] };
+  const scans = doc.scans || [];
+  const c = scans.length;
+  const x = scans.reduce((mx, s) => Math.max(mx, (s && s.panel) || 0), 0);
+  await cas(store, 'summary', (sum) => { if (c === 0) delete sum[rowId]; else sum[rowId] = { c, x }; return sum; }, () => ({}));
 }

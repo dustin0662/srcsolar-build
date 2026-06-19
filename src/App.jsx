@@ -5140,7 +5140,8 @@ export default function App(){
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
     // Check for invite token in URL
-    try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
+    try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}
+    var h=(window.location.hash||'').replace('#','');if(params.get('scan')!==null||h==='scan'||h==='scanner'){setPage('scanner')}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
     try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
   },[])
 
@@ -5794,7 +5795,7 @@ export default function App(){
         {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{onboardingComplete:true}):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
-        {page==='scanner'&&<PanelScanner onExit={function(){setPage('dashboard')}} portalUser={user}/>}
+        {page==='scanner'&&<PanelScanner onExit={function(){setPage(user?'dashboard':'landing')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
