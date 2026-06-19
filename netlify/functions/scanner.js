@@ -75,9 +75,17 @@ export default async (req) => {
   if (req.method === 'GET') {
     const photo = url.searchParams.get('photo');
     if (photo) {
-      const data = await store.get('photo:' + photo);
+      const data = await store.get('photo:' + photo); // stored as a data URL string
       if (!data) return new Response('', { status: 404 });
-      return new Response(data, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=31536000, immutable' } });
+      const cache = 'public, max-age=31536000, immutable';
+      // Decode the data URL to real image bytes so <img> can render it.
+      const m = /^data:([^;,]+)(;base64)?,([\s\S]*)$/.exec(String(data));
+      if (m) {
+        const mime = m[1] || 'image/jpeg';
+        const body = m[2] ? Buffer.from(m[3], 'base64') : Buffer.from(decodeURIComponent(m[3]), 'utf8');
+        return new Response(body, { headers: { 'content-type': mime, 'cache-control': cache } });
+      }
+      return new Response(data, { headers: { 'content-type': 'text/plain', 'cache-control': cache } });
     }
     const rowId = url.searchParams.get('row');
     if (rowId) {
