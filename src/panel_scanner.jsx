@@ -255,8 +255,8 @@ export default function PanelScanner({ onExit, portalUser }) {
 
   function TopBar({ back, backLabel }) {
     return (
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 14, position: "sticky", top: 0, zIndex: 5, background: "#f5f2ee", padding: "6px 0", marginLeft: m ? -2 : 0 }}>
-        <button onClick={back} style={{ ...BTN_GHOST, padding: "10px 14px", fontSize: 13, minHeight: 44, display: "inline-flex", alignItems: "center", gap: 6 }}>← {backLabel}</button>
+      <div style={{ display: "flex", justifyContent: back ? "space-between" : "flex-end", alignItems: "center", gap: 8, marginBottom: 14, position: "sticky", top: 0, zIndex: 5, background: "#f5f2ee", padding: "6px 0", marginLeft: m ? -2 : 0 }}>
+        {back && <button onClick={back} style={{ ...BTN_GHOST, padding: "10px 14px", fontSize: 13, minHeight: 44, display: "inline-flex", alignItems: "center", gap: 6 }}>← {backLabel}</button>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={() => setAskName(true)} style={{ ...BTN_GHOST, padding: "10px 12px", fontSize: 12, minHeight: 44, maxWidth: m ? 120 : 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>👤 {op || "Set name"}</button>
           <button onClick={() => setShowSettings(true)} style={{ ...BTN_GHOST, padding: "10px 12px", fontSize: 13, minHeight: 44 }}>⚙</button>
@@ -277,7 +277,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   let body
   if (!proj) {
     body = (<>
-      <TopBar back={onExit} backLabel="Exit" />
+      <TopBar back={onExit || null} backLabel="Exit" />
       <Title t="PANEL SCANNER" sub="Pick a project to start scanning" />
       <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "repeat(3,1fr)", gap: m ? 10 : 14 }}>
         {tree.projects.map((p) => {
