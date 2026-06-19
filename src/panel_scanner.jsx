@@ -109,11 +109,17 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [capture, setCapture] = useState(null)
   const [panelNo, setPanelNo] = useState(1)
   const [editing, setEditing] = useState(null)
+  const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
 
   const fileRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
 
   const flash = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800) }
+
+  // Mobile-safe replacements for window.prompt / window.confirm (which Android
+  // Chrome and some webviews silently suppress). Both return a Promise.
+  const askForm = (title, fields, submitLabel = "Save") => new Promise((resolve) => setDlg({ type: "form", title, fields, submitLabel, resolve }))
+  const askConfirm = (message, opts = {}) => new Promise((resolve) => setDlg({ type: "confirm", title: opts.title || "Please Confirm", message, danger: opts.danger, okLabel: opts.okLabel || "OK", resolve }))
 
   const fetchTree = useCallback(async () => { try { const r = await fetch(API, { cache: "no-store" }); const d = await r.json(); setTree({ projects: d.projects || [], webhook: d.webhook || "" }) } catch (e) {} }, [])
   const fetchSummary = useCallback(async () => { try { const r = await fetch(API + "?summary", { cache: "no-store" }); const d = await r.json(); setSummary(d.summary || {}) } catch (e) {} }, [])
@@ -148,25 +154,40 @@ export default function PanelScanner({ onExit, portalUser }) {
   }
   const mutateTree = (fn) => { const next = JSON.parse(JSON.stringify(tree.projects)); fn(next); saveProjects(next) }
 
-  function addProject() { const name = (window.prompt("Project name") || "").trim(); if (!name) return; saveProjects(tree.projects.concat([{ id: uid(), name, color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }])) }
-  function addSection() { const name = (window.prompt("Section name (e.g. Section 1, Block A)", "Section " + ((proj.sections || []).length + 1)) || "").trim(); if (!name) return; mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = (p.sections || []).concat([{ id: uid(), name, createdAt: Date.now(), panelsPerRow: 0, rows: [] }]) }) }
-  function addRow(selectAfter) {
-    const def = "Row " + ((section.rows || []).length + 1)
-    const name = (window.prompt("Row name / number", def) || "").trim(); if (!name) return
-    const panelTarget = Math.max(0, parseInt(window.prompt("Expected panels in this row (for completeness checks, 0 = unknown)", String(section.panelsPerRow || 0)), 10) || 0)
+  async function addProject() {
+    const r = await askForm("New Project", [{ key: "name", label: "Project name", placeholder: "e.g. Midway" }], "Create Project")
+    const name = r && (r.name || "").trim(); if (!name) return
+    saveProjects(tree.projects.concat([{ id: uid(), name, color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
+  }
+  async function addSection() {
+    const r = await askForm("New Section", [{ key: "name", label: "Section name", value: "Section " + ((proj.sections || []).length + 1), placeholder: "e.g. Block A" }], "Create Section")
+    const name = r && (r.name || "").trim(); if (!name) return
+    mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = (p.sections || []).concat([{ id: uid(), name, createdAt: Date.now(), panelsPerRow: 0, rows: [] }]) })
+  }
+  async function addRow(selectAfter) {
+    const r = await askForm("New Row", [
+      { key: "name", label: "Row name / number", value: "Row " + ((section.rows || []).length + 1) },
+      { key: "target", label: "Expected panels (0 = unknown)", type: "number", value: String(section.panelsPerRow || 0) },
+    ], "Create Row")
+    const name = r && (r.name || "").trim(); if (!name) return
+    const panelTarget = Math.max(0, parseInt(r.target, 10) || 0)
     const id = uid()
     mutateTree((t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); s.rows = (s.rows || []).concat([{ id, name, panelTarget, complete: false, createdAt: Date.now() }]) })
     if (selectAfter) { setRowId(id); setRowDoc({ scans: [] }); setPanelNo(1); setCapture(null) }
     return id
   }
-  function renameRow(r) {
-    const name = (window.prompt("Row name / number", r.name) || "").trim(); if (!name) return
-    const panelTarget = Math.max(0, parseInt(window.prompt("Expected panels in this row (0 = unknown)", String(r.panelTarget || 0)), 10) || 0)
-    mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); rr.name = name; rr.panelTarget = panelTarget })
+  async function renameRow(r0) {
+    const r = await askForm("Edit Row", [
+      { key: "name", label: "Row name / number", value: r0.name },
+      { key: "target", label: "Expected panels (0 = unknown)", type: "number", value: String(r0.panelTarget || 0) },
+    ])
+    const name = r && (r.name || "").trim(); if (!name) return
+    const panelTarget = Math.max(0, parseInt(r.target, 10) || 0)
+    mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r0.id); rr.name = name; rr.panelTarget = panelTarget })
   }
-  function deleteProject(p) { if (!window.confirm(`Delete project "${p.name}" and its layout? (Logged scans stay in the sheet.)`)) return; saveProjects(tree.projects.filter((x) => x.id !== p.id)) }
-  function deleteSection(s) { if (!window.confirm(`Delete "${s.name}"?`)) return; mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = p.sections.filter((x) => x.id !== s.id) }) }
-  function deleteRow(r) { if (!window.confirm(`Delete "${r.name}"?`)) return; mutateTree((t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); s.rows = s.rows.filter((x) => x.id !== r.id) }) }
+  async function deleteProject(p) { if (!await askConfirm(`Delete project "${p.name}" and its layout? (Logged scans stay in the sheet.)`, { danger: true, okLabel: "Delete" })) return; saveProjects(tree.projects.filter((x) => x.id !== p.id)) }
+  async function deleteSection(s) { if (!await askConfirm(`Delete "${s.name}"?`, { danger: true, okLabel: "Delete" })) return; mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = p.sections.filter((x) => x.id !== s.id) }) }
+  async function deleteRow(r) { if (!await askConfirm(`Delete "${r.name}"?`, { danger: true, okLabel: "Delete" })) return; mutateTree((t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); s.rows = s.rows.filter((x) => x.id !== r.id) }) }
   function setRowComplete(r, val) { mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); rr.complete = val }) }
 
   // ── Scanning ────────────────────────────────────────────────────────────────
@@ -193,7 +214,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     const serial = (capture.serial || "").trim()
     if (!serial) { flash("Enter a serial before uploading", "err"); return }
     const panel = Math.max(1, parseInt(capture.panel, 10) || panelNo)
-    if (rowDoc.scans.some((s) => s.panel === panel) && !window.confirm(`Panel ${panel} already exists in this row. Add another anyway?`)) return
+    if (rowDoc.scans.some((s) => s.panel === panel) && !(await askConfirm(`Panel ${panel} already exists in this row. Add another anyway?`))) return
     const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
@@ -230,7 +251,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   }
 
   async function deleteScan(s) {
-    if (!window.confirm(`Delete panel ${s.panel} (${s.serial})?`)) return
+    if (!await askConfirm(`Delete panel ${s.panel} (${s.serial})?`, { danger: true, okLabel: "Delete" })) return
     setBusy(true)
     try {
       await fetch(API + "?action=deleteScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, fromRow: s.rowId }) })
@@ -390,7 +411,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
         <div style={{ ...NB, fontSize: 14, color: "#555", flex: m ? "1 1 100%" : "0 0 auto" }}>{list.length}{row.panelTarget ? " / " + row.panelTarget : ""} panels{miss.length ? " · missing " + miss.join(", ") : ""}</div>
-        {!st.done && <button onClick={() => { if (miss.length && !window.confirm(`Panels ${miss.join(", ")} are missing. Mark complete anyway?`)) return; setRowComplete(row, true); setPrompt({ kind: "row" }) }} style={{ ...BTN_GHOST, color: "#16a34a", borderColor: "rgba(34,197,94,.5)", flex: m ? 1 : "0 0 auto" }}>Mark Row Complete</button>}
+        {!st.done && <button onClick={async () => { if (miss.length && !(await askConfirm(`Panels ${miss.join(", ")} are missing. Mark complete anyway?`))) return; setRowComplete(row, true); setPrompt({ kind: "row" }) }} style={{ ...BTN_GHOST, color: "#16a34a", borderColor: "rgba(34,197,94,.5)", flex: m ? 1 : "0 0 auto" }}>Mark Row Complete</button>}
         {st.done && <span style={{ ...NB, fontSize: 13, color: "#16a34a", letterSpacing: 1 }}>✓ Complete</span>}
         {st.done && <button onClick={() => setRowComplete(row, false)} style={{ ...BTN_GHOST, padding: "10px 14px", fontSize: 12 }}>Reopen</button>}
       </div>
@@ -422,6 +443,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
       {toast && <div style={{ position: "fixed", bottom: "calc(20px + env(safe-area-inset-bottom,0))", left: "50%", transform: "translateX(-50%)", zIndex: 6000, background: toast.kind === "err" ? "#dc2626" : toast.kind === "warn" ? "#d97706" : "#16a34a", color: "#fff", padding: "14px 22px", ...NB, fontSize: 15, letterSpacing: 1, boxShadow: "0 6px 24px rgba(0,0,0,.3)", maxWidth: "92vw", borderRadius: 10, textAlign: "center" }}>{toast.msg}</div>}
 
+      {dlg && <Dialog dlg={dlg} m={m} onDone={(res) => { const r = dlg.resolve; setDlg(null); r(res) }} />}
       {askName && <NameModal m={m} current={op} onSave={saveOp} onClose={op ? () => setAskName(false) : null} />}
       {showSettings && <SettingsModal m={m} webhook={tree.webhook} onSave={saveWebhook} onClose={() => setShowSettings(false)} />}
 
@@ -508,6 +530,50 @@ function NameModal({ current, onSave, onClose, m }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// In-app prompt/confirm. Resolves with a values object (form) / boolean (confirm),
+// or null/false on cancel. Replaces window.prompt & window.confirm for mobile.
+function Dialog({ dlg, m, onDone }) {
+  const [vals, setVals] = useState(() => dlg.type === "form" ? Object.fromEntries((dlg.fields || []).map((f) => [f.key, f.value != null ? String(f.value) : ""])) : {})
+  const firstRef = useRef(null)
+  useEffect(() => { const t = setTimeout(() => { try { firstRef.current && firstRef.current.focus() } catch (e) {} }, 80); return () => clearTimeout(t) }, [])
+  const close = (res) => onDone(res)
+  if (dlg.type === "confirm") {
+    return (
+      <Modal m={m} title={dlg.title} onClose={() => close(false)}>
+        <p style={ptext}>{dlg.message}</p>
+        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <button style={{ ...BTN, flex: 1, ...(dlg.danger ? { background: "#dc2626", color: "#fff" } : {}) }} onClick={() => close(true)}>{dlg.okLabel}</button>
+          <button style={BTN_GHOST} onClick={() => close(false)}>Cancel</button>
+        </div>
+      </Modal>
+    )
+  }
+  const submit = () => close(vals)
+  return (
+    <Modal m={m} title={dlg.title} onClose={() => close(null)}>
+      {(dlg.fields || []).map((f, i) => (
+        <div key={f.key} style={{ marginBottom: 12 }}>
+          <label style={lbl}>{f.label}</label>
+          <input
+            ref={i === 0 ? firstRef : null}
+            type={f.type === "number" ? "number" : "text"}
+            inputMode={f.type === "number" ? "numeric" : undefined}
+            value={vals[f.key]}
+            placeholder={f.placeholder || ""}
+            onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === "Enter" && (dlg.fields || []).length === 1) submit() }}
+            style={IST}
+          />
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <button style={{ ...BTN, flex: 1 }} onClick={submit}>{dlg.submitLabel || "Save"}</button>
+        <button style={BTN_GHOST} onClick={() => close(null)}>Cancel</button>
+      </div>
+    </Modal>
   )
 }
 
