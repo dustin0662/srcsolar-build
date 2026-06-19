@@ -109,6 +109,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [capture, setCapture] = useState(null)
   const [panelNo, setPanelNo] = useState(1)
   const [editing, setEditing] = useState(null)
+  const [viewScan, setViewScan] = useState(null) // tapped panel — detail/photo viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
 
   const fileRef = useRef(null)
@@ -420,17 +421,14 @@ export default function PanelScanner({ onExit, portalUser }) {
 
       <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "repeat(2,1fr)", gap: 10 }}>
         {list.map((s) => (
-          <div key={s.id} style={{ background: "#fff", border: "1px solid rgba(0,0,0,.08)", padding: 12, display: "flex", gap: 12, alignItems: "center", borderRadius: 10 }}>
+          <div key={s.id} onClick={() => setViewScan(Object.assign({ _fromRow: s.rowId }, s))} style={{ background: "#fff", border: "1px solid rgba(0,0,0,.08)", padding: 12, display: "flex", gap: 12, alignItems: "center", borderRadius: 10, cursor: "pointer" }}>
             {s.photoKey && <img src={API + "?photo=" + s.photoKey} alt="" loading="lazy" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, background: "#eee", flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...BB, fontSize: 18, color: INK }}>PANEL {s.panel}</div>
               <div style={{ ...NB, fontSize: 13, color: "#444", wordBreak: "break-all" }}>{s.serial}</div>
               <div style={{ ...NB, fontSize: 11, color: "#999" }}>{fmtTime(s.ts)} · {s.by}{s.status && s.status !== "ok" ? " · " + s.status : ""}</div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <span onClick={() => setEditing(Object.assign({ _fromRow: s.rowId }, s))} style={{ ...NB, fontSize: 12, color: A, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
-              <span onClick={() => deleteScan(s)} style={{ ...NB, fontSize: 12, color: "#c00", cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Del</span>
-            </div>
+            <span style={{ ...BB, fontSize: 24, color: "#ccc", flexShrink: 0 }}>›</span>
           </div>
         ))}
         {!list.length && <div style={{ ...NB, fontSize: 14, color: "#999", padding: 12 }}>No panels yet — capture the first one above.</div>}
@@ -448,6 +446,22 @@ export default function PanelScanner({ onExit, portalUser }) {
       {dlg && <Dialog dlg={dlg} m={m} onDone={(res) => { const r = dlg.resolve; setDlg(null); r(res) }} />}
       {askName && <NameModal m={m} current={op} onSave={saveOp} onClose={op ? () => setAskName(false) : null} />}
       {showSettings && <SettingsModal m={m} webhook={tree.webhook} onSave={saveWebhook} onClose={() => setShowSettings(false)} />}
+
+      {viewScan && (
+        <Modal m={m} title={"Panel " + viewScan.panel} onClose={() => setViewScan(null)}>
+          {viewScan.photoKey
+            ? <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />
+            : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
+          <div style={{ ...NB, fontSize: 12, color: "#777", letterSpacing: 1 }}>SERIAL</div>
+          <div style={{ ...NB, fontSize: 18, color: INK, wordBreak: "break-all", marginBottom: 10 }}>{viewScan.serial}</div>
+          <div style={{ ...NB, fontSize: 13, color: "#666", marginBottom: 16 }}>{fmtTime(viewScan.ts)} · {viewScan.by}{viewScan.status && viewScan.status !== "ok" ? " · " + viewScan.status : ""}{viewScan.note ? " · " + viewScan.note : ""}</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button style={{ ...BTN, flex: 1 }} onClick={() => { setEditing(viewScan); setViewScan(null) }}>Edit</button>
+            <button style={{ ...BTN_GHOST, color: "#c00", borderColor: "rgba(204,0,0,.4)" }} onClick={async () => { const s = viewScan; setViewScan(null); await deleteScan(s) }}>Delete</button>
+            <button style={BTN_GHOST} onClick={() => setViewScan(null)}>Close</button>
+          </div>
+        </Modal>
+      )}
 
       {editing && (
         <Modal m={m} title="Correct Panel" onClose={() => setEditing(null)}>
