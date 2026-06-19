@@ -264,6 +264,8 @@ export default function PanelScanner({ onExit, portalUser }) {
   async function saveWebhook(urlVal) { setTree((t) => ({ ...t, webhook: urlVal })); try { await fetch(API + "?action=webhook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ webhook: urlVal }) }); flash("Sheet link saved ✓", "ok") } catch (e) { flash("Save failed", "err") } }
 
   function requestNewSection() {
+    // On the sections list there is no current section to validate — just add.
+    if (!section) { addSection(); return }
     const incomplete = (section.rows || []).filter((r) => !rowStat(r).done)
     if (incomplete.length) { setPrompt({ kind: "guard", details: incomplete.map((r) => ({ row: r, missing: rowStat(r).missing })) }); return }
     addSection()
