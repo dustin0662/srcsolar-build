@@ -176,12 +176,15 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [prompt, setPrompt] = useState(null)
   const [capture, setCapture] = useState(null)
   const [panelNo, setPanelNo] = useState(1)
+  const [scanning, setScanning] = useState(false)
+  const [camErr, setCamErr] = useState("")
   const [editing, setEditing] = useState(null)
-  const [viewScan, setViewScan] = useState(null) // tapped panel — detail/photo viewer
+  const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
 
   const fileRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
+  const capDefaultsRef = useRef({ panel: 1, brand: "" })
 
   const flash = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800) }
 
@@ -205,6 +208,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const proj = tree.projects.find((p) => p.id === projId) || null
   const section = (proj && (proj.sections || []).find((s) => s.id === secId)) || null
   const row = (section && (section.rows || []).find((r) => r.id === rowId)) || null
+  capDefaultsRef.current = { panel: panelNo, brand: (proj && proj.brand) || "" } // latest defaults for live-scan hits
 
   // ── Completeness from the lightweight summary index ─────────────────────────
   function rowStat(r) {
@@ -276,49 +280,23 @@ export default function PanelScanner({ onExit, portalUser }) {
     try { const res = await fetch(API + "?row=" + r.id, { cache: "no-store" }); const d = await res.json(); const scans = d.scans || []; setRowDoc({ scans }); setPanelNo(scans.length ? Math.max(...scans.map((s) => s.panel || 0)) + 1 : 1) } catch (e) { flash("Couldn't load row", "err") }
   }
 
-  async function onPickFile(e) {
-    const file = e.target.files && e.target.files[0]; e.target.value = ""
-    if (!file) return
-    setBusy(true)
-    try {
-      const img = await loadImage(file)
-      const decodeCv = canvasFrom(img, 2000) // higher-res for decoding (esp. iOS/ZXing)
-      const decoded = await decodeBarcode(decodeCv)
-      // Prepare both a label crop (storage-saver default) and the full frame, so
-      // the per-scan "keep full photo" toggle can switch instantly.
-      const cropCv = (decoded && decoded.box) ? cropToLabel(decodeCv, decoded.box) : null
-      const fullUrl = canvasFrom(img, 1000).toDataURL("image/jpeg", 0.5)
-      const cropUrl = cropCv ? canvasFrom(cropCv, 1000).toDataURL("image/jpeg", 0.5) : null
-      try { URL.revokeObjectURL(img.src) } catch (e) {}
-      let serial = decoded ? decoded.serial : "", isOcr = false
-      if (!decoded) {
-        flash("No barcode — reading the numbers…", "warn")
-        const txt = await ocrDigits(decodeCv)
-        if (txt) { serial = txt; isOcr = true }
-      }
-      setCapture({ fullUrl, cropUrl, keepFull: false, photo: cropUrl || fullUrl, serial, format: decoded ? decoded.format : "", decoded: !!decoded, ocr: isOcr, panel: panelNo, brand: (proj && proj.brand) || "" })
-      if (!decoded) flash(isOcr ? "Read by OCR — double-check the digits" : "Couldn't read it — type the serial", "warn")
-    } catch (err) { flash("Couldn't read that image", "err") }
-    setBusy(false)
-  }
-
   async function confirmCapture() {
     if (!capture) return
     const serial = (capture.serial || "").trim()
-    if (!serial) { flash("Enter a serial before uploading", "err"); return }
+    if (!serial) { flash("Enter a serial first", "err"); return }
     const panel = Math.max(1, parseInt(capture.panel, 10) || panelNo)
     if (rowDoc.scans.some((s) => s.panel === panel) && !(await askConfirm(`Panel ${panel} already exists in this row. Add another anyway?`))) return
     const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", brand: (capture.brand || "").trim(), ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
-      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: capture.photo }) })
-      setRowDoc((d) => ({ scans: d.scans.concat([Object.assign({ photoKey: scan.id }, scan)]) }))
+      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan }) })
+      setRowDoc((d) => ({ scans: d.scans.concat([scan]) }))
       setSummary((sm) => { const cur = sm[rowId] || { c: 0, x: 0 }; return { ...sm, [rowId]: { c: cur.c + 1, x: Math.max(cur.x, panel) } } })
       setCapture(null); setPanelNo(panel + 1)
-      flash(`Panel ${panel} uploaded ✓`, "ok")
+      flash(`Panel ${panel} logged ✓`, "ok")
       fetchRow(rowId) // pull authoritative list (also surfaces others' scans)
       if (row && row.panelTarget > 0 && rowDoc.scans.length + 1 >= row.panelTarget) maybePromptRowComplete(row)
-    } catch (e) { flash("Upload failed — check connection", "err") }
+    } catch (e) { flash("Save failed — check connection", "err") }
     setBusy(false)
   }
 
@@ -500,7 +478,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     const miss = missingFromScans(list, row.panelTarget)
     const st = rowStat(row)
     body = (<>
-      <TopBar back={() => { setRowId(null); setCapture(null) }} backLabel="Rows" />
+      <TopBar back={() => { setRowId(null); setCapture(null); setScanning(false) }} backLabel="Rows" />
       <Title t={row.name.toUpperCase()} sub={proj.name + " · " + section.name} />
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -513,35 +491,40 @@ export default function PanelScanner({ onExit, portalUser }) {
       </div>
 
       <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,.08)", boxShadow: "0 1px 4px rgba(0,0,0,.06)", padding: m ? 15 : 20, marginBottom: 18, borderRadius: 12 }}>
-        <div style={{ ...NB, fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: A, marginBottom: 6 }}>Now capturing · {op}</div>
+        <div style={{ ...NB, fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: A, marginBottom: 6 }}>Now scanning · {op}</div>
         <div style={{ ...BB, fontSize: 30, color: INK, marginBottom: 14 }}>PANEL #{panelNo}</div>
-        {!capture && (<>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPickFile} style={{ display: "none" }} />
-          <button disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px", opacity: busy ? .6 : 1 }}>{busy ? "Reading…" : "📷 Take / Upload Photo"}</button>
-          <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 10 }}>Snap the panel's barcode label — we decode the serial automatically.</div>
+
+        {!scanning && (<>
+          <button onClick={() => { setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
+          <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })}>or enter a serial manually</div>
         </>)}
+
+        {scanning && (
+          <div style={{ position: "relative" }}>
+            <LiveScanner paused={!!capture} onHit={(serial, format) => setCapture({ serial, format, panel: capDefaultsRef.current.panel, brand: capDefaultsRef.current.brand })} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
+            {!capture && <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, background: "rgba(249,115,22,.9)", boxShadow: "0 0 8px rgba(249,115,22,.8)" }} />}
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
+              <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
+            </div>
+            {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Point the camera at the barcode — it reads automatically.</div>}
+          </div>
+        )}
+
+        {camErr && <div style={{ ...NB, fontSize: 13, color: "#d97706", marginTop: 10 }}>{camErr}</div>}
+
         {capture && (
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-            <img src={capture.photo} alt="panel" style={{ width: m ? "100%" : 220, maxWidth: 320, borderRadius: 8, border: "1px solid rgba(0,0,0,.1)" }} />
-            <div style={{ flex: 1, minWidth: m ? "100%" : 220 }}>
-              <div style={{ ...NB, fontSize: 13, color: capture.decoded ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.decoded ? "✓ Barcode decoded" + (capture.format ? " (" + capture.format + ")" : "") : (capture.ocr ? "🔎 Read by OCR — verify the digits below" : "⚠ No barcode — type the serial")}</div>
-              <label style={lbl}>SERIAL</label>
-              <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!capture.decoded} />
-              <label style={lbl}>PANEL #</label>
-              <input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12, width: 130 }} />
-              <label style={lbl}>BRAND</label>
-              <input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 12 }} />
-              {capture.cropUrl && (
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer" }}>
-                  <input type="checkbox" checked={capture.keepFull} onChange={(e) => { const kf = e.target.checked; setCapture({ ...capture, keepFull: kf, photo: kf ? capture.fullUrl : capture.cropUrl }) }} style={{ width: 20, height: 20, flexShrink: 0 }} />
-                  <span style={{ ...NB, fontSize: 13, color: "#555" }}>Keep full photo for this scan (default crops to label)</span>
-                </label>
-              )}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button disabled={busy} onClick={confirmCapture} style={{ ...BTN, flex: m ? "1 1 100%" : "0 0 auto", opacity: busy ? .6 : 1 }}>{busy ? "Uploading…" : "✓ Confirm & Upload"}</button>
-                <button onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>Retake</button>
-                <button onClick={() => setCapture(null)} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>Cancel</button>
-              </div>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(0,0,0,.08)" }}>
+            <div style={{ ...NB, fontSize: 13, color: capture.serial ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.manual ? "Enter the serial" : "✓ Scanned" + (capture.format ? " (" + capture.format + ")" : "") + " — confirm below"}</div>
+            <label style={lbl}>SERIAL</label>
+            <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!!capture.manual} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
+              <div style={{ flex: 2 }}><label style={lbl}>BRAND</label><input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 12 }} /></div>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button disabled={busy} onClick={confirmCapture} style={{ ...BTN, flex: m ? "1 1 100%" : "0 0 auto", opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : (scanning ? "✓ Confirm & Next" : "✓ Confirm")}</button>
+              <button onClick={() => setCapture(null)} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>{scanning ? "Rescan" : "Cancel"}</button>
             </div>
           </div>
         )}
@@ -593,9 +576,7 @@ export default function PanelScanner({ onExit, portalUser }) {
               <button disabled={vidx <= 0} onClick={() => viewGo(-1)} style={{ ...BTN_GHOST, flex: 1, opacity: vidx <= 0 ? .4 : 1 }}>← Prev</button>
               <button disabled={vidx < 0 || vidx >= vlist.length - 1} onClick={() => viewGo(1)} style={{ ...BTN_GHOST, flex: 1, opacity: (vidx < 0 || vidx >= vlist.length - 1) ? .4 : 1 }}>Next →</button>
             </div>
-            {viewScan.photoKey
-              ? <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />
-              : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
+            {viewScan.photoKey && <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />}
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 2 }}><label style={lbl}>SERIAL</label><input value={viewScan.serial || ""} onChange={(e) => setViewScan({ ...viewScan, serial: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
               <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={viewScan.panel} onChange={(e) => setViewScan({ ...viewScan, panel: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
@@ -675,6 +656,51 @@ export default function PanelScanner({ onExit, portalUser }) {
 
 const lbl = { ...NB, fontSize: 12, color: "#777", letterSpacing: 1, display: "block", marginBottom: 4 }
 const ptext = { ...NB, fontSize: 15, color: "#444", lineHeight: 1.5 }
+
+// Live camera barcode scanner. Native BarcodeDetector loop on Android; ZXing
+// continuous decode from the video stream on iOS Safari / desktop. Calls onHit
+// with the decoded serial; honours `paused` so it stops reading while a capture
+// awaits confirmation, then resumes.
+function LiveScanner({ paused, onHit, onError }) {
+  const videoRef = useRef(null)
+  const pausedRef = useRef(paused); pausedRef.current = paused
+  const lastRef = useRef({ v: "", t: 0 })
+  useEffect(() => {
+    let stream = null, raf = 0, reader = null, stopped = false
+    const hit = (serial, format) => {
+      const s = String(serial || "").trim()
+      if (!s || stopped || pausedRef.current) return
+      const now = Date.now()
+      if (s === lastRef.current.v && now - lastRef.current.t < 1500) return // debounce same code
+      lastRef.current = { v: s, t: now }
+      onHit(s, format || "")
+    }
+    async function start() {
+      const v = videoRef.current
+      if (!v) return
+      try {
+        if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+          v.srcObject = stream; v.setAttribute("playsinline", "true"); v.muted = true
+          await v.play()
+          const det = new window.BarcodeDetector()
+          const loop = async () => {
+            if (stopped) return
+            if (!pausedRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) hit(codes[0].rawValue, codes[0].format) } catch (e) {} }
+            raf = requestAnimationFrame(loop)
+          }
+          raf = requestAnimationFrame(loop)
+        } else {
+          reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]))
+          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" } }, audio: false }, v, (result) => { if (result && !pausedRef.current) hit(result.getText(), "") })
+        }
+      } catch (e) { if (onError) onError(e) }
+    }
+    start()
+    return () => { stopped = true; try { cancelAnimationFrame(raf) } catch (e) {} try { reader && reader.reset && reader.reset() } catch (e) {} try { stream && stream.getTracks().forEach((t) => t.stop()) } catch (e) {} }
+  }, []) // eslint-disable-line
+  return <video ref={videoRef} playsInline muted style={{ width: "100%", maxHeight: "50vh", borderRadius: 10, background: "#000", objectFit: "cover", display: "block" }} />
+}
 
 function Modal({ title, children, onClose, m }) {
   return (
