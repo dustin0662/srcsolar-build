@@ -92,6 +92,23 @@ async function decodeBarcode(canvas) {
 
 const sortScans = (scans) => (scans || []).slice().sort((a, b) => (a.panel || 0) - (b.panel || 0))
 
+// Fallback OCR: read the human-readable digits when the barcode won't decode
+// (mainly iPhone). Lazy-loaded so Tesseract only downloads when actually needed.
+// Restricted to digits; returns the longest digit run as a best-effort guess.
+async function ocrDigits(canvas) {
+  try {
+    const { createWorker } = await import("tesseract.js")
+    const worker = await createWorker("eng")
+    try {
+      await worker.setParameters({ tessedit_char_whitelist: "0123456789" })
+      const { data } = await worker.recognize(canvas)
+      const runs = String((data && data.text) || "").match(/\d{5,}/g)
+      if (runs && runs.length) { runs.sort((a, b) => b.length - a.length); return runs[0] }
+      return null
+    } finally { try { await worker.terminate() } catch (e) {} }
+  } catch (e) { return null }
+}
+
 // Exact missing panel numbers within a fully-loaded row's scans.
 function missingFromScans(scans, target) {
   const have = new Set((scans || []).map((s) => s.panel))
@@ -243,8 +260,14 @@ export default function PanelScanner({ onExit, portalUser }) {
       const dataUrl = canvasFrom(img, 1400).toDataURL("image/jpeg", 0.72) // smaller for storage
       try { URL.revokeObjectURL(img.src) } catch (e) {}
       const decoded = await decodeBarcode(decodeCv)
-      setCapture({ photo: dataUrl, serial: decoded ? decoded.serial : "", format: decoded ? decoded.format : "", decoded: !!decoded, panel: panelNo, brand: (proj && proj.brand) || "" })
-      if (!decoded) flash("No barcode detected — type the serial", "warn")
+      let serial = decoded ? decoded.serial : "", isOcr = false
+      if (!decoded) {
+        flash("No barcode — reading the numbers…", "warn")
+        const txt = await ocrDigits(decodeCv)
+        if (txt) { serial = txt; isOcr = true }
+      }
+      setCapture({ photo: dataUrl, serial, format: decoded ? decoded.format : "", decoded: !!decoded, ocr: isOcr, panel: panelNo, brand: (proj && proj.brand) || "" })
+      if (!decoded) flash(isOcr ? "Read by OCR — double-check the digits" : "Couldn't read it — type the serial", "warn")
     } catch (err) { flash("Couldn't read that image", "err") }
     setBusy(false)
   }
@@ -440,7 +463,7 @@ export default function PanelScanner({ onExit, portalUser }) {
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
             <img src={capture.photo} alt="panel" style={{ width: m ? "100%" : 220, maxWidth: 320, borderRadius: 8, border: "1px solid rgba(0,0,0,.1)" }} />
             <div style={{ flex: 1, minWidth: m ? "100%" : 220 }}>
-              <div style={{ ...NB, fontSize: 13, color: capture.decoded ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.decoded ? "✓ Barcode decoded" + (capture.format ? " (" + capture.format + ")" : "") : "⚠ No barcode — type the serial"}</div>
+              <div style={{ ...NB, fontSize: 13, color: capture.decoded ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.decoded ? "✓ Barcode decoded" + (capture.format ? " (" + capture.format + ")" : "") : (capture.ocr ? "🔎 Read by OCR — verify the digits below" : "⚠ No barcode — type the serial")}</div>
               <label style={lbl}>SERIAL</label>
               <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!capture.decoded} />
               <label style={lbl}>PANEL #</label>
