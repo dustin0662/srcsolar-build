@@ -673,16 +673,16 @@ const APPS_SCRIPT = `function doPost(e){
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
-    if (sh.getLastRow() === 0) sh.appendRow(['Timestamp','Serial','Brand','Project','Section','Row','Panel','By','Status','Note','Mode','ID']);
-    var row = [d.timestamp,d.serial,d.brand,d.project,d.section,d.row,d.panel,d.by,d.status,d.note,d.mode,d.id];
+    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','Brand','By','Project','Timestamp','ID']); try { sh.hideColumns(9); } catch (err) {} }
+    var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,d.id];
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
-        var ids = sh.getRange(2,12,n,1).getValues();
+        var ids = sh.getRange(2,9,n,1).getValues();
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(d.id)) {
             if (d.mode === 'delete') sh.deleteRow(i + 2);
-            else { row[10] = 'update'; sh.getRange(i+2,1,1,12).setValues([row]); }
+            else sh.getRange(i+2,1,1,9).setValues([row]);
             return ContentService.createTextOutput('ok');
           }
         }
