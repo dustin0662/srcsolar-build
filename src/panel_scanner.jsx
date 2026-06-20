@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import { BrowserMultiFormatReader } from "@zxing/browser"
+import { DecodeHintType } from "@zxing/library"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Panel Scanner — mobile-first field tool (Android + iOS)
@@ -27,41 +28,65 @@ const IST = { width: "100%", background: "#f9f7f5", border: "1px solid rgba(0,0,
 const BTN = { background: A, color: "#1a1206", border: "none", padding: "15px 22px", ...NB, fontWeight: 700, fontSize: 15, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", borderRadius: 8, minHeight: 50 }
 const BTN_GHOST = { background: "#fff", color: "#555", border: "1px solid rgba(0,0,0,.18)", padding: "14px 18px", ...NB, fontSize: 14, letterSpacing: "1.5px", textTransform: "uppercase", cursor: "pointer", borderRadius: 8, minHeight: 48 }
 
-// Resize + compress an image File into a jpeg data URL (max edge 1400px).
-function compress(file, maxEdge = 1400, quality = 0.72) {
+// Load a File into an <img>.
+function loadImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => {
-      let { width: w, height: h } = img
-      const scale = Math.min(1, maxEdge / Math.max(w, h))
-      w = Math.round(w * scale); h = Math.round(h * scale)
-      const cv = document.createElement("canvas")
-      cv.width = w; cv.height = h
-      const ctx = cv.getContext("2d")
-      ctx.drawImage(img, 0, 0, w, h) // modern Safari/Chrome auto-apply EXIF orientation
-      try { URL.revokeObjectURL(img.src) } catch (e) {}
-      resolve({ dataUrl: cv.toDataURL("image/jpeg", quality), canvas: cv })
-    }
+    img.onload = () => resolve(img)
     img.onerror = reject
     img.src = URL.createObjectURL(file)
   })
 }
 
-// Decode a barcode/QR from a canvas: native BarcodeDetector first (Android),
-// ZXing fallback (iOS Safari + desktop, where BarcodeDetector is unavailable).
+// Draw an image onto a canvas scaled to a max edge (Safari/Chrome auto-apply EXIF).
+function canvasFrom(img, maxEdge) {
+  let { width: w, height: h } = img
+  const scale = Math.min(1, maxEdge / Math.max(w, h))
+  w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale))
+  const cv = document.createElement("canvas")
+  cv.width = w; cv.height = h
+  cv.getContext("2d").drawImage(img, 0, 0, w, h)
+  return cv
+}
+
+// Rotate a canvas by 90/180/270 degrees into a new canvas.
+function rotateCanvas(src, deg) {
+  const swap = deg === 90 || deg === 270
+  const cv = document.createElement("canvas")
+  cv.width = swap ? src.height : src.width
+  cv.height = swap ? src.width : src.height
+  const ctx = cv.getContext("2d")
+  ctx.translate(cv.width / 2, cv.height / 2)
+  ctx.rotate(deg * Math.PI / 180)
+  ctx.drawImage(src, -src.width / 2, -src.height / 2)
+  return cv
+}
+
+// Decode a barcode/QR from a canvas.
+// Android: native BarcodeDetector (fast, robust) — primary path, unchanged.
+// iOS Safari / desktop (no BarcodeDetector): ZXing with TRY_HARDER, retried at
+// several rotations to handle EXIF-rotated iPhone photos and vertical barcodes.
 async function decodeBarcode(canvas) {
   try {
     if (typeof window !== "undefined" && "BarcodeDetector" in window) {
       const det = new window.BarcodeDetector()
-      const codes = await det.detect(canvas)
-      if (codes && codes.length) return { serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native" }
+      for (const deg of [0, 90, 270]) {
+        const c = deg ? rotateCanvas(canvas, deg) : canvas
+        const codes = await det.detect(c)
+        if (codes && codes.length) return { serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native" }
+      }
     }
   } catch (e) { /* fall through to zxing */ }
-  try {
-    const reader = new BrowserMultiFormatReader()
-    const res = await reader.decodeFromCanvas(canvas)
-    if (res) { let fmt = ""; try { fmt = String(res.getBarcodeFormat()) } catch (e) {} return { serial: String(res.getText() || "").trim(), format: fmt } }
-  } catch (e) { /* not found */ }
+  const hints = new Map()
+  hints.set(DecodeHintType.TRY_HARDER, true)
+  for (const deg of [0, 90, 270, 180]) {
+    const c = deg ? rotateCanvas(canvas, deg) : canvas
+    try {
+      const reader = new BrowserMultiFormatReader(hints)
+      const res = await reader.decodeFromCanvas(c)
+      if (res) { let fmt = ""; try { fmt = String(res.getBarcodeFormat()) } catch (e) {} return { serial: String(res.getText() || "").trim(), format: fmt } }
+    } catch (e) { /* not found at this rotation — try next */ }
+  }
   return null
 }
 
@@ -213,8 +238,11 @@ export default function PanelScanner({ onExit, portalUser }) {
     if (!file) return
     setBusy(true)
     try {
-      const { dataUrl, canvas } = await compress(file)
-      const decoded = await decodeBarcode(canvas)
+      const img = await loadImage(file)
+      const decodeCv = canvasFrom(img, 2000) // higher-res for decoding (esp. iOS/ZXing)
+      const dataUrl = canvasFrom(img, 1400).toDataURL("image/jpeg", 0.72) // smaller for storage
+      try { URL.revokeObjectURL(img.src) } catch (e) {}
+      const decoded = await decodeBarcode(decodeCv)
       setCapture({ photo: dataUrl, serial: decoded ? decoded.serial : "", format: decoded ? decoded.format : "", decoded: !!decoded, panel: panelNo, brand: (proj && proj.brand) || "" })
       if (!decoded) flash("No barcode detected — type the serial", "warn")
     } catch (err) { flash("Couldn't read that image", "err") }
