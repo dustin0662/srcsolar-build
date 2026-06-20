@@ -289,8 +289,8 @@ export default function PanelScanner({ onExit, portalUser }) {
     const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", brand: (capture.brand || "").trim(), ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
-      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan }) })
-      setRowDoc((d) => ({ scans: d.scans.concat([scan]) }))
+      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: capture.photo || undefined }) })
+      setRowDoc((d) => ({ scans: d.scans.concat([capture.photo ? Object.assign({ photoKey: scan.id }, scan) : scan]) }))
       setSummary((sm) => { const cur = sm[rowId] || { c: 0, x: 0 }; return { ...sm, [rowId]: { c: cur.c + 1, x: Math.max(cur.x, panel) } } })
       setCapture(null); setPanelNo(panel + 1)
       flash(`Panel ${panel} logged ✓`, "ok")
@@ -501,7 +501,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
         {scanning && (
           <div style={{ position: "relative" }}>
-            <LiveScanner paused={!!capture} onHit={(serial, format) => setCapture({ serial, format, panel: capDefaultsRef.current.panel, brand: capDefaultsRef.current.brand })} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
+            <LiveScanner paused={!!capture} onHit={(serial, format, photo) => setCapture({ serial, format, photo, panel: capDefaultsRef.current.panel, brand: capDefaultsRef.current.brand })} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
             {!capture && <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, background: "rgba(249,115,22,.9)", boxShadow: "0 0 8px rgba(249,115,22,.8)" }} />}
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
@@ -516,6 +516,7 @@ export default function PanelScanner({ onExit, portalUser }) {
         {capture && (
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(0,0,0,.08)" }}>
             <div style={{ ...NB, fontSize: 13, color: capture.serial ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.manual ? "Enter the serial" : "✓ Scanned" + (capture.format ? " (" + capture.format + ")" : "") + " — confirm below"}</div>
+            {capture.photo && <img src={capture.photo} alt="scan" style={{ width: m ? "100%" : 200, maxWidth: 260, borderRadius: 8, border: "1px solid rgba(0,0,0,.1)", marginBottom: 10 }} />}
             <label style={lbl}>SERIAL</label>
             <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!!capture.manual} />
             <div style={{ display: "flex", gap: 10 }}>
@@ -576,7 +577,9 @@ export default function PanelScanner({ onExit, portalUser }) {
               <button disabled={vidx <= 0} onClick={() => viewGo(-1)} style={{ ...BTN_GHOST, flex: 1, opacity: vidx <= 0 ? .4 : 1 }}>← Prev</button>
               <button disabled={vidx < 0 || vidx >= vlist.length - 1} onClick={() => viewGo(1)} style={{ ...BTN_GHOST, flex: 1, opacity: (vidx < 0 || vidx >= vlist.length - 1) ? .4 : 1 }}>Next →</button>
             </div>
-            {viewScan.photoKey && <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />}
+            {viewScan.photoKey
+              ? <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />
+              : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 2 }}><label style={lbl}>SERIAL</label><input value={viewScan.serial || ""} onChange={(e) => setViewScan({ ...viewScan, serial: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
               <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={viewScan.panel} onChange={(e) => setViewScan({ ...viewScan, panel: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
@@ -657,10 +660,24 @@ export default function PanelScanner({ onExit, portalUser }) {
 const lbl = { ...NB, fontSize: 12, color: "#777", letterSpacing: 1, display: "block", marginBottom: 4 }
 const ptext = { ...NB, fontSize: 15, color: "#444", lineHeight: 1.5 }
 
+// Grab the current video frame as a storage-saver JPEG data URL.
+function grabFrame(v, maxEdge = 1000, quality = 0.5) {
+  try {
+    const vw = v.videoWidth, vh = v.videoHeight
+    if (!vw || !vh) return ""
+    const scale = Math.min(1, maxEdge / Math.max(vw, vh))
+    const w = Math.round(vw * scale), h = Math.round(vh * scale)
+    const cv = document.createElement("canvas")
+    cv.width = w; cv.height = h
+    cv.getContext("2d").drawImage(v, 0, 0, w, h)
+    return cv.toDataURL("image/jpeg", quality)
+  } catch (e) { return "" }
+}
+
 // Live camera barcode scanner. Native BarcodeDetector loop on Android; ZXing
-// continuous decode from the video stream on iOS Safari / desktop. Calls onHit
-// with the decoded serial; honours `paused` so it stops reading while a capture
-// awaits confirmation, then resumes.
+// continuous decode from the video stream on iOS Safari / desktop. On a read it
+// grabs the current frame as the audit photo and calls onHit(serial, format,
+// photo); honours `paused` so it stops while a capture awaits confirmation.
 function LiveScanner({ paused, onHit, onError }) {
   const videoRef = useRef(null)
   const pausedRef = useRef(paused); pausedRef.current = paused
@@ -673,7 +690,8 @@ function LiveScanner({ paused, onHit, onError }) {
       const now = Date.now()
       if (s === lastRef.current.v && now - lastRef.current.t < 1500) return // debounce same code
       lastRef.current = { v: s, t: now }
-      onHit(s, format || "")
+      const photo = grabFrame(videoRef.current)
+      onHit(s, format || "", photo)
     }
     async function start() {
       const v = videoRef.current
