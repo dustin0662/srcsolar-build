@@ -178,6 +178,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [panelNo, setPanelNo] = useState(1)
   const [scanning, setScanning] = useState(false)
   const [camErr, setCamErr] = useState("")
+  const [okFlash, setOkFlash] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
@@ -185,6 +186,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const fileRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
   const capDefaultsRef = useRef({ panel: 1, brand: "" })
+  const logScanRef = useRef(null) // latest logScan, so the live scanner avoids stale closures
 
   const flash = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800) }
 
@@ -209,6 +211,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const section = (proj && (proj.sections || []).find((s) => s.id === secId)) || null
   const row = (section && (section.rows || []).find((r) => r.id === rowId)) || null
   capDefaultsRef.current = { panel: panelNo, brand: (proj && proj.brand) || "" } // latest defaults for live-scan hits
+  logScanRef.current = (s, f, p) => logScan(s, f, p) // always call the latest logScan from the live scanner
 
   // ── Completeness from the lightweight summary index ─────────────────────────
   function rowStat(r) {
@@ -280,24 +283,35 @@ export default function PanelScanner({ onExit, portalUser }) {
     try { const res = await fetch(API + "?row=" + r.id, { cache: "no-store" }); const d = await res.json(); const scans = d.scans || []; setRowDoc({ scans }); setPanelNo(scans.length ? Math.max(...scans.map((s) => s.panel || 0)) + 1 : 1) } catch (e) { flash("Couldn't load row", "err") }
   }
 
-  async function confirmCapture() {
-    if (!capture) return
-    const serial = (capture.serial || "").trim()
+  // Log one panel. Used by both auto-scan hits and manual entry.
+  async function logScan(serial0, format, photo, panelOverride, force) {
+    const serial = (serial0 || "").trim()
     if (!serial) { flash("Enter a serial first", "err"); return }
-    const panel = Math.max(1, parseInt(capture.panel, 10) || panelNo)
-    if (rowDoc.scans.some((s) => s.panel === panel) && !(await askConfirm(`Panel ${panel} already exists in this row. Add another anyway?`))) return
-    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", brand: (capture.brand || "").trim(), ts: Date.now(), by: op, note: "", status: "ok" }
+    const panel = Math.max(1, parseInt(panelOverride != null ? panelOverride : panelNo, 10) || panelNo)
+    if (!force && row && row.panelTarget > 0 && panel > row.panelTarget) {
+      setPrompt({ kind: "over", target: row.panelTarget, pending: { serial, format, photo, panel } })
+      return
+    }
+    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: serial, format: format || "", brand: capDefaultsRef.current.brand || "", ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
-      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: capture.photo || undefined }) })
-      setRowDoc((d) => ({ scans: d.scans.concat([capture.photo ? Object.assign({ photoKey: scan.id }, scan) : scan]) }))
+      await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: photo || undefined }) })
+      setRowDoc((d) => ({ scans: d.scans.concat([photo ? Object.assign({ photoKey: scan.id }, scan) : scan]) }))
       setSummary((sm) => { const cur = sm[rowId] || { c: 0, x: 0 }; return { ...sm, [rowId]: { c: cur.c + 1, x: Math.max(cur.x, panel) } } })
-      setCapture(null); setPanelNo(panel + 1)
+      setPanelNo(panel + 1)
+      setOkFlash(true); setTimeout(() => setOkFlash(false), 900)
       flash(`Panel ${panel} logged ✓`, "ok")
-      fetchRow(rowId) // pull authoritative list (also surfaces others' scans)
+      fetchRow(rowId)
       if (row && row.panelTarget > 0 && rowDoc.scans.length + 1 >= row.panelTarget) maybePromptRowComplete(row)
     } catch (e) { flash("Save failed — check connection", "err") }
     setBusy(false)
+  }
+
+  // Manual-entry confirm (camera couldn't read or typed by hand).
+  async function confirmCapture() {
+    if (!capture) return
+    await logScan(capture.serial, capture.format, capture.photo, capture.panel)
+    setCapture(null)
   }
 
   // Decide row-complete vs missing-panels prompt from authoritative server data.
@@ -501,13 +515,19 @@ export default function PanelScanner({ onExit, portalUser }) {
 
         {scanning && (
           <div style={{ position: "relative" }}>
-            <LiveScanner paused={!!capture} onHit={(serial, format, photo) => setCapture({ serial, format, photo, panel: capDefaultsRef.current.panel, brand: capDefaultsRef.current.brand })} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
-            {!capture && <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, background: "rgba(249,115,22,.9)", boxShadow: "0 0 8px rgba(249,115,22,.8)" }} />}
+            <LiveScanner paused={!!capture || !!prompt || okFlash || busy} onHit={(serial, format, photo) => { logScanRef.current && logScanRef.current(serial, format, photo) }} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
+            {!okFlash && !capture && <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, background: "rgba(249,115,22,.9)", boxShadow: "0 0 8px rgba(249,115,22,.8)" }} />}
+            {okFlash && (
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(22,163,74,.55)", borderRadius: 10 }}>
+                <div style={{ fontSize: 64, lineHeight: 1, color: "#fff" }}>✓</div>
+                <div style={{ ...BB, fontSize: 28, letterSpacing: 2, color: "#fff" }}>COMPLETE</div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
               <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
             </div>
-            {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Point the camera at the barcode — it reads automatically.</div>}
+            {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Point the camera at the barcode — it logs automatically and moves to the next panel.</div>}
           </div>
         )}
 
@@ -634,6 +654,16 @@ export default function PanelScanner({ onExit, portalUser }) {
         <Modal m={m} title="Row Not Complete" onClose={() => setPrompt(null)}>
           <p style={ptext}>You hit the target count but panels <strong>{prompt.missing.join(", ")}</strong> are missing. Capture them before finishing this row.</p>
           <div style={{ marginTop: 18 }}><button style={{ ...BTN, width: "100%" }} onClick={() => setPrompt(null)}>Keep Scanning</button></div>
+        </Modal>
+      )}
+      {prompt && prompt.kind === "over" && (
+        <Modal m={m} title="Row Already Full" onClose={() => setPrompt(null)}>
+          <p style={ptext}>This row's target is <strong>{prompt.target}</strong> panels, but you're adding panel <strong>{prompt.pending.panel}</strong>. Add an extra panel anyway, or finish the row?</p>
+          <div style={{ display: "flex", gap: 10, marginTop: 18, flexDirection: m ? "column" : "row", flexWrap: "wrap" }}>
+            <button style={BTN} onClick={() => { const p = prompt.pending; setPrompt(null); logScan(p.serial, p.format, p.photo, p.panel, true) }}>Add Extra Panel</button>
+            <button style={BTN_GHOST} onClick={() => { setPrompt(null); if (row) setRowComplete(row, true); setPrompt({ kind: "row" }) }}>Finish Row</button>
+            <button style={BTN_GHOST} onClick={() => setPrompt(null)}>Cancel</button>
+          </div>
         </Modal>
       )}
       {prompt && prompt.kind === "guard" && (
