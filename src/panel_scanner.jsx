@@ -700,32 +700,40 @@ function SettingsModal({ webhook, onSave, onClose, m }) {
 // "Panel Scanner" folder), with one tab per section. Every scanner's entries
 // route here and land in the owner's Drive. One-time setup, no per-sheet work.
 const APPS_SCRIPT = `function doPost(e){
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(20000); } catch (err) { return ContentService.createTextOutput('busy'); }
+  var d = JSON.parse(e.postData.contents);
+  var props = PropertiesService.getScriptProperties();
+  var key = 'ss_' + (d.projectId || d.project || 'default');
+  var ss = null, id = props.getProperty(key);
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (err) { ss = null; } }
+  if (!ss) {
+    // Only the first scan of a project contends here, to create its spreadsheet.
+    var clock = LockService.getScriptLock();
+    try { clock.waitLock(30000); } catch (err) { return ContentService.createTextOutput('busy'); }
+    try {
+      id = props.getProperty(key);
+      if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e2) { ss = null; } }
+      if (!ss) {
+        ss = SpreadsheetApp.create('Panel Scanner — ' + (d.project || 'Project'));
+        props.setProperty(key, ss.getId());
+        try {
+          var it = DriveApp.getFoldersByName('Panel Scanner');
+          var folder = it.hasNext() ? it.next() : DriveApp.createFolder('Panel Scanner');
+          var file = DriveApp.getFileById(ss.getId());
+          folder.addFile(file); DriveApp.getRootFolder().removeFile(file);
+        } catch (err) {}
+      }
+    } finally { clock.releaseLock(); }
+  }
+  var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
+  var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,d.id];
+  // Hold the lock only for the actual write, so appends run with minimal contention.
+  var wlock = LockService.getScriptLock();
+  try { wlock.waitLock(45000); } catch (err) { return ContentService.createTextOutput('busy'); }
   try {
-    var d = JSON.parse(e.postData.contents);
-    var props = PropertiesService.getScriptProperties();
-    var key = 'ss_' + (d.projectId || d.project || 'default');
-    var id = props.getProperty(key);
-    var ss = null;
-    if (id) { try { ss = SpreadsheetApp.openById(id); } catch (err) { ss = null; } }
-    if (!ss) {
-      ss = SpreadsheetApp.create('Panel Scanner — ' + (d.project || 'Project'));
-      props.setProperty(key, ss.getId());
-      try {
-        var fname = 'Panel Scanner';
-        var it = DriveApp.getFoldersByName(fname);
-        var folder = it.hasNext() ? it.next() : DriveApp.createFolder(fname);
-        var file = DriveApp.getFileById(ss.getId());
-        folder.addFile(file); DriveApp.getRootFolder().removeFile(file);
-      } catch (err) {}
-    }
-    var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
     if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','Brand','By','Project','Timestamp','ID']); try { sh.hideColumns(9); } catch (err) {} }
-    var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,d.id];
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
@@ -742,5 +750,5 @@ const APPS_SCRIPT = `function doPost(e){
     }
     sh.appendRow(row);
     return ContentService.createTextOutput('ok');
-  } finally { lock.releaseLock(); }
+  } finally { wlock.releaseLock(); }
 }`
