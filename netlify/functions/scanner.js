@@ -117,11 +117,6 @@ export default async (req) => {
       return json({ ok: true, rev: next.rev });
     }
 
-    if (action === 'options') {
-      const next = await cas(store, 'tree', (t) => { if (typeof body.fullPhoto === 'boolean') t.fullPhoto = body.fullPhoto; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
-      return json({ ok: true, rev: next.rev });
-    }
-
     // Append a scan to its row's shard. Concurrency-safe: row + summary use CAS.
     if (action === 'scan') {
       const s = body && body.scan;

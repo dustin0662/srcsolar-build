@@ -161,7 +161,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   }, []) // eslint-disable-line
   function saveOp(name) { const n = (name || "").trim(); if (!n) return; setOp(n); try { localStorage.setItem(OP_KEY, n) } catch (e) {} setAskName(false) }
 
-  const [tree, setTree] = useState({ projects: [], webhook: "", fullPhoto: false })
+  const [tree, setTree] = useState({ projects: [], webhook: "" })
   const [summary, setSummary] = useState({})
   const [rowDoc, setRowDoc] = useState({ scans: [] })
   const [loading, setLoading] = useState(true)
@@ -190,7 +190,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const askForm = (title, fields, submitLabel = "Save") => new Promise((resolve) => setDlg({ type: "form", title, fields, submitLabel, resolve }))
   const askConfirm = (message, opts = {}) => new Promise((resolve) => setDlg({ type: "confirm", title: opts.title || "Please Confirm", message, danger: opts.danger, okLabel: opts.okLabel || "OK", resolve }))
 
-  const fetchTree = useCallback(async () => { try { const r = await fetch(API, { cache: "no-store" }); const d = await r.json(); setTree({ projects: d.projects || [], webhook: d.webhook || "", fullPhoto: !!d.fullPhoto }) } catch (e) {} }, [])
+  const fetchTree = useCallback(async () => { try { const r = await fetch(API, { cache: "no-store" }); const d = await r.json(); setTree({ projects: d.projects || [], webhook: d.webhook || "" }) } catch (e) {} }, [])
   const fetchSummary = useCallback(async () => { try { const r = await fetch(API + "?summary", { cache: "no-store" }); const d = await r.json(); setSummary(d.summary || {}) } catch (e) {} }, [])
   const fetchRow = useCallback(async (id) => { if (!id) return; try { const r = await fetch(API + "?row=" + id, { cache: "no-store" }); const d = await r.json(); if (rowIdRef.current === id) setRowDoc({ scans: d.scans || [] }) } catch (e) {} }, [])
 
@@ -284,9 +284,11 @@ export default function PanelScanner({ onExit, portalUser }) {
       const img = await loadImage(file)
       const decodeCv = canvasFrom(img, 2000) // higher-res for decoding (esp. iOS/ZXing)
       const decoded = await decodeBarcode(decodeCv)
-      // Crop the stored audit photo to just the label when we have a reliable box.
-      const cropCv = (!tree.fullPhoto && decoded && decoded.box) ? cropToLabel(decodeCv, decoded.box) : null
-      const dataUrl = canvasFrom(cropCv || img, 1000).toDataURL("image/jpeg", 0.5) // storage-saver
+      // Prepare both a label crop (storage-saver default) and the full frame, so
+      // the per-scan "keep full photo" toggle can switch instantly.
+      const cropCv = (decoded && decoded.box) ? cropToLabel(decodeCv, decoded.box) : null
+      const fullUrl = canvasFrom(img, 1000).toDataURL("image/jpeg", 0.5)
+      const cropUrl = cropCv ? canvasFrom(cropCv, 1000).toDataURL("image/jpeg", 0.5) : null
       try { URL.revokeObjectURL(img.src) } catch (e) {}
       let serial = decoded ? decoded.serial : "", isOcr = false
       if (!decoded) {
@@ -294,7 +296,7 @@ export default function PanelScanner({ onExit, portalUser }) {
         const txt = await ocrDigits(decodeCv)
         if (txt) { serial = txt; isOcr = true }
       }
-      setCapture({ photo: dataUrl, serial, format: decoded ? decoded.format : "", decoded: !!decoded, ocr: isOcr, panel: panelNo, brand: (proj && proj.brand) || "" })
+      setCapture({ fullUrl, cropUrl, keepFull: false, photo: cropUrl || fullUrl, serial, format: decoded ? decoded.format : "", decoded: !!decoded, ocr: isOcr, panel: panelNo, brand: (proj && proj.brand) || "" })
       if (!decoded) flash(isOcr ? "Read by OCR — double-check the digits" : "Couldn't read it — type the serial", "warn")
     } catch (err) { flash("Couldn't read that image", "err") }
     setBusy(false)
@@ -384,7 +386,6 @@ export default function PanelScanner({ onExit, portalUser }) {
   }
 
   async function saveWebhook(urlVal) { setTree((t) => ({ ...t, webhook: urlVal })); try { await fetch(API + "?action=webhook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ webhook: urlVal }) }); flash("Sheet link saved ✓", "ok") } catch (e) { flash("Save failed", "err") } }
-  async function saveFullPhoto(val) { setTree((t) => ({ ...t, fullPhoto: val })); try { await fetch(API + "?action=options", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fullPhoto: val }) }); flash(val ? "Saving full photos" : "Cropping to label", "ok") } catch (e) { flash("Save failed", "err") } }
 
   function requestNewSection() {
     // On the sections list there is no current section to validate — just add.
@@ -529,7 +530,13 @@ export default function PanelScanner({ onExit, portalUser }) {
               <label style={lbl}>PANEL #</label>
               <input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12, width: 130 }} />
               <label style={lbl}>BRAND</label>
-              <input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 14 }} />
+              <input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 12 }} />
+              {capture.cropUrl && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer" }}>
+                  <input type="checkbox" checked={capture.keepFull} onChange={(e) => { const kf = e.target.checked; setCapture({ ...capture, keepFull: kf, photo: kf ? capture.fullUrl : capture.cropUrl }) }} style={{ width: 20, height: 20, flexShrink: 0 }} />
+                  <span style={{ ...NB, fontSize: 13, color: "#555" }}>Keep full photo for this scan (default crops to label)</span>
+                </label>
+              )}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button disabled={busy} onClick={confirmCapture} style={{ ...BTN, flex: m ? "1 1 100%" : "0 0 auto", opacity: busy ? .6 : 1 }}>{busy ? "Uploading…" : "✓ Confirm & Upload"}</button>
                 <button onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>Retake</button>
@@ -574,7 +581,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
       {dlg && <Dialog dlg={dlg} m={m} onDone={(res) => { const r = dlg.resolve; setDlg(null); r(res) }} />}
       {askName && <NameModal m={m} current={op} onSave={saveOp} onClose={op ? () => setAskName(false) : null} />}
-      {showSettings && <SettingsModal m={m} webhook={tree.webhook} onSave={saveWebhook} fullPhoto={tree.fullPhoto} onSaveFull={saveFullPhoto} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsModal m={m} webhook={tree.webhook} onSave={saveWebhook} onClose={() => setShowSettings(false)} />}
 
       {viewScan && (() => {
         const vlist = sortScans(rowDoc.scans)
@@ -741,7 +748,7 @@ function Dialog({ dlg, m, onDone }) {
   )
 }
 
-function SettingsModal({ webhook, onSave, fullPhoto, onSaveFull, onClose, m }) {
+function SettingsModal({ webhook, onSave, onClose, m }) {
   const [val, setVal] = useState(webhook || "")
   const [copied, setCopied] = useState(false)
   async function copyScript() {
@@ -767,16 +774,6 @@ function SettingsModal({ webhook, onSave, fullPhoto, onSaveFull, onClose, m }) {
         <p style={{ ...NB, fontSize: 11, color: "#999", marginTop: 6 }}>Paste this into an empty Apps Script editor — don't copy anything else.</p>
         <pre style={{ background: "#0f0f17", color: "#d6e2ff", fontSize: 11, padding: 12, overflow: "auto", marginTop: 8, lineHeight: 1.4 }}>{APPS_SCRIPT}</pre>
       </details>
-
-      <div style={{ borderTop: "1px solid rgba(0,0,0,.1)", paddingTop: 14, marginBottom: 14 }}>
-        <div style={{ ...NB, fontSize: 12, color: "#777", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Photo storage</div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-          <input type="checkbox" checked={!!fullPhoto} onChange={(e) => onSaveFull(e.target.checked)} style={{ width: 22, height: 22, flexShrink: 0 }} />
-          <span style={{ ...NB, fontSize: 15, color: INK }}>Keep full photo (don't crop to the label)</span>
-        </label>
-        <p style={{ ...NB, fontSize: 12, color: "#999", marginTop: 6 }}>{fullPhoto ? "Saving the whole frame — more context, larger files." : "Cropping to just the barcode label to save storage (default)."}</p>
-      </div>
-
       <div style={{ display: "flex", gap: 10 }}><button style={{ ...BTN, flex: 1 }} onClick={() => { onSave(val.trim()); onClose() }}>Save</button><button style={BTN_GHOST} onClick={onClose}>Close</button></div>
     </Modal>
   )
