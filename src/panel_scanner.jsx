@@ -618,16 +618,19 @@ function SettingsModal({ webhook, onSave, onClose, m }) {
   const [val, setVal] = useState(webhook || "")
   return (
     <Modal m={m} title="Google Sheets Sync" onClose={onClose}>
-      <p style={ptext}>Paste your Google Apps Script Web App URL. Every scan (and correction) is sent there and appended to a tab named after its <strong>section</strong> — each section becomes its own tab.</p>
+      <p style={ptext}>One-time setup. Paste a single Apps Script Web App URL and the scanner will <strong>auto-create a new spreadsheet per project in your Google Drive</strong> (inside a "Panel Scanner" folder), one tab per section. Every person's scans route here into your Drive — no per-sheet setup ever again.</p>
       <label style={{ ...lbl, marginTop: 14 }}>APPS SCRIPT WEB APP URL</label>
       <input value={val} onChange={(e) => setVal(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" style={{ ...IST, marginBottom: 14 }} />
       <details style={{ marginBottom: 16 }}>
-        <summary style={{ ...NB, fontSize: 13, color: A, cursor: "pointer", letterSpacing: 1 }}>How to set this up</summary>
+        <summary style={{ ...NB, fontSize: 13, color: A, cursor: "pointer", letterSpacing: 1 }}>How to set this up (once)</summary>
         <ol style={{ ...NB, fontSize: 13, color: "#555", lineHeight: 1.6, paddingLeft: 18, marginTop: 8 }}>
-          <li>In your Google Sheet: Extensions → Apps Script.</li>
-          <li>Paste the script below, then Deploy → New deployment → Web app, "Who has access: Anyone".</li>
-          <li>Copy the Web app URL and paste it above.</li>
+          <li>Go to <strong>script.google.com</strong> → New project.</li>
+          <li>Delete the sample, paste the script below, Save.</li>
+          <li>Deploy → New deployment → <strong>Web app</strong>. Execute as <strong>Me</strong>, Who has access <strong>Anyone</strong>.</li>
+          <li>Authorize when prompted (it needs Drive/Sheets access to create the sheets in your Drive).</li>
+          <li>Copy the Web app URL (ends in <strong>/exec</strong>) and paste it above → Save.</li>
         </ol>
+        <p style={{ ...NB, fontSize: 12, color: "#999", marginTop: 6 }}>No spreadsheet needed up front — the script makes them automatically, one per project, in your Drive.</p>
         <pre style={{ background: "#0f0f17", color: "#d6e2ff", fontSize: 11, padding: 12, overflow: "auto", marginTop: 8, lineHeight: 1.4 }}>{APPS_SCRIPT}</pre>
       </details>
       <div style={{ display: "flex", gap: 10 }}><button style={{ ...BTN, flex: 1 }} onClick={() => { onSave(val.trim()); onClose() }}>Save</button><button style={BTN_GHOST} onClick={onClose}>Close</button></div>
@@ -635,28 +638,51 @@ function SettingsModal({ webhook, onSave, onClose, m }) {
   )
 }
 
-// One tab per section. Header row auto-added; updates/deletes match on the ID column.
+// Auto-creates one spreadsheet per project in the owner's Drive (organized in a
+// "Panel Scanner" folder), with one tab per section. Every scanner's entries
+// route here and land in the owner's Drive. One-time setup, no per-sheet work.
 const APPS_SCRIPT = `function doPost(e){
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var d = JSON.parse(e.postData.contents);
-  var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
-  var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
-  if (sh.getLastRow() === 0) sh.appendRow(['Timestamp','Serial','Brand','Project','Section','Row','Panel','By','Status','Note','Mode','ID']);
-  var row = [d.timestamp,d.serial,d.brand,d.project,d.section,d.row,d.panel,d.by,d.status,d.note,d.mode,d.id];
-  if (d.mode === 'update' || d.mode === 'delete') {
-    var n = Math.max(sh.getLastRow() - 1, 0);
-    if (n > 0) {
-      var ids = sh.getRange(2,12,n,1).getValues();
-      for (var i = 0; i < ids.length; i++) {
-        if (String(ids[i][0]) === String(d.id)) {
-          if (d.mode === 'delete') sh.deleteRow(i + 2);
-          else { row[10] = 'update'; sh.getRange(i+2,1,1,12).setValues([row]); }
-          return ContentService.createTextOutput('ok');
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (err) { return ContentService.createTextOutput('busy'); }
+  try {
+    var d = JSON.parse(e.postData.contents);
+    var props = PropertiesService.getScriptProperties();
+    var key = 'ss_' + (d.projectId || d.project || 'default');
+    var id = props.getProperty(key);
+    var ss = null;
+    if (id) { try { ss = SpreadsheetApp.openById(id); } catch (err) { ss = null; } }
+    if (!ss) {
+      ss = SpreadsheetApp.create('Panel Scanner — ' + (d.project || 'Project'));
+      props.setProperty(key, ss.getId());
+      try {
+        var fname = 'Panel Scanner';
+        var it = DriveApp.getFoldersByName(fname);
+        var folder = it.hasNext() ? it.next() : DriveApp.createFolder(fname);
+        var file = DriveApp.getFileById(ss.getId());
+        folder.addFile(file); DriveApp.getRootFolder().removeFile(file);
+      } catch (err) {}
+    }
+    var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
+    var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
+    var def = ss.getSheetByName('Sheet1');
+    if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
+    if (sh.getLastRow() === 0) sh.appendRow(['Timestamp','Serial','Brand','Project','Section','Row','Panel','By','Status','Note','Mode','ID']);
+    var row = [d.timestamp,d.serial,d.brand,d.project,d.section,d.row,d.panel,d.by,d.status,d.note,d.mode,d.id];
+    if (d.mode === 'update' || d.mode === 'delete') {
+      var n = Math.max(sh.getLastRow() - 1, 0);
+      if (n > 0) {
+        var ids = sh.getRange(2,12,n,1).getValues();
+        for (var i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === String(d.id)) {
+            if (d.mode === 'delete') sh.deleteRow(i + 2);
+            else { row[10] = 'update'; sh.getRange(i+2,1,1,12).setValues([row]); }
+            return ContentService.createTextOutput('ok');
+          }
         }
       }
+      if (d.mode === 'delete') return ContentService.createTextOutput('ok');
     }
-    if (d.mode === 'delete') return ContentService.createTextOutput('ok');
-  }
-  sh.appendRow(row);
-  return ContentService.createTextOutput('ok');
+    sh.appendRow(row);
+    return ContentService.createTextOutput('ok');
+  } finally { lock.releaseLock(); }
 }`
