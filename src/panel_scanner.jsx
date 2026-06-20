@@ -73,7 +73,11 @@ async function decodeBarcode(canvas) {
       for (const deg of [0, 90, 270]) {
         const c = deg ? rotateCanvas(canvas, deg) : canvas
         const codes = await det.detect(c)
-        if (codes && codes.length) return { serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native" }
+        if (codes && codes.length) {
+          const b = deg === 0 && codes[0].boundingBox
+          const box = b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null // crop only at 0° (un-rotated coords)
+          return { serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native", box }
+        }
       }
     }
   } catch (e) { /* fall through to zxing */ }
@@ -84,10 +88,32 @@ async function decodeBarcode(canvas) {
     try {
       const reader = new BrowserMultiFormatReader(hints)
       const res = await reader.decodeFromCanvas(c)
-      if (res) { let fmt = ""; try { fmt = String(res.getBarcodeFormat()) } catch (e) {} return { serial: String(res.getText() || "").trim(), format: fmt } }
+      if (res) {
+        let fmt = ""; try { fmt = String(res.getBarcodeFormat()) } catch (e) {}
+        let box = null
+        if (deg === 0) { try { const pts = res.getResultPoints && res.getResultPoints(); if (pts && pts.length) { const xs = pts.map((p) => p.getX()), ys = pts.map((p) => p.getY()); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } } } catch (e) {} }
+        return { serial: String(res.getText() || "").trim(), format: fmt, box }
+      }
     } catch (e) { /* not found at this rotation — try next */ }
   }
   return null
+}
+
+// Crop the high-res decode canvas to just the barcode label (with padding) so the
+// stored audit photo is tiny. Returns null when the box is too small/unreliable.
+function cropToLabel(src, box) {
+  if (!box || box.w <= 0) return null
+  let { x, y, w, h } = box
+  if (h < w * 0.15) { const nh = w * 0.5; y -= (nh - h) / 2; h = nh } // 1D line has ~0 height — synthesize
+  const padX = w * 0.18, padY = h * 0.35
+  x -= padX; y -= padY; w += padX * 2; h += padY * 2
+  x = Math.max(0, x); y = Math.max(0, y)
+  w = Math.min(src.width - x, w); h = Math.min(src.height - y, h)
+  if (w < src.width * 0.12 || h < src.height * 0.04) return null
+  const cv = document.createElement("canvas")
+  cv.width = Math.round(w); cv.height = Math.round(h)
+  cv.getContext("2d").drawImage(src, x, y, w, h, 0, 0, cv.width, cv.height)
+  return cv
 }
 
 const sortScans = (scans) => (scans || []).slice().sort((a, b) => (a.panel || 0) - (b.panel || 0))
@@ -257,9 +283,11 @@ export default function PanelScanner({ onExit, portalUser }) {
     try {
       const img = await loadImage(file)
       const decodeCv = canvasFrom(img, 2000) // higher-res for decoding (esp. iOS/ZXing)
-      const dataUrl = canvasFrom(img, 1000).toDataURL("image/jpeg", 0.5) // storage-saver: small audit image
-      try { URL.revokeObjectURL(img.src) } catch (e) {}
       const decoded = await decodeBarcode(decodeCv)
+      // Crop the stored audit photo to just the label when we have a reliable box.
+      const cropCv = decoded && decoded.box ? cropToLabel(decodeCv, decoded.box) : null
+      const dataUrl = canvasFrom(cropCv || img, 1000).toDataURL("image/jpeg", 0.5) // storage-saver
+      try { URL.revokeObjectURL(img.src) } catch (e) {}
       let serial = decoded ? decoded.serial : "", isOcr = false
       if (!decoded) {
         flash("No barcode — reading the numbers…", "warn")
