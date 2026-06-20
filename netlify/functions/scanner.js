@@ -57,11 +57,12 @@ function locate(tree, s) {
   return { proj, sec, row };
 }
 
-function scanRow(tree, s) {
+function scanRow(tree, s, origin) {
   const { proj, sec, row } = locate(tree, s);
   return {
     id: s.id, serial: s.serial || '', raw: s.raw || s.serial || '', format: s.format || '',
     brand: s.brand || (proj && proj.brand) || '',
+    photo: s.photoKey && origin ? origin + '/.netlify/functions/scanner?photo=' + s.photoKey : '',
     projectId: s.projectId || '', project: proj ? proj.name : '', section: sec ? sec.name : '', row: row ? row.name : '',
     panel: s.panel, timestamp: s.ts ? new Date(s.ts).toISOString() : new Date().toISOString(),
     by: s.by || '', note: s.note || '', status: s.status || 'ok',
@@ -138,7 +139,7 @@ export default async (req) => {
           return sum;
         }, () => ({}));
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s)));
+        await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s, url.origin)));
       }
       return json({ ok: true });
     }
@@ -178,7 +179,7 @@ export default async (req) => {
 
       if (updated) {
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'update' }, scanRow(tree, updated)));
+        await forward(tree.webhook, Object.assign({ mode: 'update' }, scanRow(tree, updated, url.origin)));
       }
       return json({ ok: true });
     }
@@ -199,7 +200,7 @@ export default async (req) => {
         try { await store.delete('photo:' + id); } catch (e) {}
         await recount(store, fromRow);
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'delete' }, scanRow(tree, removed)));
+        await forward(tree.webhook, Object.assign({ mode: 'delete' }, scanRow(tree, removed, url.origin)));
       }
       return json({ ok: true });
     }

@@ -673,16 +673,20 @@ const APPS_SCRIPT = `function doPost(e){
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
-    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','Brand','By','Project','Timestamp','ID']); try { sh.hideColumns(9); } catch (err) {} }
-    var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,d.id];
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(['Section','Row','Panel','Serial','Brand','By','Project','Timestamp','Photo','ID']);
+      try { sh.hideColumns(10); sh.setColumnWidth(9,110); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {}
+    }
+    var img = d.photo ? '=IMAGE("' + d.photo + '")' : '';
+    var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,img,d.id];
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
-        var ids = sh.getRange(2,9,n,1).getValues();
+        var ids = sh.getRange(2,10,n,1).getValues();
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(d.id)) {
             if (d.mode === 'delete') sh.deleteRow(i + 2);
-            else sh.getRange(i+2,1,1,9).setValues([row]);
+            else { sh.getRange(i+2,1,1,10).setValues([row]); try { sh.setRowHeight(i+2,90); } catch (err) {} }
             return ContentService.createTextOutput('ok');
           }
         }
@@ -690,6 +694,7 @@ const APPS_SCRIPT = `function doPost(e){
       if (d.mode === 'delete') return ContentService.createTextOutput('ok');
     }
     sh.appendRow(row);
+    try { sh.setRowHeight(sh.getLastRow(), 90); } catch (err) {}
     return ContentService.createTextOutput('ok');
   } finally { lock.releaseLock(); }
 }`
