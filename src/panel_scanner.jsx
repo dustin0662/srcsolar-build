@@ -159,19 +159,17 @@ export default function PanelScanner({ onExit, portalUser }) {
     const r = await askForm("New Project", [
       { key: "name", label: "Project name", placeholder: "e.g. Midway" },
       { key: "brand", label: "Panel brand", value: "Q CELLS" },
-      { key: "watt", label: "Wattage (W)", type: "number", placeholder: "e.g. 400" },
     ], "Create Project")
     const name = r && (r.name || "").trim(); if (!name) return
-    saveProjects(tree.projects.concat([{ id: uid(), name, brand: (r.brand || "").trim(), watt: (r.watt || "").trim(), color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
+    saveProjects(tree.projects.concat([{ id: uid(), name, brand: (r.brand || "").trim(), color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
   }
   async function editProject(p) {
     const r = await askForm("Edit Project", [
       { key: "name", label: "Project name", value: p.name },
       { key: "brand", label: "Panel brand", value: p.brand || "Q CELLS" },
-      { key: "watt", label: "Wattage (W)", type: "number", value: p.watt || "" },
     ])
     const name = r && (r.name || "").trim(); if (!name) return
-    mutateTree((t) => { const pp = t.find((x) => x.id === p.id); pp.name = name; pp.brand = (r.brand || "").trim(); pp.watt = (r.watt || "").trim() })
+    mutateTree((t) => { const pp = t.find((x) => x.id === p.id); pp.name = name; pp.brand = (r.brand || "").trim() })
   }
   async function addSection() {
     const r = await askForm("New Section", [{ key: "name", label: "Section name", value: "Section " + ((proj.sections || []).length + 1), placeholder: "e.g. Block A" }], "Create Section")
@@ -217,7 +215,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     try {
       const { dataUrl, canvas } = await compress(file)
       const decoded = await decodeBarcode(canvas)
-      setCapture({ photo: dataUrl, serial: decoded ? decoded.serial : "", format: decoded ? decoded.format : "", decoded: !!decoded, panel: panelNo, brand: (proj && proj.brand) || "", watt: (proj && proj.watt) || "" })
+      setCapture({ photo: dataUrl, serial: decoded ? decoded.serial : "", format: decoded ? decoded.format : "", decoded: !!decoded, panel: panelNo, brand: (proj && proj.brand) || "" })
       if (!decoded) flash("No barcode detected — type the serial", "warn")
     } catch (err) { flash("Couldn't read that image", "err") }
     setBusy(false)
@@ -229,7 +227,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     if (!serial) { flash("Enter a serial before uploading", "err"); return }
     const panel = Math.max(1, parseInt(capture.panel, 10) || panelNo)
     if (rowDoc.scans.some((s) => s.panel === panel) && !(await askConfirm(`Panel ${panel} already exists in this row. Add another anyway?`))) return
-    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", brand: (capture.brand || "").trim(), watt: (capture.watt || "").toString().trim(), ts: Date.now(), by: op, note: "", status: "ok" }
+    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: capture.serial, format: capture.format || "", brand: (capture.brand || "").trim(), ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
       await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: capture.photo }) })
@@ -253,7 +251,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
   async function saveCorrection() {
     if (!editing) return
-    const patch = { serial: (editing.serial || "").trim(), brand: (editing.brand || "").trim(), watt: (editing.watt || "").toString().trim(), panel: Math.max(1, parseInt(editing.panel, 10) || 1), note: editing.note || "", status: editing.status || "ok", rowId: editing.rowId, sectionId: editing.sectionId, projectId: editing.projectId }
+    const patch = { serial: (editing.serial || "").trim(), brand: (editing.brand || "").trim(), panel: Math.max(1, parseInt(editing.panel, 10) || 1), note: editing.note || "", status: editing.status || "ok", rowId: editing.rowId, sectionId: editing.sectionId, projectId: editing.projectId }
     setBusy(true)
     try {
       await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: editing.id, fromRow: editing._fromRow, patch }) })
@@ -323,7 +321,7 @@ export default function PanelScanner({ onExit, portalUser }) {
             <div key={p.id} style={{ ...card, borderLeft: "5px solid " + p.color }} onClick={() => { setProjId(p.id); setSecId(null); setRowId(null) }}>
               <div style={{ ...BB, fontSize: 22, letterSpacing: 1, color: INK }}>{p.name.toUpperCase()}</div>
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{(p.sections || []).length} sections · {total} panels</div>
-              {(p.brand || p.watt) && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 2 }}>{[p.brand, p.watt ? p.watt + "W" : ""].filter(Boolean).join(" · ")}</div>}
+              {p.brand && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 2 }}>{p.brand}</div>}
               <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                 <span onClick={(e) => { e.stopPropagation(); editProject(p) }} style={{ ...NB, fontSize: 12, color: A, letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
                 <span onClick={(e) => { e.stopPropagation(); deleteProject(p) }} style={{ ...NB, fontSize: 12, color: "#c00", letterSpacing: 1, textTransform: "uppercase" }}>Delete</span>
@@ -419,10 +417,8 @@ export default function PanelScanner({ onExit, portalUser }) {
               <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!capture.decoded} />
               <label style={lbl}>PANEL #</label>
               <input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12, width: 130 }} />
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 2 }}><label style={lbl}>BRAND</label><input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 14 }} /></div>
-                <div style={{ flex: 1 }}><label style={lbl}>WATT</label><input type="number" inputMode="numeric" value={capture.watt} onChange={(e) => setCapture({ ...capture, watt: e.target.value })} placeholder="400" style={{ ...IST, marginBottom: 14 }} /></div>
-              </div>
+              <label style={lbl}>BRAND</label>
+              <input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 14 }} />
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button disabled={busy} onClick={confirmCapture} style={{ ...BTN, flex: m ? "1 1 100%" : "0 0 auto", opacity: busy ? .6 : 1 }}>{busy ? "Uploading…" : "✓ Confirm & Upload"}</button>
                 <button onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>Retake</button>
@@ -447,7 +443,7 @@ export default function PanelScanner({ onExit, portalUser }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...BB, fontSize: 18, color: INK }}>PANEL {s.panel}</div>
               <div style={{ ...NB, fontSize: 13, color: "#444", wordBreak: "break-all" }}>{s.serial}</div>
-              {(s.brand || s.watt) && <div style={{ ...NB, fontSize: 12, color: "#777" }}>{[s.brand, s.watt ? s.watt + "W" : ""].filter(Boolean).join(" · ")}</div>}
+              {s.brand && <div style={{ ...NB, fontSize: 12, color: "#777" }}>{s.brand}</div>}
               <div style={{ ...NB, fontSize: 11, color: "#999" }}>{fmtTime(s.ts)} · {s.by}{s.status && s.status !== "ok" ? " · " + s.status : ""}</div>
             </div>
             <span style={{ ...BB, fontSize: 24, color: "#ccc", flexShrink: 0 }}>›</span>
@@ -476,7 +472,7 @@ export default function PanelScanner({ onExit, portalUser }) {
             : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
           <div style={{ ...NB, fontSize: 12, color: "#777", letterSpacing: 1 }}>SERIAL</div>
           <div style={{ ...NB, fontSize: 18, color: INK, wordBreak: "break-all", marginBottom: 10 }}>{viewScan.serial}</div>
-          {(viewScan.brand || viewScan.watt) && <div style={{ ...NB, fontSize: 15, color: "#444", marginBottom: 8 }}>{[viewScan.brand, viewScan.watt ? viewScan.watt + "W" : ""].filter(Boolean).join(" · ")}</div>}
+          {viewScan.brand && <div style={{ ...NB, fontSize: 15, color: "#444", marginBottom: 8 }}>{viewScan.brand}</div>}
           <div style={{ ...NB, fontSize: 13, color: "#666", marginBottom: 16 }}>{fmtTime(viewScan.ts)} · {viewScan.by}{viewScan.status && viewScan.status !== "ok" ? " · " + viewScan.status : ""}{viewScan.note ? " · " + viewScan.note : ""}</div>
           <div style={{ display: "flex", gap: 10 }}>
             <button style={{ ...BTN, flex: 1 }} onClick={() => { setEditing(viewScan); setViewScan(null) }}>Edit</button>
@@ -490,10 +486,8 @@ export default function PanelScanner({ onExit, portalUser }) {
         <Modal m={m} title="Correct Panel" onClose={() => setEditing(null)}>
           <label style={lbl}>SERIAL</label>
           <input value={editing.serial} onChange={(e) => setEditing({ ...editing, serial: e.target.value })} style={{ ...IST, marginBottom: 12 }} />
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ flex: 2 }}><label style={lbl}>BRAND</label><input value={editing.brand || ""} onChange={(e) => setEditing({ ...editing, brand: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
-            <div style={{ flex: 1 }}><label style={lbl}>WATT</label><input type="number" inputMode="numeric" value={editing.watt || ""} onChange={(e) => setEditing({ ...editing, watt: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
-          </div>
+          <label style={lbl}>BRAND</label>
+          <input value={editing.brand || ""} onChange={(e) => setEditing({ ...editing, brand: e.target.value })} style={{ ...IST, marginBottom: 12 }} />
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={editing.panel} onChange={(e) => setEditing({ ...editing, panel: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
             <div style={{ flex: 1 }}><label style={lbl}>STATUS</label><select value={editing.status || "ok"} onChange={(e) => setEditing({ ...editing, status: e.target.value })} style={{ ...IST, marginBottom: 12 }}><option value="ok">OK</option><option value="damaged">Damaged</option><option value="rescan">Needs re-scan</option></select></div>
@@ -647,16 +641,16 @@ const APPS_SCRIPT = `function doPost(e){
   var d = JSON.parse(e.postData.contents);
   var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
   var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
-  if (sh.getLastRow() === 0) sh.appendRow(['Timestamp','Serial','Brand','Watt','Project','Section','Row','Panel','By','Status','Note','Mode','ID']);
-  var row = [d.timestamp,d.serial,d.brand,d.watt,d.project,d.section,d.row,d.panel,d.by,d.status,d.note,d.mode,d.id];
+  if (sh.getLastRow() === 0) sh.appendRow(['Timestamp','Serial','Brand','Project','Section','Row','Panel','By','Status','Note','Mode','ID']);
+  var row = [d.timestamp,d.serial,d.brand,d.project,d.section,d.row,d.panel,d.by,d.status,d.note,d.mode,d.id];
   if (d.mode === 'update' || d.mode === 'delete') {
     var n = Math.max(sh.getLastRow() - 1, 0);
     if (n > 0) {
-      var ids = sh.getRange(2,13,n,1).getValues();
+      var ids = sh.getRange(2,12,n,1).getValues();
       for (var i = 0; i < ids.length; i++) {
         if (String(ids[i][0]) === String(d.id)) {
           if (d.mode === 'delete') sh.deleteRow(i + 2);
-          else { row[11] = 'update'; sh.getRange(i+2,1,1,13).setValues([row]); }
+          else { row[10] = 'update'; sh.getRange(i+2,1,1,12).setValues([row]); }
           return ContentService.createTextOutput('ok');
         }
       }
