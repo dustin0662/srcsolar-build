@@ -313,6 +313,37 @@ export default function PanelScanner({ onExit, portalUser }) {
     setBusy(false)
   }
 
+  // Review carousel: step to the previous/next panel in the current row.
+  function viewGo(delta) {
+    if (!viewScan) return
+    const list = sortScans(rowDoc.scans)
+    const idx = list.findIndex((s) => s.id === viewScan.id)
+    const ni = idx + delta
+    if (ni < 0 || ni >= list.length) return
+    const s = list[ni]
+    setViewScan(Object.assign({ _fromRow: s.rowId }, s))
+  }
+
+  // Push the inline edits from the review carousel; replaces the matching sheet row.
+  async function saveView(advance) {
+    if (!viewScan) return
+    const patch = { serial: (viewScan.serial || "").trim(), brand: (viewScan.brand || "").trim(), panel: Math.max(1, parseInt(viewScan.panel, 10) || 1), note: viewScan.note || "", status: viewScan.status || "ok", rowId: viewScan.rowId, sectionId: viewScan.sectionId, projectId: viewScan.projectId }
+    setBusy(true)
+    try {
+      await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: viewScan.id, fromRow: viewScan._fromRow, patch }) })
+      const fresh = await fetch(API + "?row=" + rowId, { cache: "no-store" }).then((r) => r.json()).catch(() => null)
+      if (fresh) setRowDoc({ scans: fresh.scans || [] })
+      fetchSummary()
+      flash("Updated ✓", "ok")
+      if (advance) {
+        const list = sortScans((fresh && fresh.scans) || rowDoc.scans)
+        const idx = list.findIndex((s) => s.id === viewScan.id)
+        if (idx >= 0 && idx < list.length - 1) { const s = list[idx + 1]; setViewScan(Object.assign({ _fromRow: s.rowId }, s)) }
+      }
+    } catch (e) { flash("Update failed", "err") }
+    setBusy(false)
+  }
+
   async function deleteScan(s) {
     if (!await askConfirm(`Delete panel ${s.panel} (${s.serial})?`, { danger: true, okLabel: "Delete" })) return
     setBusy(true)
@@ -516,22 +547,38 @@ export default function PanelScanner({ onExit, portalUser }) {
       {askName && <NameModal m={m} current={op} onSave={saveOp} onClose={op ? () => setAskName(false) : null} />}
       {showSettings && <SettingsModal m={m} webhook={tree.webhook} onSave={saveWebhook} onClose={() => setShowSettings(false)} />}
 
-      {viewScan && (
-        <Modal m={m} title={"Panel " + viewScan.panel} onClose={() => setViewScan(null)}>
-          {viewScan.photoKey
-            ? <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />
-            : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
-          <div style={{ ...NB, fontSize: 12, color: "#777", letterSpacing: 1 }}>SERIAL</div>
-          <div style={{ ...NB, fontSize: 18, color: INK, wordBreak: "break-all", marginBottom: 10 }}>{viewScan.serial}</div>
-          {viewScan.brand && <div style={{ ...NB, fontSize: 15, color: "#444", marginBottom: 8 }}>{viewScan.brand}</div>}
-          <div style={{ ...NB, fontSize: 13, color: "#666", marginBottom: 16 }}>{fmtTime(viewScan.ts)} · {viewScan.by}{viewScan.status && viewScan.status !== "ok" ? " · " + viewScan.status : ""}{viewScan.note ? " · " + viewScan.note : ""}</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button style={{ ...BTN, flex: 1 }} onClick={() => { setEditing(viewScan); setViewScan(null) }}>Edit</button>
-            <button style={{ ...BTN_GHOST, color: "#c00", borderColor: "rgba(204,0,0,.4)" }} onClick={async () => { const s = viewScan; setViewScan(null); await deleteScan(s) }}>Delete</button>
-            <button style={BTN_GHOST} onClick={() => setViewScan(null)}>Close</button>
-          </div>
-        </Modal>
-      )}
+      {viewScan && (() => {
+        const vlist = sortScans(rowDoc.scans)
+        const vidx = vlist.findIndex((s) => s.id === viewScan.id)
+        return (
+          <Modal m={m} title={"Verify · " + (vidx >= 0 ? vidx + 1 : "?") + " of " + vlist.length} onClose={() => setViewScan(null)}>
+            {/* prev / next */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              <button disabled={vidx <= 0} onClick={() => viewGo(-1)} style={{ ...BTN_GHOST, flex: 1, opacity: vidx <= 0 ? .4 : 1 }}>← Prev</button>
+              <button disabled={vidx < 0 || vidx >= vlist.length - 1} onClick={() => viewGo(1)} style={{ ...BTN_GHOST, flex: 1, opacity: (vidx < 0 || vidx >= vlist.length - 1) ? .4 : 1 }}>Next →</button>
+            </div>
+            {viewScan.photoKey
+              ? <img src={API + "?photo=" + viewScan.photoKey} alt="panel" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 14 }} />
+              : <div style={{ ...NB, fontSize: 13, color: "#999", marginBottom: 14 }}>No photo for this panel.</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 2 }}><label style={lbl}>SERIAL</label><input value={viewScan.serial || ""} onChange={(e) => setViewScan({ ...viewScan, serial: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
+              <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={viewScan.panel} onChange={(e) => setViewScan({ ...viewScan, panel: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
+            </div>
+            <label style={lbl}>BRAND</label>
+            <input value={viewScan.brand || ""} onChange={(e) => setViewScan({ ...viewScan, brand: e.target.value })} style={{ ...IST, marginBottom: 10 }} />
+            <div style={{ ...NB, fontSize: 12, color: "#999", marginBottom: 14 }}>{fmtTime(viewScan.ts)} · {viewScan.by}</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button disabled={busy} onClick={() => saveView(true)} style={{ ...BTN, flex: m ? "1 1 100%" : 2, opacity: busy ? .6 : 1 }}>{busy ? "Updating…" : "Update & Next →"}</button>
+              <button disabled={busy} onClick={() => saveView(false)} style={{ ...BTN_GHOST, flex: 1 }}>Update</button>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <button onClick={() => { setEditing(Object.assign({}, viewScan)); setViewScan(null) }} style={{ ...BTN_GHOST, flex: 1 }}>More…</button>
+              <button style={{ ...BTN_GHOST, color: "#c00", borderColor: "rgba(204,0,0,.4)" }} onClick={async () => { const s = viewScan; setViewScan(null); await deleteScan(s) }}>Delete</button>
+              <button style={BTN_GHOST} onClick={() => setViewScan(null)}>Close</button>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {editing && (
         <Modal m={m} title="Correct Panel" onClose={() => setEditing(null)}>
