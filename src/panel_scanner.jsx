@@ -257,7 +257,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     try {
       const img = await loadImage(file)
       const decodeCv = canvasFrom(img, 2000) // higher-res for decoding (esp. iOS/ZXing)
-      const dataUrl = canvasFrom(img, 1400).toDataURL("image/jpeg", 0.72) // smaller for storage
+      const dataUrl = canvasFrom(img, 1000).toDataURL("image/jpeg", 0.5) // storage-saver: small audit image
       try { URL.revokeObjectURL(img.src) } catch (e) {}
       const decoded = await decodeBarcode(decodeCv)
       let serial = decoded ? decoded.serial : "", isOcr = false
