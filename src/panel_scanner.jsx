@@ -616,6 +616,11 @@ function Dialog({ dlg, m, onDone }) {
 
 function SettingsModal({ webhook, onSave, onClose, m }) {
   const [val, setVal] = useState(webhook || "")
+  const [copied, setCopied] = useState(false)
+  async function copyScript() {
+    try { await navigator.clipboard.writeText(APPS_SCRIPT); setCopied(true); setTimeout(() => setCopied(false), 2500) }
+    catch (e) { setCopied("Select the code box below and copy manually") ; setTimeout(() => setCopied(false), 3500) }
+  }
   return (
     <Modal m={m} title="Google Sheets Sync" onClose={onClose}>
       <p style={ptext}>One-time setup. Paste a single Apps Script Web App URL and the scanner will <strong>auto-create a new spreadsheet per project in your Google Drive</strong> (inside a "Panel Scanner" folder), one tab per section. Every person's scans route here into your Drive — no per-sheet setup ever again.</p>
@@ -631,6 +636,8 @@ function SettingsModal({ webhook, onSave, onClose, m }) {
           <li>Copy the Web app URL (ends in <strong>/exec</strong>) and paste it above → Save.</li>
         </ol>
         <p style={{ ...NB, fontSize: 12, color: "#999", marginTop: 6 }}>No spreadsheet needed up front — the script makes them automatically, one per project, in your Drive.</p>
+        <button type="button" onClick={copyScript} style={{ ...BTN, width: "100%", marginTop: 10, background: copied === true ? "#16a34a" : A, color: copied === true ? "#fff" : "#1a1206" }}>{copied === true ? "✓ Script copied" : (typeof copied === "string" ? copied : "📋 Copy script")}</button>
+        <p style={{ ...NB, fontSize: 11, color: "#999", marginTop: 6 }}>Paste this into an empty Apps Script editor — don't copy anything else.</p>
         <pre style={{ background: "#0f0f17", color: "#d6e2ff", fontSize: 11, padding: 12, overflow: "auto", marginTop: 8, lineHeight: 1.4 }}>{APPS_SCRIPT}</pre>
       </details>
       <div style={{ display: "flex", gap: 10 }}><button style={{ ...BTN, flex: 1 }} onClick={() => { onSave(val.trim()); onClose() }}>Save</button><button style={BTN_GHOST} onClick={onClose}>Close</button></div>
