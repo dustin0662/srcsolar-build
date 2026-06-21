@@ -179,6 +179,8 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [scanning, setScanning] = useState(false)
   const [camErr, setCamErr] = useState("")
   const [okFlash, setOkFlash] = useState(false)
+  const [settling, setSettling] = useState(false)
+  const [steady, setSteady] = useState(() => { try { return localStorage.getItem("scanner_steady") !== "0" } catch (e) { return true } })
   const [editing, setEditing] = useState(null)
   const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
@@ -547,8 +549,13 @@ export default function PanelScanner({ onExit, portalUser }) {
         {scanning && (
           <div>
             <div style={{ position: "relative", width: "100%", height: m ? 120 : 150, borderRadius: 10, overflow: "hidden", background: "#000" }}>
-              <LiveScanner paused={!!capture || !!prompt || okFlash || busy} onHit={(serial, format, photo) => { logScanRef.current && logScanRef.current(serial, format, photo) }} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
-              {!okFlash && !capture && <div style={{ position: "absolute", left: "6%", right: "6%", top: "50%", height: 2, background: "rgba(249,115,22,.95)", boxShadow: "0 0 8px rgba(249,115,22,.9)" }} />}
+              <LiveScanner paused={!!capture || !!prompt || okFlash || busy} steady={steady} onSettle={setSettling} onHit={(serial, format, photo) => { logScanRef.current && logScanRef.current(serial, format, photo) }} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
+              {!okFlash && !settling && !capture && <div style={{ position: "absolute", left: "6%", right: "6%", top: "50%", height: 2, background: "rgba(249,115,22,.95)", boxShadow: "0 0 8px rgba(249,115,22,.9)" }} />}
+              {settling && !okFlash && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "rgba(234,179,8,.45)" }}>
+                  <span style={{ ...BB, fontSize: 22, letterSpacing: 2, color: "#1a1206" }}>HOLD STEADY…</span>
+                </div>
+              )}
               {okFlash && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "rgba(22,163,74,.6)" }}>
                   <span style={{ fontSize: 34, lineHeight: 1, color: "#fff" }}>✓</span>
@@ -556,6 +563,10 @@ export default function PanelScanner({ onExit, portalUser }) {
                 </div>
               )}
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={steady} onChange={(e) => { setSteady(e.target.checked); try { localStorage.setItem("scanner_steady", e.target.checked ? "1" : "0") } catch (er) {} }} style={{ width: 20, height: 20, flexShrink: 0 }} />
+              <span style={{ ...NB, fontSize: 13, color: "#555" }}>Steady capture (sharper photo, brief pause)</span>
+            </label>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
               <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
@@ -769,22 +780,48 @@ function grabFrame(v, box, maxEdge = 1280, quality = 0.72) {
 // grabs the just-decoded frame (instant, sharpest moment) cropped to the label
 // and calls onHit(serial, format, photo). Honours `paused` to stop while a
 // capture awaits confirmation.
-function LiveScanner({ paused, onHit, onError }) {
+function LiveScanner({ paused, steady, onHit, onSettle, onError }) {
   const videoRef = useRef(null)
   const pausedRef = useRef(paused); pausedRef.current = paused
+  const steadyRef = useRef(steady); steadyRef.current = steady
+  const settlingRef = useRef(false)
   const lastRef = useRef({ v: "", t: 0 })
   useEffect(() => {
     let stream = null, raf = 0, reader = null, stopped = false
-    // Grab the frame that just decoded — instant (no shutter lag), so it's the
-    // sharpest moment before the phone moves to the next panel.
+    // Wait briefly for the steadiest (least motion) frame, then capture it.
+    async function settle(serial, format, box) {
+      settlingRef.current = true; if (onSettle) onSettle(true)
+      const v = videoRef.current
+      const small = document.createElement("canvas"); small.width = 64; small.height = 48
+      const sctx = small.getContext("2d", { willReadFrequently: true })
+      let prev = null, best = grabFrame(v, box), bestDiff = Infinity
+      const t0 = Date.now()
+      while (!stopped && Date.now() - t0 < 900) {
+        await new Promise((r) => setTimeout(r, 80))
+        try {
+          sctx.drawImage(v, 0, 0, 64, 48)
+          const cur = sctx.getImageData(0, 0, 64, 48).data
+          if (prev) {
+            let sum = 0; for (let i = 0; i < cur.length; i += 4) sum += Math.abs(cur[i] - prev[i])
+            const diff = sum / (cur.length / 4)
+            if (diff < bestDiff) { bestDiff = diff; best = grabFrame(v, box) }
+            if (diff < 2 && Date.now() - t0 > 200) break // steady enough
+          }
+          prev = cur
+        } catch (e) { break }
+      }
+      settlingRef.current = false; if (onSettle) onSettle(false)
+      if (stopped) return
+      onHit(serial, format || "", best)
+    }
     const hit = (serial, format, box) => {
       const s = String(serial || "").trim()
-      if (!s || stopped || pausedRef.current) return
+      if (!s || stopped || pausedRef.current || settlingRef.current) return
       const now = Date.now()
       if (s === lastRef.current.v && now - lastRef.current.t < 2500) return // debounce same code
       lastRef.current = { v: s, t: now }
-      const photo = grabFrame(videoRef.current, box)
-      onHit(s, format || "", photo)
+      if (steadyRef.current) settle(s, format, box)
+      else onHit(s, format || "", grabFrame(videoRef.current, box))
     }
     async function start() {
       const v = videoRef.current
@@ -797,7 +834,7 @@ function LiveScanner({ paused, onHit, onError }) {
           const det = new window.BarcodeDetector()
           const loop = async () => {
             if (stopped) return
-            if (!pausedRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
+            if (!pausedRef.current && !settlingRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
             raf = requestAnimationFrame(loop)
           }
           raf = requestAnimationFrame(loop)
