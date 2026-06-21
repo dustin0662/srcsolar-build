@@ -314,6 +314,10 @@ export default function PanelScanner({ onExit, portalUser }) {
     const serial = (serial0 || "").trim()
     if (!serial) { flash("Enter a serial first", "err"); return }
     const panel = Math.max(1, parseInt(panelOverride != null ? panelOverride : panelNo, 10) || panelNo)
+    if (!force) {
+      const dupe = rowDoc.scans.find((s) => (s.serial || "").trim() === serial)
+      if (dupe) { setPrompt({ kind: "dup", serial, existing: dupe.panel, pending: { serial, format, photo, panel } }); return }
+    }
     if (!force && row && row.panelTarget > 0 && panel > row.panelTarget) {
       setPrompt({ kind: "over", target: row.panelTarget, pending: { serial, format, photo, panel } })
       return
@@ -685,6 +689,15 @@ export default function PanelScanner({ onExit, portalUser }) {
           <div style={{ marginTop: 18 }}><button style={{ ...BTN, width: "100%" }} onClick={() => setPrompt(null)}>Keep Scanning</button></div>
         </Modal>
       )}
+      {prompt && prompt.kind === "dup" && (
+        <Modal m={m} title="Duplicate Serial" onClose={() => setPrompt(null)}>
+          <p style={ptext}>Serial <strong style={{ wordBreak: "break-all" }}>{prompt.serial}</strong> is already logged in this row as panel <strong>{prompt.existing}</strong>. Scan it again anyway?</p>
+          <div style={{ display: "flex", gap: 10, marginTop: 18, flexDirection: m ? "column" : "row", flexWrap: "wrap" }}>
+            <button style={BTN_GHOST} onClick={() => setPrompt(null)}>Skip (Don't Add)</button>
+            <button style={{ ...BTN, background: "#dc2626", color: "#fff" }} onClick={() => { const p = prompt.pending; setPrompt(null); logScan(p.serial, p.format, p.photo, p.panel, true) }}>Add Anyway</button>
+          </div>
+        </Modal>
+      )}
       {prompt && prompt.kind === "over" && (
         <Modal m={m} title="Row Already Full" onClose={() => setPrompt(null)}>
           <p style={ptext}>This row's target is <strong>{prompt.target}</strong> panels, but you're adding panel <strong>{prompt.pending.panel}</strong>. Add an extra panel anyway, or finish the row?</p>
@@ -751,61 +764,26 @@ function grabFrame(v, box, maxEdge = 1280, quality = 0.72) {
   } catch (e) { return "" }
 }
 
-// Crop an ImageBitmap (dedicated still) to the barcode box and return a JPEG.
-function bitmapCrop(bmp, box, maxEdge = 1600, quality = 0.82) {
-  let sx = 0, sy = 0, sw = bmp.width, sh = bmp.height
-  const r = box ? cropRect(bmp.width, bmp.height, box) : null
-  if (r) { sx = r.x; sy = r.y; sw = r.w; sh = r.h }
-  const scale = Math.min(1, maxEdge / Math.max(sw, sh))
-  const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale))
-  const cv = document.createElement("canvas")
-  cv.width = dw; cv.height = dh
-  cv.getContext("2d").drawImage(bmp, sx, sy, sw, sh, 0, 0, dw, dh)
-  return cv.toDataURL("image/jpeg", quality)
-}
-
 // Live camera barcode scanner. Native BarcodeDetector loop on Android; ZXing
 // continuous decode from the video stream on iOS Safari / desktop. On a read it
-// captures the audit photo (dedicated still via ImageCapture when available,
-// else a video frame), cropped to the label, and calls onHit(serial, format,
-// photo). Honours `paused` so it stops while a capture awaits confirmation.
+// grabs the just-decoded frame (instant, sharpest moment) cropped to the label
+// and calls onHit(serial, format, photo). Honours `paused` to stop while a
+// capture awaits confirmation.
 function LiveScanner({ paused, onHit, onError }) {
   const videoRef = useRef(null)
   const pausedRef = useRef(paused); pausedRef.current = paused
   const lastRef = useRef({ v: "", t: 0 })
-  const detRef = useRef(null)
-  const captureRef = useRef(null) // ImageCapture (Android) for sharp stills
-  const busyRef = useRef(false)
   useEffect(() => {
     let stream = null, raf = 0, reader = null, stopped = false
-    // Capture a crisp, label-cropped photo. Prefers a dedicated still on Android.
-    async function snap(box) {
-      const v = videoRef.current
-      try {
-        if (captureRef.current && captureRef.current.takePhoto) {
-          const blob = await captureRef.current.takePhoto()
-          const bmp = await createImageBitmap(blob)
-          let b = null
-          // Re-detect on the full-res still for an accurate crop box.
-          try { if (detRef.current) { const codes = await detRef.current.detect(bmp); if (codes && codes.length) { const bb = codes[0].boundingBox; b = { x: bb.x, y: bb.y, w: bb.width, h: bb.height } } } } catch (e) {}
-          if (!b && box && v && v.videoWidth) { const kx = bmp.width / v.videoWidth, ky = bmp.height / v.videoHeight; b = { x: box.x * kx, y: box.y * ky, w: box.w * kx, h: box.h * ky } }
-          const url = bitmapCrop(bmp, b)
-          try { bmp.close && bmp.close() } catch (e) {}
-          if (url) return url
-        }
-      } catch (e) { /* fall back to video frame */ }
-      return grabFrame(v, box)
-    }
-    const hit = async (serial, format, box) => {
+    // Grab the frame that just decoded — instant (no shutter lag), so it's the
+    // sharpest moment before the phone moves to the next panel.
+    const hit = (serial, format, box) => {
       const s = String(serial || "").trim()
-      if (!s || stopped || pausedRef.current || busyRef.current) return
+      if (!s || stopped || pausedRef.current) return
       const now = Date.now()
-      if (s === lastRef.current.v && now - lastRef.current.t < 1500) return // debounce same code
-      busyRef.current = true
+      if (s === lastRef.current.v && now - lastRef.current.t < 2500) return // debounce same code
       lastRef.current = { v: s, t: now }
-      const photo = await snap(box)
-      busyRef.current = false
-      if (stopped) return
+      const photo = grabFrame(videoRef.current, box)
       onHit(s, format || "", photo)
     }
     async function start() {
@@ -816,11 +794,10 @@ function LiveScanner({ paused, onHit, onError }) {
           stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] }, audio: false })
           v.srcObject = stream; v.setAttribute("playsinline", "true"); v.muted = true
           await v.play()
-          const det = new window.BarcodeDetector(); detRef.current = det
-          try { const track = stream.getVideoTracks()[0]; if (typeof window.ImageCapture === "function" && track) captureRef.current = new window.ImageCapture(track) } catch (e) {}
+          const det = new window.BarcodeDetector()
           const loop = async () => {
             if (stopped) return
-            if (!pausedRef.current && !busyRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
+            if (!pausedRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
             raf = requestAnimationFrame(loop)
           }
           raf = requestAnimationFrame(loop)
