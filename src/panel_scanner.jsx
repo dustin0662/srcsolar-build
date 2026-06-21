@@ -541,20 +541,22 @@ export default function PanelScanner({ onExit, portalUser }) {
         </>)}
 
         {scanning && (
-          <div style={{ position: "relative" }}>
-            <LiveScanner paused={!!capture || !!prompt || okFlash || busy} onHit={(serial, format, photo) => { logScanRef.current && logScanRef.current(serial, format, photo) }} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
-            {!okFlash && !capture && <div style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 2, background: "rgba(249,115,22,.9)", boxShadow: "0 0 8px rgba(249,115,22,.8)" }} />}
-            {okFlash && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(22,163,74,.55)", borderRadius: 10 }}>
-                <div style={{ fontSize: 64, lineHeight: 1, color: "#fff" }}>✓</div>
-                <div style={{ ...BB, fontSize: 28, letterSpacing: 2, color: "#fff" }}>COMPLETE</div>
-              </div>
-            )}
+          <div>
+            <div style={{ position: "relative", width: "100%", height: m ? 120 : 150, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+              <LiveScanner paused={!!capture || !!prompt || okFlash || busy} onHit={(serial, format, photo) => { logScanRef.current && logScanRef.current(serial, format, photo) }} onError={() => { setCamErr("Camera unavailable — allow camera access, or enter serials manually."); setScanning(false) }} />
+              {!okFlash && !capture && <div style={{ position: "absolute", left: "6%", right: "6%", top: "50%", height: 2, background: "rgba(249,115,22,.95)", boxShadow: "0 0 8px rgba(249,115,22,.9)" }} />}
+              {okFlash && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: "rgba(22,163,74,.6)" }}>
+                  <span style={{ fontSize: 34, lineHeight: 1, color: "#fff" }}>✓</span>
+                  <span style={{ ...BB, fontSize: 24, letterSpacing: 2, color: "#fff" }}>COMPLETE</span>
+                </div>
+              )}
+            </div>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
               <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
             </div>
-            {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Point the camera at the barcode — it logs automatically and moves to the next panel.</div>}
+            {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Center the barcode in the band — it logs automatically and moves to the next panel.</div>}
           </div>
         )}
 
@@ -798,7 +800,7 @@ function LiveScanner({ paused, onHit, onError }) {
     start()
     return () => { stopped = true; try { cancelAnimationFrame(raf) } catch (e) {} try { reader && reader.reset && reader.reset() } catch (e) {} try { stream && stream.getTracks().forEach((t) => t.stop()) } catch (e) {} }
   }, []) // eslint-disable-line
-  return <video ref={videoRef} playsInline muted style={{ width: "100%", maxHeight: "50vh", borderRadius: 10, background: "#000", objectFit: "cover", display: "block" }} />
+  return <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", background: "#000", objectFit: "cover", display: "block" }} />
 }
 
 function Modal({ title, children, onClose, m }) {
