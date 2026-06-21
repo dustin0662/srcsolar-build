@@ -348,9 +348,9 @@ export default function PanelScanner({ onExit, portalUser }) {
     setBusy(false)
   }
 
-  // Photo mode: take a sharp native-camera still, decode it, and — if a serial is
-  // found — auto-log it and advance to the next panel (no confirm tap). If nothing
-  // decodes, fall back to the manual-entry card with the photo attached.
+  // Photo mode: take a sharp native-camera still and decode it. Only auto-log on a
+  // real barcode read; never guess. If it can't read the code, prompt the user to
+  // enter it manually or retake the photo.
   async function onPickFile(e) {
     const file = e.target.files && e.target.files[0]; e.target.value = ""
     if (!file) return
@@ -362,11 +362,9 @@ export default function PanelScanner({ onExit, portalUser }) {
       const cropCv = decoded && decoded.box ? cropToLabel(decodeCv, decoded.box) : null
       const photo = canvasFrom(cropCv || img, 1280).toDataURL("image/jpeg", 0.72)
       try { URL.revokeObjectURL(img.src) } catch (er) {}
-      let serial = decoded ? decoded.serial : ""
-      if (!decoded) { const txt = await ocrDigits(decodeCv); if (txt) serial = txt }
       setBusy(false)
-      if (serial) { await logScan(serial, decoded ? decoded.format : "", photo) } // auto-log + advance
-      else { setCapture({ serial: "", format: "", photo, panel: panelNo, brand: (proj && proj.brand) || "", manual: true }); flash("No barcode — type the serial", "warn") }
+      if (decoded && decoded.serial) { await logScan(decoded.serial, decoded.format, photo) } // confident read → auto-log + advance
+      else { setPrompt({ kind: "scanfail", photo }) } // couldn't read — don't guess
       return
     } catch (err) { flash("Couldn't read that photo", "err") }
     setBusy(false)
@@ -739,6 +737,17 @@ export default function PanelScanner({ onExit, portalUser }) {
         <Modal m={m} title="Row Not Complete" onClose={() => setPrompt(null)}>
           <p style={ptext}>You hit the target count but panels <strong>{prompt.missing.join(", ")}</strong> are missing. Capture them before finishing this row.</p>
           <div style={{ marginTop: 18 }}><button style={{ ...BTN, width: "100%" }} onClick={() => setPrompt(null)}>Keep Scanning</button></div>
+        </Modal>
+      )}
+      {prompt && prompt.kind === "scanfail" && (
+        <Modal m={m} title="Couldn't Read Barcode" onClose={() => setPrompt(null)}>
+          {prompt.photo && <img src={prompt.photo} alt="scan" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 12 }} />}
+          <p style={ptext}>The barcode couldn't be read from that photo. Retake it, or enter the serial by hand.</p>
+          <div style={{ display: "flex", gap: 10, marginTop: 18, flexDirection: m ? "column" : "row", flexWrap: "wrap" }}>
+            <button style={BTN} onClick={() => { setPrompt(null); setTimeout(() => { fileRef.current && fileRef.current.click() }, 50) }}>Retake Photo</button>
+            <button style={BTN_GHOST} onClick={() => { const ph = prompt.photo; setPrompt(null); setCapture({ serial: "", format: "", photo: ph, panel: panelNo, brand: (proj && proj.brand) || "", manual: true }) }}>Enter Manually</button>
+            <button style={BTN_GHOST} onClick={() => setPrompt(null)}>Cancel</button>
+          </div>
         </Modal>
       )}
       {prompt && prompt.kind === "dup" && (
