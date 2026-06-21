@@ -735,7 +735,7 @@ function cropRect(srcW, srcH, box) {
 
 // Grab the current video frame as a storage-saver JPEG. When a barcode box is
 // supplied, crop tightly to the label (with padding) to shrink the saved photo.
-function grabFrame(v, box, maxEdge = 1000, quality = 0.5) {
+function grabFrame(v, box, maxEdge = 1280, quality = 0.72) {
   try {
     const vw = v.videoWidth, vh = v.videoHeight
     if (!vw || !vh) return ""
@@ -775,7 +775,7 @@ function LiveScanner({ paused, onHit, onError }) {
       if (!v) return
       try {
         if (typeof window !== "undefined" && "BarcodeDetector" in window) {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] }, audio: false })
           v.srcObject = stream; v.setAttribute("playsinline", "true"); v.muted = true
           await v.play()
           const det = new window.BarcodeDetector()
@@ -787,7 +787,7 @@ function LiveScanner({ paused, onHit, onError }) {
           raf = requestAnimationFrame(loop)
         } else {
           reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]))
-          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" } }, audio: false }, v, (result) => {
+          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }, v, (result) => {
             if (result && !pausedRef.current) {
               let box = null
               try { const pts = result.getResultPoints && result.getResultPoints(); if (pts && pts.length) { const xs = pts.map((p) => p.getX()), ys = pts.map((p) => p.getY()); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } } } catch (e) {}
