@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import { BrowserMultiFormatReader } from "@zxing/browser"
-import { DecodeHintType } from "@zxing/library"
+import { DecodeHintType, BarcodeFormat } from "@zxing/library"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Panel Scanner — mobile-first field tool (Android + iOS)
@@ -19,6 +19,13 @@ const BB = { fontFamily: "'Bebas Neue',sans-serif" }
 const NB = { fontFamily: "'Barlow Condensed',sans-serif" }
 const PROJ_COLORS = ["#F97316", "#EAB308", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#ef4444"]
 const IS_IOS = typeof navigator !== "undefined" && (/iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
+
+// Restrict to the barcode types we actually use. ITF/Codabar/RSS are excluded —
+// they produce false positives (e.g. random lines decoded as "2222222222").
+const ZX_FORMATS = [BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX, BarcodeFormat.AZTEC, BarcodeFormat.PDF_417, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E]
+const ND_FORMATS = ["qr_code", "data_matrix", "aztec", "pdf417", "code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e"]
+function zxHints() { const h = new Map(); h.set(DecodeHintType.TRY_HARDER, true); h.set(DecodeHintType.POSSIBLE_FORMATS, ZX_FORMATS); return h }
+function makeDetector() { try { return new window.BarcodeDetector({ formats: ND_FORMATS }) } catch (e) { return new window.BarcodeDetector() } }
 const POLL_MS = 8000
 const OP_KEY = "scanner_operator"
 
@@ -70,7 +77,7 @@ function rotateCanvas(src, deg) {
 async function decodeBarcode(canvas) {
   try {
     if (typeof window !== "undefined" && "BarcodeDetector" in window) {
-      const det = new window.BarcodeDetector()
+      const det = makeDetector()
       for (const deg of [0, 90, 270]) {
         const c = deg ? rotateCanvas(canvas, deg) : canvas
         const codes = await det.detect(c)
@@ -82,8 +89,7 @@ async function decodeBarcode(canvas) {
       }
     }
   } catch (e) { /* fall through to zxing */ }
-  const hints = new Map()
-  hints.set(DecodeHintType.TRY_HARDER, true)
+  const hints = zxHints()
   for (const deg of [0, 90, 270, 180]) {
     const c = deg ? rotateCanvas(canvas, deg) : canvas
     try {
@@ -182,7 +188,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [okFlash, setOkFlash] = useState(false)
   const [settling, setSettling] = useState(false)
   const [steady, setSteady] = useState(() => { try { return localStorage.getItem("scanner_steady") !== "0" } catch (e) { return true } })
-  const [photoMode, setPhotoMode] = useState(() => { try { const v = localStorage.getItem("scanner_photomode"); return v == null ? IS_IOS : v === "1" } catch (e) { return IS_IOS } })
+  const [photoMode, setPhotoMode] = useState(() => { try { return localStorage.getItem("scanner_photomode") === "1" } catch (e) { return false } })
   const [editing, setEditing] = useState(null)
   const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
@@ -864,7 +870,7 @@ function LiveScanner({ paused, steady, onHit, onSettle, onError }) {
           stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] }, audio: false })
           v.srcObject = stream; v.setAttribute("playsinline", "true"); v.muted = true
           await v.play()
-          const det = new window.BarcodeDetector()
+          const det = makeDetector()
           const loop = async () => {
             if (stopped) return
             if (!pausedRef.current && !settlingRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
@@ -872,7 +878,7 @@ function LiveScanner({ paused, steady, onHit, onSettle, onError }) {
           }
           raf = requestAnimationFrame(loop)
         } else {
-          reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]))
+          reader = new BrowserMultiFormatReader(zxHints())
           await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }, v, (result) => {
             if (result && !pausedRef.current) {
               let box = null
