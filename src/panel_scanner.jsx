@@ -187,6 +187,32 @@ export default function PanelScanner({ onExit, portalUser }) {
   const rowIdRef = useRef(null); rowIdRef.current = rowId
   const capDefaultsRef = useRef({ panel: 1, brand: "" })
   const logScanRef = useRef(null) // latest logScan, so the live scanner avoids stale closures
+  const audioRef = useRef(null) // WebAudio context for scan beep (created on user gesture)
+
+  // Short confirmation beep (Web Audio) + haptic buzz. Beep needs an AudioContext
+  // unlocked by a user gesture (Start Scanning); vibrate is Android-only (no-op on iOS).
+  function scanFeedback() {
+    try {
+      const ctx = audioRef.current
+      if (ctx) {
+        const o = ctx.createOscillator(), g = ctx.createGain()
+        o.type = "sine"; o.frequency.value = 880
+        o.connect(g); g.connect(ctx.destination)
+        const t = ctx.currentTime
+        g.gain.setValueAtTime(0.0001, t)
+        g.gain.exponentialRampToValueAtTime(0.3, t + 0.01)
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16)
+        o.start(t); o.stop(t + 0.17)
+      }
+    } catch (e) {}
+    try { if (navigator.vibrate) navigator.vibrate(60) } catch (e) {}
+  }
+  function unlockAudio() {
+    try {
+      if (!audioRef.current) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioRef.current = new AC() }
+      if (audioRef.current && audioRef.current.resume) audioRef.current.resume()
+    } catch (e) {}
+  }
 
   const flash = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800) }
 
@@ -300,6 +326,7 @@ export default function PanelScanner({ onExit, portalUser }) {
       setSummary((sm) => { const cur = sm[rowId] || { c: 0, x: 0 }; return { ...sm, [rowId]: { c: cur.c + 1, x: Math.max(cur.x, panel) } } })
       setPanelNo(panel + 1)
       setOkFlash(true); setTimeout(() => setOkFlash(false), 900)
+      scanFeedback()
       flash(`Panel ${panel} logged ✓`, "ok")
       fetchRow(rowId)
       if (row && row.panelTarget > 0 && rowDoc.scans.length + 1 >= row.panelTarget) maybePromptRowComplete(row)
@@ -509,7 +536,7 @@ export default function PanelScanner({ onExit, portalUser }) {
         <div style={{ ...BB, fontSize: 30, color: INK, marginBottom: 14 }}>PANEL #{panelNo}</div>
 
         {!scanning && (<>
-          <button onClick={() => { setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
+          <button onClick={() => { unlockAudio(); setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
           <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })}>or enter a serial manually</div>
         </>)}
 
