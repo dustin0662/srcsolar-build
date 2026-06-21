@@ -717,16 +717,34 @@ export default function PanelScanner({ onExit, portalUser }) {
 const lbl = { ...NB, fontSize: 12, color: "#777", letterSpacing: 1, display: "block", marginBottom: 4 }
 const ptext = { ...NB, fontSize: 15, color: "#444", lineHeight: 1.5 }
 
-// Grab the current video frame as a storage-saver JPEG data URL.
-function grabFrame(v, maxEdge = 1000, quality = 0.5) {
+// Padded crop rect (in source px) around a barcode box; 1D lines get a synthesized
+// height. Returns null if the result would be too small/unreliable.
+function cropRect(srcW, srcH, box) {
+  if (!box || box.w <= 0) return null
+  let { x, y, w, h } = box
+  if (h < w * 0.15) { const nh = w * 0.5; y -= (nh - h) / 2; h = nh }
+  const padX = w * 0.18, padY = h * 0.35
+  x -= padX; y -= padY; w += padX * 2; h += padY * 2
+  x = Math.max(0, x); y = Math.max(0, y)
+  w = Math.min(srcW - x, w); h = Math.min(srcH - y, h)
+  if (w < srcW * 0.12 || h < srcH * 0.04) return null
+  return { x, y, w, h }
+}
+
+// Grab the current video frame as a storage-saver JPEG. When a barcode box is
+// supplied, crop tightly to the label (with padding) to shrink the saved photo.
+function grabFrame(v, box, maxEdge = 1000, quality = 0.5) {
   try {
     const vw = v.videoWidth, vh = v.videoHeight
     if (!vw || !vh) return ""
-    const scale = Math.min(1, maxEdge / Math.max(vw, vh))
-    const w = Math.round(vw * scale), h = Math.round(vh * scale)
+    let sx = 0, sy = 0, sw = vw, sh = vh
+    const r = box ? cropRect(vw, vh, box) : null
+    if (r) { sx = r.x; sy = r.y; sw = r.w; sh = r.h }
+    const scale = Math.min(1, maxEdge / Math.max(sw, sh))
+    const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale))
     const cv = document.createElement("canvas")
-    cv.width = w; cv.height = h
-    cv.getContext("2d").drawImage(v, 0, 0, w, h)
+    cv.width = dw; cv.height = dh
+    cv.getContext("2d").drawImage(v, sx, sy, sw, sh, 0, 0, dw, dh)
     return cv.toDataURL("image/jpeg", quality)
   } catch (e) { return "" }
 }
@@ -741,13 +759,13 @@ function LiveScanner({ paused, onHit, onError }) {
   const lastRef = useRef({ v: "", t: 0 })
   useEffect(() => {
     let stream = null, raf = 0, reader = null, stopped = false
-    const hit = (serial, format) => {
+    const hit = (serial, format, box) => {
       const s = String(serial || "").trim()
       if (!s || stopped || pausedRef.current) return
       const now = Date.now()
       if (s === lastRef.current.v && now - lastRef.current.t < 1500) return // debounce same code
       lastRef.current = { v: s, t: now }
-      const photo = grabFrame(videoRef.current)
+      const photo = grabFrame(videoRef.current, box) // crop to the barcode label
       onHit(s, format || "", photo)
     }
     async function start() {
@@ -761,13 +779,19 @@ function LiveScanner({ paused, onHit, onError }) {
           const det = new window.BarcodeDetector()
           const loop = async () => {
             if (stopped) return
-            if (!pausedRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) hit(codes[0].rawValue, codes[0].format) } catch (e) {} }
+            if (!pausedRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
             raf = requestAnimationFrame(loop)
           }
           raf = requestAnimationFrame(loop)
         } else {
           reader = new BrowserMultiFormatReader(new Map([[DecodeHintType.TRY_HARDER, true]]))
-          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" } }, audio: false }, v, (result) => { if (result && !pausedRef.current) hit(result.getText(), "") })
+          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" } }, audio: false }, v, (result) => {
+            if (result && !pausedRef.current) {
+              let box = null
+              try { const pts = result.getResultPoints && result.getResultPoints(); if (pts && pts.length) { const xs = pts.map((p) => p.getX()), ys = pts.map((p) => p.getY()); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } } } catch (e) {}
+              hit(result.getText(), "", box)
+            }
+          })
         }
       } catch (e) { if (onError) onError(e) }
     }
