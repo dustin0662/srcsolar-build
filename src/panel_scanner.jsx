@@ -188,6 +188,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [okFlash, setOkFlash] = useState(false)
   const [settling, setSettling] = useState(false)
   const [steady, setSteady] = useState(() => { try { return localStorage.getItem("scanner_steady") !== "0" } catch (e) { return true } })
+  const [photoMode, setPhotoMode] = useState(() => { try { return localStorage.getItem("scanner_photomode") === "1" } catch (e) { return false } })
   const [editing, setEditing] = useState(null)
   const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
@@ -344,6 +345,30 @@ export default function PanelScanner({ onExit, portalUser }) {
       fetchRow(rowId)
       if (row && row.panelTarget > 0 && rowDoc.scans.length + 1 >= row.panelTarget) maybePromptRowComplete(row)
     } catch (e) { flash("Save failed — check connection", "err") }
+    setBusy(false)
+  }
+
+  // Photo mode: take a sharp native-camera still, decode it, and — if a serial is
+  // found — auto-log it and advance to the next panel (no confirm tap). If nothing
+  // decodes, fall back to the manual-entry card with the photo attached.
+  async function onPickFile(e) {
+    const file = e.target.files && e.target.files[0]; e.target.value = ""
+    if (!file) return
+    setBusy(true)
+    try {
+      const img = await loadImage(file)
+      const decodeCv = canvasFrom(img, 2000)
+      const decoded = await decodeBarcode(decodeCv)
+      const cropCv = decoded && decoded.box ? cropToLabel(decodeCv, decoded.box) : null
+      const photo = canvasFrom(cropCv || img, 1280).toDataURL("image/jpeg", 0.72)
+      try { URL.revokeObjectURL(img.src) } catch (er) {}
+      let serial = decoded ? decoded.serial : ""
+      if (!decoded) { const txt = await ocrDigits(decodeCv); if (txt) serial = txt }
+      setBusy(false)
+      if (serial) { await logScan(serial, decoded ? decoded.format : "", photo) } // auto-log + advance
+      else { setCapture({ serial: "", format: "", photo, panel: panelNo, brand: (proj && proj.brand) || "", manual: true }); flash("No barcode — type the serial", "warn") }
+      return
+    } catch (err) { flash("Couldn't read that photo", "err") }
     setBusy(false)
   }
 
@@ -549,8 +574,17 @@ export default function PanelScanner({ onExit, portalUser }) {
         <div style={{ ...BB, fontSize: 30, color: INK, marginBottom: 14 }}>PANEL #{panelNo}</div>
 
         {!scanning && !capture && (<>
-          <button onClick={() => { unlockAudio(); setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
+          {photoMode ? (<>
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPickFile} style={{ display: "none" }} />
+            <button disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px", opacity: busy ? .6 : 1 }}>{busy ? "Reading…" : "📷 Take Photo"}</button>
+          </>) : (
+            <button onClick={() => { unlockAudio(); setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
+          )}
           <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })}>or enter a serial manually</div>
+          <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14, cursor: "pointer" }}>
+            <input type="checkbox" checked={photoMode} onChange={(e) => { setPhotoMode(e.target.checked); if (e.target.checked) setScanning(false); try { localStorage.setItem("scanner_photomode", e.target.checked ? "1" : "0") } catch (er) {} }} style={{ width: 20, height: 20, flexShrink: 0 }} />
+            <span style={{ ...NB, fontSize: 13, color: "#555" }}>Photo mode — sharp photo each panel, auto-advances</span>
+          </label>
         </>)}
 
         {scanning && (
