@@ -174,6 +174,8 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
+  const [installEvt, setInstallEvt] = useState(null) // Android: captured beforeinstallprompt
+  const standalone = typeof window !== "undefined" && ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true)
 
   const [projId, setProjId] = useState(null)
   const [secId, setSecId] = useState(null)
@@ -237,6 +239,16 @@ export default function PanelScanner({ onExit, portalUser }) {
   const fetchRow = useCallback(async (id) => { if (!id) return; try { const r = await fetch(API + "?row=" + id, { cache: "no-store" }); const d = await r.json(); if (rowIdRef.current === id) setRowDoc({ scans: d.scans || [] }) } catch (e) {} }, [])
 
   useEffect(() => { (async () => { await Promise.all([fetchTree(), fetchSummary()]); setLoading(false) })() }, [fetchTree, fetchSummary])
+
+  // Capture Android's install prompt so we can surface an explicit Install button.
+  useEffect(() => {
+    const onB = (e) => { e.preventDefault(); setInstallEvt(e) }
+    const onI = () => setInstallEvt(null)
+    window.addEventListener("beforeinstallprompt", onB)
+    window.addEventListener("appinstalled", onI)
+    return () => { window.removeEventListener("beforeinstallprompt", onB); window.removeEventListener("appinstalled", onI) }
+  }, [])
+  async function doInstall() { if (!installEvt) return; try { installEvt.prompt(); await installEvt.userChoice } catch (e) {} setInstallEvt(null) }
 
   // Live multi-user refresh — keep counts and the open row in sync with others.
   useEffect(() => {
@@ -517,6 +529,17 @@ export default function PanelScanner({ onExit, portalUser }) {
     body = (<>
       <TopBar back={onExit || null} backLabel="Exit" />
       <Title t="PANEL SCANNER" sub="Pick a project to start scanning" />
+      {!standalone && installEvt && (
+        <div onClick={doInstall} style={{ ...card, marginBottom: 14, borderLeft: "4px solid " + A, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ ...NB, fontSize: 14, color: INK }}>📲 Install Panel Scanner as an app</span>
+          <span style={{ ...NB, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", color: A }}>Install</span>
+        </div>
+      )}
+      {!standalone && !installEvt && IS_IOS && (
+        <div style={{ ...card, marginBottom: 14, borderLeft: "4px solid " + A, cursor: "default" }}>
+          <span style={{ ...NB, fontSize: 14, color: INK }}>📲 To install: tap <strong>Share</strong> → <strong>Add to Home Screen</strong></span>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "repeat(3,1fr)", gap: m ? 10 : 14 }}>
         {tree.projects.map((p) => {
           const total = (p.sections || []).reduce((a, s) => a + (s.rows || []).reduce((b, r) => b + ((summary[r.id] || {}).c || 0), 0), 0)
