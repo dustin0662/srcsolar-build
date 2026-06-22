@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a14" />
+  <meta name="description" content="Sun Rise Construction — Daily Agenda" />
+  <title>Daily Agenda · Sun Rise Construction</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a14;
+      --panel: #14141f;
+      --panel-2: #1b1b29;
+      --line: #2a2a3a;
+      --text: #F5F0EB;
+      --muted: #9a958d;
+      --orange: #F97316;
+      --orange-d: #c75d10;
+      --green: #22c55e;
+      --green-d: #15803d;
+      --blue: #3b82f6;
+      --radius: 14px;
+      --safe-b: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; background: var(--bg); }
+    body {
+      font-family: 'Barlow Condensed', system-ui, sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 17px;
+      line-height: 1.35;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 0 16px calc(120px + var(--safe-b)); }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 20;
+      background: linear-gradient(180deg, rgba(10,10,20,0.98) 70%, rgba(10,10,20,0.0));
+      padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+      max-width: 560px; margin: 0 auto;
+    }
+    .brandrow { display: flex; align-items: center; gap: 10px; }
+    .sun {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 55%, #ffd27a 0%, var(--orange) 55%, var(--orange-d) 100%);
+      box-shadow: 0 0 18px rgba(249,115,22,0.55); flex: none;
+    }
+    .brand { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1.5px; font-size: 22px; line-height: 1; }
+    .brand small { display: block; font-family: 'Barlow Condensed'; letter-spacing: 3px; font-size: 10px; color: var(--orange); font-weight: 600; }
+    .datebar { display: flex; align-items: baseline; justify-content: space-between; margin-top: 12px; }
+    .today { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: 1px; line-height: 1; }
+    .today span { color: var(--orange); }
+    .counts { font-size: 14px; color: var(--muted); letter-spacing: 0.5px; text-align: right; }
+    .counts b { color: var(--text); }
+
+    /* Progress */
+    .progress { height: 7px; border-radius: 99px; background: var(--panel-2); overflow: hidden; margin-top: 10px; border: 1px solid var(--line); }
+    .progress > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--orange), #ffb24d); transition: width .4s ease; }
+
+    /* Section labels */
+    .seclabel {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; font-size: 16px;
+      color: var(--muted); margin: 22px 2px 10px;
+    }
+    .seclabel::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+    .seclabel.tomorrow { color: var(--blue); }
+    .seclabel.done { color: var(--green); }
+
+    /* Task card */
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 14px; margin-bottom: 12px; position: relative; overflow: hidden;
+      transition: opacity .3s, transform .2s;
+    }
+    .card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background: var(--orange); }
+    .card.tomorrow::before { background: var(--blue); }
+    .card.done { opacity: .55; }
+    .card.done::before { background: var(--green); }
+    .ttitle { font-size: 18px; font-weight: 600; line-height: 1.3; padding-left: 6px; }
+    .card.done .ttitle { text-decoration: line-through; text-decoration-color: var(--green); color: var(--muted); }
+    .tdetail { font-size: 15px; color: var(--muted); padding-left: 6px; margin-top: 5px; white-space: pre-wrap; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 6px; margin-top: 9px; }
+    .chip {
+      font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600;
+      padding: 3px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted);
+    }
+    .chip.roll { color: #fbbf24; border-color: #5a4a1e; background: rgba(251,191,36,0.08); }
+    .chip.sub { color: var(--blue); border-color: #243a5e; background: rgba(59,130,246,0.08); }
+    .chip.time { color: var(--muted); }
+
+    /* Actions */
+    .actions { display: flex; gap: 10px; margin-top: 13px; padding-left: 6px; }
+    .btn {
+      flex: 1; border: none; border-radius: 11px; padding: 13px 10px; cursor: pointer;
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px;
+      letter-spacing: 1.2px; text-transform: uppercase; display: flex; align-items: center;
+      justify-content: center; gap: 7px; transition: filter .15s, transform .05s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn .ic { width: 17px; height: 17px; }
+    .btn-complete { background: var(--green); color: #06210f; }
+    .btn-sub { background: var(--panel-2); color: var(--blue); border: 1px solid #243a5e; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); flex: none; padding: 13px 14px; }
+    .btn-reopen { background: var(--panel-2); color: var(--orange); border: 1px solid #4a3214; }
+
+    /* Subtask inline form */
+    .subform { padding: 12px 6px 4px; display: none; }
+    .subform.open { display: block; }
+    .subform .lab { font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--blue); font-weight: 600; margin-bottom: 6px; }
+    textarea, input[type=text] {
+      width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+      border-radius: 10px; padding: 11px 12px; font-family: 'Barlow Condensed'; font-size: 16px; resize: vertical;
+    }
+    textarea:focus, input:focus { outline: none; border-color: var(--orange); }
+    .subform .row { display: flex; gap: 10px; margin-top: 10px; }
+
+    /* Empty / done states */
+    .empty { text-align: center; color: var(--muted); padding: 34px 16px; }
+    .empty .big { font-family: 'Bebas Neue'; font-size: 26px; letter-spacing: 1px; color: var(--text); margin-bottom: 6px; }
+    .allclear { width: 54px; height: 54px; margin: 0 auto 12px; border-radius: 50%; background: rgba(34,197,94,0.12); border: 1px solid var(--green-d); display: flex; align-items: center; justify-content: center; color: var(--green); }
+
+    /* Focus / flow mode overlay */
+    .focus {
+      position: fixed; inset: 0; z-index: 60; background: var(--bg);
+      display: none; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 18px calc(20px + var(--safe-b));
+    }
+    .focus.open { display: flex; }
+    .focus-top { display: flex; align-items: center; justify-content: space-between; }
+    .focus-top .step { font-family: 'Bebas Neue'; letter-spacing: 2px; color: var(--orange); font-size: 18px; }
+    .xbtn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; width: 40px; height: 40px; font-size: 20px; cursor: pointer; }
+    .focus-body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .focus-card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; border-left: 5px solid var(--orange); }
+    .focus-card .ttitle { font-size: 24px; }
+    .focus-card .tdetail { font-size: 17px; }
+    .focus-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+    .focus-actions .btn { padding: 17px; font-size: 16px; }
+    .focus-nav { display: flex; justify-content: space-between; margin-top: 16px; }
+    .focus-nav button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 11px 18px; font-family: 'Barlow Condensed'; font-weight: 600; letter-spacing: 1px; cursor: pointer; }
+    .focus-dots { display: flex; gap: 6px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+    .dot.cur { background: var(--orange); transform: scale(1.3); }
+    .dot.done { background: var(--green); }
+
+    /* Bottom bar */
+    .bottombar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      padding: 10px 16px calc(10px + var(--safe-b));
+      background: linear-gradient(0deg, var(--bg) 70%, rgba(10,10,20,0));
+    }
+    .bottombar .inner { max-width: 560px; margin: 0 auto; display: flex; gap: 10px; }
+    .bigbtn {
+      flex: 1; border: none; border-radius: 13px; padding: 15px; cursor: pointer;
+      font-family: 'Barlow Condensed'; font-weight: 700; font-size: 15px; letter-spacing: 1.5px;
+      text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .bigbtn.primary { background: var(--orange); color: #1a1206; box-shadow: 0 6px 22px rgba(249,115,22,0.35); }
+    .bigbtn.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--line); flex: none; padding: 15px 18px; }
+
+    /* Add-task sheet */
+    .sheet { position: fixed; inset: 0; z-index: 70; display: none; align-items: flex-end; }
+    .sheet.open { display: flex; }
+    .sheet .scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+    .sheet .panel {
+      position: relative; width: 100%; max-width: 560px; margin: 0 auto; background: var(--panel);
+      border-radius: 18px 18px 0 0; border: 1px solid var(--line); border-bottom: none;
+      padding: 18px 18px calc(20px + var(--safe-b)); animation: slideup .22s ease;
+    }
+    @keyframes slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .sheet h3 { font-family: 'Bebas Neue'; letter-spacing: 1.5px; font-size: 22px; margin: 2px 0 14px; }
+    .seg { display: flex; gap: 8px; margin: 12px 0 4px; }
+    .seg button { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-family: 'Barlow Condensed'; font-weight: 600; letter-spacing: 1px; cursor: pointer; }
+    .seg button.on { background: var(--orange); color: #1a1206; border-color: var(--orange); }
+    .seg button.on.blue { background: var(--blue); border-color: var(--blue); color: #051227; }
+    .fieldlab { font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+
+    /* Toast + offline */
+    .toast { position: fixed; bottom: calc(90px + var(--safe-b)); left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 11px 18px; border-radius: 99px; font-size: 14px; letter-spacing: 0.5px; z-index: 90; opacity: 0; transition: opacity .25s; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+    .toast.show { opacity: 1; }
+    .banner { background: rgba(249,115,22,0.1); border: 1px solid var(--orange-d); color: #ffcb91; border-radius: 10px; padding: 9px 12px; font-size: 14px; margin-top: 12px; display: none; }
+    .banner.show { display: block; }
+    .spin { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--orange); border-radius: 50%; animation: r 0.7s linear infinite; }
+    @keyframes r { to { transform: rotate(360deg); } }
+    .loading { text-align: center; color: var(--muted); padding: 40px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brandrow">
+      <div class="sun"></div>
+      <div class="brand">SUN RISE<small>CONSTRUCTION</small></div>
+    </div>
+    <div class="datebar">
+      <div class="today" id="todayLabel">—</div>
+      <div class="counts" id="counts"></div>
+    </div>
+    <div class="progress"><i id="progBar"></i></div>
+    <div class="banner" id="offline">Offline — changes will save when you reconnect.</div>
+  </header>
+
+  <div class="wrap" id="list">
+    <div class="loading"><span class="spin"></span><div style="margin-top:10px">Loading agenda…</div></div>
+  </div>
+
+  <!-- Bottom action bar -->
+  <div class="bottombar">
+    <div class="inner">
+      <button class="bigbtn primary" id="focusBtn">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+        Run the day
+      </button>
+      <button class="bigbtn secondary" id="addBtn" aria-label="Add task">
+        <svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Focus / flow mode -->
+  <div class="focus" id="focus">
+    <div class="focus-top">
+      <div class="step" id="focusStep">TASK 1 / 1</div>
+      <button class="xbtn" id="focusClose">✕</button>
+    </div>
+    <div class="focus-body">
+      <div class="focus-card">
+        <div class="ttitle" id="focusTitle"></div>
+        <div class="tdetail" id="focusDetail"></div>
+        <div class="meta" id="focusMeta"></div>
+        <div class="focus-actions">
+          <button class="btn btn-complete" id="focusComplete">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Complete this task
+          </button>
+          <button class="btn btn-sub" id="focusSub">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add follow-up for tomorrow
+          </button>
+        </div>
+      </div>
+      <div class="focus-nav">
+        <button id="focusPrev">‹ Prev</button>
+        <button id="focusNext">Skip ›</button>
+      </div>
+      <div class="focus-dots" id="focusDots"></div>
+    </div>
+  </div>
+
+  <!-- Add / subtask sheet -->
+  <div class="sheet" id="sheet">
+    <div class="scrim" id="sheetScrim"></div>
+    <div class="panel">
+      <h3 id="sheetTitle">New Task</h3>
+      <div id="parentNote" style="display:none; font-size:14px; color:var(--blue); margin-bottom:8px;"></div>
+      <div class="fieldlab">Task</div>
+      <input type="text" id="taskTitle" placeholder="What needs to get done?" />
+      <div class="fieldlab">Notes (optional)</div>
+      <textarea id="taskDetail" rows="2" placeholder="Any detail or context…"></textarea>
+      <div class="fieldlab">Schedule for</div>
+      <div class="seg" id="dateSeg">
+        <button data-date="today" class="on">Today</button>
+        <button data-date="tomorrow" class="blue">Tomorrow</button>
+      </div>
+      <div class="seg" style="margin-top:16px;">
+        <button id="sheetCancel" style="background:transparent;">Cancel</button>
+        <button id="sheetSave" class="on" style="background:var(--orange); color:#1a1206; border-color:var(--orange);">Add Task</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (function () {
+    var API = '/.netlify/functions/agenda';
+    var state = { items: [], today: '', tomorrow: '', rev: 0 };
+    var pendingDate = 'today';
+    var parentId = null;
+    var focusIdx = 0;
+
+    var $ = function (id) { return document.getElementById(id); };
+
+    function esc(s) { return (s || '').replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+    function fmtDateLong(ds) {
+      var p = ds.split('-'); var d = new Date(p[0], p[1] - 1, p[2]);
+      return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+    function fmtTime(iso) {
+      if (!iso) return '';
+      var d = new Date(iso);
+      return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function toast(msg) {
+      var t = $('toast'); t.textContent = msg; t.classList.add('show');
+      clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    }
+
+    function setOffline(on) { $('offline').classList.toggle('show', on); }
+
+    async function api(method, qs, body) {
+      var opt = { method: method, headers: { 'content-type': 'application/json' } };
+      if (body) opt.body = JSON.stringify(body);
+      var res = await fetch(API + (qs || ''), opt);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
+    function applyState(s) { state = s; render(); }
+
+    async function load() {
+      try {
+        var s = await api('GET');
+        setOffline(false); applyState(s);
+      } catch (e) {
+        setOffline(true);
+        if (!state.items.length) $('list').innerHTML = '<div class="empty"><div class="big">Can’t reach the server</div><div>Check your connection and pull to refresh.</div></div>';
+      }
+    }
+
+    // Optimistic mutation: update local state, re-render, then sync.
+    async function mutate(qs, body, optimistic) {
+      if (optimistic) { optimistic(); render(); }
+      try {
+        var s = await api('POST', qs, body);
+        setOffline(false); applyState(s);
+        return s;
+      } catch (e) {
+        setOffline(true); toast('Saved locally — will sync when online');
+        throw e;
+      }
+    }
+
+    function todays() { return state.items.filter(function (t) { return t.date === state.today; }); }
+    function tomorrows() { return state.items.filter(function (t) { return t.date === state.tomorrow; }); }
+    function openTodays() { return todays().filter(function (t) { return t.status === 'open'; }); }
+
+    function render() {
+      $('todayLabel').innerHTML = '<span>' + esc(fmtDateLong(state.today).split(',')[0]) + '</span> ' + esc(fmtDateLong(state.today).split(',').slice(1).join(',').trim());
+      var td = todays();
+      var openCt = td.filter(function (t) { return t.status === 'open'; }).length;
+      var doneCt = td.filter(function (t) { return t.status === 'done'; }).length;
+      var tot = td.length;
+      $('counts').innerHTML = '<b>' + openCt + '</b> open · <b>' + doneCt + '</b> done';
+      $('progBar').style.width = (tot ? Math.round(doneCt / tot * 100) : 0) + '%';
+
+      var html = '';
+      var openItems = td.filter(function (t) { return t.status === 'open'; });
+      var doneItems = td.filter(function (t) { return t.status === 'done'; });
+      var tom = tomorrows();
+
+      if (!openItems.length && !doneItems.length && !tom.length) {
+        html += '<div class="empty"><div class="big">All caught up</div><div>Tap + to add today’s first task.</div></div>';
+      }
+
+      if (openItems.length) {
+        html += '<div class="seclabel">Today · ' + openItems.length + ' to go</div>';
+        openItems.forEach(function (t) { html += cardHTML(t, 'today'); });
+      } else if (doneItems.length || tom.length) {
+        html += '<div class="empty" style="padding:24px 16px"><div class="allclear"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="big">Today’s list is clear</div><div>Nice work. Anything new? Tap +.</div></div>';
+      }
+
+      if (tom.length) {
+        html += '<div class="seclabel tomorrow">Tomorrow · ' + tom.length + '</div>';
+        tom.forEach(function (t) { html += cardHTML(t, 'tomorrow'); });
+      }
+
+      if (doneItems.length) {
+        html += '<div class="seclabel done">Completed today · ' + doneItems.length + '</div>';
+        doneItems.forEach(function (t) { html += cardHTML(t, 'done'); });
+      }
+
+      $('list').innerHTML = html;
+      bindCards();
+    }
+
+    function cardHTML(t, kind) {
+      var cls = 'card' + (kind === 'tomorrow' ? ' tomorrow' : '') + (t.status === 'done' ? ' done' : '');
+      var meta = '';
+      if (t.rollovers > 0 && t.status === 'open') meta += '<span class="chip roll">Rolled over ×' + t.rollovers + '</span>';
+      if (t.parentId) meta += '<span class="chip sub">Follow-up</span>';
+      if (t.status === 'done' && t.closedAt) meta += '<span class="chip time">Done ' + esc(fmtTime(t.closedAt)) + '</span>';
+      if (kind === 'tomorrow') meta += '<span class="chip sub">For tomorrow</span>';
+
+      var h = '<div class="' + cls + '" data-id="' + t.id + '">';
+      h += '<div class="ttitle">' + esc(t.title) + '</div>';
+      if (t.detail) h += '<div class="tdetail">' + esc(t.detail) + '</div>';
+      if (meta) h += '<div class="meta">' + meta + '</div>';
+
+      if (t.status === 'done') {
+        h += '<div class="actions"><button class="btn btn-reopen" data-act="reopen" data-id="' + t.id + '">Reopen</button></div>';
+      } else {
+        h += '<div class="actions">';
+        h += '<button class="btn btn-complete" data-act="complete" data-id="' + t.id + '"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Complete</button>';
+        h += '<button class="btn btn-sub" data-act="sub" data-id="' + t.id + '"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Subtask</button>';
+        h += '</div>';
+      }
+      // inline subtask form target
+      h += '<div class="subform" id="sf_' + t.id + '"><div class="lab">New follow-up for tomorrow</div>';
+      h += '<input type="text" class="sf-title" placeholder="Follow-up task…" />';
+      h += '<div class="row"><button class="btn btn-ghost sf-cancel">Cancel</button><button class="btn btn-sub sf-save" style="flex:1">Add for tomorrow</button></div></div>';
+      h += '</div>';
+      return h;
+    }
+
+    function bindCards() {
+      var btns = document.querySelectorAll('[data-act]');
+      btns.forEach(function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute('data-id');
+          var act = b.getAttribute('data-act');
+          if (act === 'complete') return completeTask(id);
+          if (act === 'reopen') return reopenTask(id);
+          if (act === 'sub') return toggleSubform(id);
+        };
+      });
+      document.querySelectorAll('.subform').forEach(function (sf) {
+        var id = sf.id.slice(3);
+        sf.querySelector('.sf-cancel').onclick = function () { sf.classList.remove('open'); };
+        sf.querySelector('.sf-save').onclick = function () {
+          var inp = sf.querySelector('.sf-title');
+          var v = (inp.value || '').trim();
+          if (!v) { inp.focus(); return; }
+          addTask(v, '', 'tomorrow', id);
+          sf.classList.remove('open'); inp.value = '';
+        };
+      });
+    }
+
+    function toggleSubform(id) {
+      var sf = $('sf_' + id);
+      var wasOpen = sf.classList.contains('open');
+      document.querySelectorAll('.subform.open').forEach(function (x) { x.classList.remove('open'); });
+      if (!wasOpen) { sf.classList.add('open'); sf.querySelector('.sf-title').focus(); }
+    }
+
+    function completeTask(id) {
+      var t = state.items.find(function (x) { return x.id === id; });
+      toast('Completed ✓');
+      mutate('?action=complete', { id: id }, function () {
+        if (t) { t.status = 'done'; t.closedAt = new Date().toISOString(); }
+      }).catch(function () {});
+    }
+    function reopenTask(id) {
+      var t = state.items.find(function (x) { return x.id === id; });
+      mutate('?action=reopen', { id: id }, function () {
+        if (t) { t.status = 'open'; t.closedAt = null; if (t.date < state.today) t.date = state.today; }
+      }).catch(function () {});
+    }
+    function addTask(title, detail, date, parent) {
+      toast(date === 'tomorrow' ? 'Added for tomorrow' : 'Task added');
+      mutate('?action=add', { title: title, detail: detail || '', date: date, parentId: parent || null }).catch(function () {});
+    }
+
+    /* ---------- Add sheet ---------- */
+    function openSheet(parent) {
+      parentId = parent || null;
+      $('taskTitle').value = ''; $('taskDetail').value = '';
+      if (parentId) {
+        var p = state.items.find(function (x) { return x.id === parentId; });
+        $('sheetTitle').textContent = 'Follow-up task';
+        $('parentNote').style.display = 'block';
+        $('parentNote').textContent = 'Follows: ' + (p ? p.title : '');
+        pendingDate = 'tomorrow';
+      } else {
+        $('sheetTitle').textContent = 'New Task';
+        $('parentNote').style.display = 'none';
+        pendingDate = 'today';
+      }
+      updateSeg();
+      $('sheet').classList.add('open');
+      setTimeout(function () { $('taskTitle').focus(); }, 50);
+    }
+    function closeSheet() { $('sheet').classList.remove('open'); }
+    function updateSeg() {
+      document.querySelectorAll('#dateSeg button').forEach(function (b) {
+        b.classList.toggle('on', b.getAttribute('data-date') === pendingDate);
+      });
+    }
+    document.querySelectorAll('#dateSeg button').forEach(function (b) {
+      b.onclick = function () { pendingDate = b.getAttribute('data-date'); updateSeg(); };
+    });
+    $('addBtn').onclick = function () { openSheet(null); };
+    $('sheetCancel').onclick = closeSheet;
+    $('sheetScrim').onclick = closeSheet;
+    $('sheetSave').onclick = function () {
+      var v = ($('taskTitle').value || '').trim();
+      if (!v) { $('taskTitle').focus(); return; }
+      addTask(v, $('taskDetail').value, pendingDate, parentId);
+      closeSheet();
+    };
+
+    /* ---------- Focus / flow mode ---------- */
+    function openFocus() {
+      var items = openTodays();
+      if (!items.length) { toast('Nothing open — you’re clear!'); return; }
+      focusIdx = 0;
+      $('focus').classList.add('open');
+      renderFocus();
+    }
+    function closeFocus() { $('focus').classList.remove('open'); render(); }
+    function focusList() { return openTodays(); }
+
+    function renderFocus() {
+      var items = focusList();
+      if (!items.length) {
+        $('focus').querySelector('.focus-body').innerHTML =
+          '<div class="empty"><div class="allclear"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="big">Day complete</div><div>Every task is handled. ☀️</div><button class="bigbtn primary" style="margin-top:18px" onclick="document.getElementById(\'focusClose\').click()">Done</button></div>';
+        $('focusStep').textContent = 'ALL DONE';
+        return;
+      }
+      if (focusIdx >= items.length) focusIdx = items.length - 1;
+      if (focusIdx < 0) focusIdx = 0;
+      var t = items[focusIdx];
+      $('focusStep').textContent = 'TASK ' + (focusIdx + 1) + ' / ' + items.length;
+      $('focusTitle').textContent = t.title;
+      $('focusDetail').textContent = t.detail || '';
+      $('focusDetail').style.display = t.detail ? 'block' : 'none';
+      var meta = '';
+      if (t.rollovers > 0) meta += '<span class="chip roll">Rolled over ×' + t.rollovers + '</span>';
+      if (t.parentId) meta += '<span class="chip sub">Follow-up</span>';
+      $('focusMeta').innerHTML = meta;
+      var dots = '';
+      items.forEach(function (_, i) { dots += '<span class="dot ' + (i === focusIdx ? 'cur' : '') + '"></span>'; });
+      $('focusDots').innerHTML = dots;
+      $('focusComplete').dataset.id = t.id;
+      $('focusSub').dataset.id = t.id;
+    }
+    $('focusBtn').onclick = openFocus;
+    $('focusClose').onclick = closeFocus;
+    $('focusPrev').onclick = function () { focusIdx--; renderFocus(); };
+    $('focusNext').onclick = function () { focusIdx++; renderFocus(); };
+    $('focusComplete').onclick = function () {
+      var id = $('focusComplete').dataset.id;
+      completeTask(id);
+      // advance within the (now shorter) open list
+      setTimeout(renderFocus, 30);
+    };
+    $('focusSub').onclick = function () {
+      var id = $('focusSub').dataset.id;
+      var v = prompt('Follow-up task for tomorrow:');
+      if (v && v.trim()) { addTask(v.trim(), '', 'tomorrow', id); }
+    };
+
+    // Re-render focus when state updates while open
+    var _origRender = render;
+    render = function () { _origRender(); if ($('focus').classList.contains('open')) renderFocus(); };
+
+    /* ---------- Lifecycle ---------- */
+    window.addEventListener('online', function () { setOffline(false); load(); });
+    window.addEventListener('offline', function () { setOffline(true); });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+
+    // Pull-to-refresh-ish: refresh on focus
+    window.addEventListener('focus', load);
+
+    load();
+    // gentle background refresh every 60s to catch rollover at midnight / multi-device
+    setInterval(load, 60000);
+  })();
+  </script>
+</body>
+</html>
