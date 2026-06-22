@@ -191,6 +191,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [photoMode, setPhotoMode] = useState(() => { try { return localStorage.getItem("scanner_photomode") === "1" } catch (e) { return false } })
   const [editing, setEditing] = useState(null)
   const [viewScan, setViewScan] = useState(null) // tapped panel — detail viewer
+  const [qcScanning, setQcScanning] = useState(false) // re-scan in progress in the carousel
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
 
   const fileRef = useRef(null)
@@ -411,6 +412,7 @@ export default function PanelScanner({ onExit, portalUser }) {
     const ni = idx + delta
     if (ni < 0 || ni >= list.length) return
     const s = list[ni]
+    setQcScanning(false)
     setViewScan(Object.assign({ _fromRow: s.rowId }, s))
   }
 
@@ -434,23 +436,31 @@ export default function PanelScanner({ onExit, portalUser }) {
     setBusy(false)
   }
 
-  // Mark the current panel QC-verified (writes QC + barcode image to the sheet),
-  // then advance to the next panel for a fast review pass.
-  async function qcVerify(advance) {
+  // QC: a second scan of the same barcode. Match → Pass, mismatch → Fail. Stores
+  // the second scan and the result; writes both to the sheet. Pass advances.
+  async function handleQcHit(serial) {
     if (!viewScan) return
+    setQcScanning(false)
+    const scanned = String(serial || "").trim()
+    const orig = String(viewScan.serial || "").trim()
+    const pass = !!scanned && !!orig && scanned === orig
+    const result = pass ? "Pass" : "Fail"
     setBusy(true)
     try {
-      await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: viewScan.id, fromRow: viewScan._fromRow, patch: { qc: true, qcBy: op, qcAt: Date.now() } }) })
+      await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: viewScan.id, fromRow: viewScan._fromRow, patch: { qc: true, qcSerial: scanned, qcResult: result, qcBy: op, qcAt: Date.now() } }) })
       const fresh = await fetch(API + "?row=" + rowId, { cache: "no-store" }).then((r) => r.json()).catch(() => null)
       if (fresh) setRowDoc({ scans: fresh.scans || [] })
       fetchSummary()
-      flash("QC verified ✓", "ok")
-      if (advance) {
+      if (pass) {
+        scanFeedback(); flash("QC Pass ✓", "ok")
         const list = sortScans((fresh && fresh.scans) || rowDoc.scans)
         const idx = list.findIndex((s) => s.id === viewScan.id)
         if (idx >= 0 && idx < list.length - 1) { const s = list[idx + 1]; setViewScan(Object.assign({ _fromRow: s.rowId }, s)) }
         else setViewScan(null)
-      } else { setViewScan((v) => v ? Object.assign({}, v, { qc: true, qcBy: op }) : v) }
+      } else {
+        flash("QC FAIL — scan didn't match", "err")
+        setViewScan((v) => v ? Object.assign({}, v, { qc: true, qcSerial: scanned, qcResult: "Fail", qcBy: op }) : v)
+      }
     } catch (e) { flash("QC save failed", "err") }
     setBusy(false)
   }
@@ -531,7 +541,7 @@ export default function PanelScanner({ onExit, portalUser }) {
       <Title t={proj.name.toUpperCase()} sub="Sections" />
       {qc.total > 0 && (
         <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: qc.done ? "rgba(34,197,94,.1)" : "rgba(249,115,22,.08)", border: "1px solid " + (qc.done ? "rgba(34,197,94,.4)" : "rgba(249,115,22,.35)") }}>
-          <div style={{ ...NB, fontSize: 15, color: qc.done ? "#15803d" : "#b45309" }}><strong>QC review:</strong> {qc.ver} / {qc.target} verified <span style={{ color: "#999" }}>(10% of {qc.total} panels){qc.done ? " · target met ✓" : ""}</span></div>
+          <div style={{ ...NB, fontSize: 15, color: qc.done ? "#15803d" : "#b45309" }}><strong>QC review:</strong> {qc.ver} / {qc.target} checked <span style={{ color: "#999" }}>(10% of {qc.total} panels){qc.done ? " · target met ✓" : ""}</span></div>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "repeat(3,1fr)", gap: m ? 10 : 14 }}>
@@ -702,7 +712,7 @@ export default function PanelScanner({ onExit, portalUser }) {
         const vlist = sortScans(rowDoc.scans)
         const vidx = vlist.findIndex((s) => s.id === viewScan.id)
         return (
-          <Modal m={m} title={"Verify · " + (vidx >= 0 ? vidx + 1 : "?") + " of " + vlist.length} onClose={() => setViewScan(null)}>
+          <Modal m={m} title={"Verify · " + (vidx >= 0 ? vidx + 1 : "?") + " of " + vlist.length} onClose={() => { setQcScanning(false); setViewScan(null) }}>
             {/* prev / next */}
             <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
               <button disabled={vidx <= 0} onClick={() => viewGo(-1)} style={{ ...BTN_GHOST, flex: 1, opacity: vidx <= 0 ? .4 : 1 }}>← Prev</button>
@@ -715,8 +725,21 @@ export default function PanelScanner({ onExit, portalUser }) {
               <div style={{ flex: 2 }}><label style={lbl}>SERIAL</label><input value={viewScan.serial || ""} onChange={(e) => setViewScan({ ...viewScan, serial: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
               <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={viewScan.panel} onChange={(e) => setViewScan({ ...viewScan, panel: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
             </div>
-            <div style={{ ...NB, fontSize: 13, color: viewScan.qc ? "#16a34a" : "#999", margin: "2px 0 12px" }}>{viewScan.qc ? "✓ QC VERIFIED" + (viewScan.qcBy ? " · " + viewScan.qcBy : "") : "Not QC verified"} · {fmtTime(viewScan.ts)} · {viewScan.by}</div>
-            <button disabled={busy} onClick={() => qcVerify(true)} style={{ ...BTN, width: "100%", marginBottom: 10, background: viewScan.qc ? "#16a34a" : A, color: viewScan.qc ? "#fff" : "#1a1206", opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : (viewScan.qc ? "✓ QC Verified — Next →" : "✓ QC Verified & Next →")}</button>
+            <div style={{ ...NB, fontSize: 13, color: viewScan.qcResult === "Pass" ? "#16a34a" : viewScan.qcResult === "Fail" ? "#dc2626" : "#999", margin: "2px 0 12px" }}>
+              {viewScan.qcResult === "Pass" ? "✓ QC PASS" + (viewScan.qcBy ? " · " + viewScan.qcBy : "") : viewScan.qcResult === "Fail" ? "✗ QC FAIL — scanned " + (viewScan.qcSerial || "?") : "Not QC checked"} · {fmtTime(viewScan.ts)} · {viewScan.by}
+            </div>
+            {qcScanning ? (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ position: "relative", width: "100%", height: 120, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+                  <LiveScanner paused={busy} steady={false} onHit={(serial) => handleQcHit(serial)} onError={() => { setQcScanning(false); flash("Camera unavailable", "err") }} />
+                  <div style={{ position: "absolute", left: "6%", right: "6%", top: "50%", height: 2, background: "rgba(249,115,22,.95)" }} />
+                </div>
+                <div style={{ ...NB, fontSize: 12, color: "#999", margin: "8px 0", textAlign: "center" }}>Scan the same barcode again to verify</div>
+                <button onClick={() => setQcScanning(false)} style={{ ...BTN_GHOST, width: "100%" }}>Cancel QC Scan</button>
+              </div>
+            ) : (
+              <button disabled={busy} onClick={() => { unlockAudio(); setQcScanning(true) }} style={{ ...BTN, width: "100%", marginBottom: 10, opacity: busy ? .6 : 1 }}>🔁 QC Scan (scan again)</button>
+            )}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button disabled={busy} onClick={() => saveView(true)} style={{ ...BTN_GHOST, flex: m ? "1 1 100%" : 2 }}>{busy ? "Saving…" : "Save Edits & Next →"}</button>
               <button disabled={busy} onClick={() => saveView(false)} style={{ ...BTN_GHOST, flex: 1 }}>Save Edits</button>
@@ -1063,8 +1086,8 @@ const APPS_SCRIPT = `function doPost(e){
     } finally { clock.releaseLock(); }
   }
   var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
-  var img = (d.qc && d.photo) ? '=IMAGE("' + d.photo + '")' : '';
-  var row = [d.section,d.row,d.panel,d.serial,d.by,d.project,d.timestamp,d.qc,img,d.id];
+  var img = (d.qc === 'Pass' && d.photo) ? '=IMAGE("' + d.photo + '")' : '';
+  var row = [d.section,d.row,d.panel,d.serial,d.by,d.project,d.timestamp,d.qcSerial,d.qc,img,d.id];
   // Hold the lock only for the actual write, so appends run with minimal contention.
   var wlock = LockService.getScriptLock();
   try { wlock.waitLock(45000); } catch (err) { return ContentService.createTextOutput('busy'); }
@@ -1072,15 +1095,15 @@ const APPS_SCRIPT = `function doPost(e){
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
-    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','By','Project','Timestamp','QC Verified','QC Photo','ID']); try { sh.hideColumns(10); sh.setColumnWidth(9,120); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {} }
+    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','By','Project','Timestamp','QC Scan','QC Verified','QC Photo','ID']); try { sh.hideColumns(11); sh.setColumnWidth(10,120); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {} }
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
-        var ids = sh.getRange(2,10,n,1).getValues();
+        var ids = sh.getRange(2,11,n,1).getValues();
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(d.id)) {
             if (d.mode === 'delete') sh.deleteRow(i + 2);
-            else { sh.getRange(i+2,1,1,10).setValues([row]); if (img) { try { sh.setRowHeight(i+2,90) } catch (e2) {} } }
+            else { sh.getRange(i+2,1,1,11).setValues([row]); if (img) { try { sh.setRowHeight(i+2,90) } catch (e2) {} } }
             return ContentService.createTextOutput('ok');
           }
         }
