@@ -33,11 +33,24 @@ body{background:${BG};color:${TEXT};font-family:'Barlow Condensed',sans-serif;-w
 /* ── helpers ───────────────────────────────────────────────────────── */
 const clone = (o) => JSON.parse(JSON.stringify(o))
 const uid = (p) => (p || 'x') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-const isIncome = (sec) => sec && sec.kind === 'income'
-// ensure older saved docs (no `kind`) still work — default sections to expense
-const normalize = (d) => { if (d && Array.isArray(d.sections)) d.sections.forEach((s) => { if (s.kind !== 'income') s.kind = 'expense' }); return d }
+const isBilled = (it) => it && it.type === 'billed'
+// migrate older saved docs: every line item gets a type ('cost' default; items in a
+// legacy income-section become 'billed'). Section-level `kind` is dropped.
+const normalize = (d) => {
+  if (d && Array.isArray(d.sections)) d.sections.forEach((s) => {
+    const billedDefault = s.kind === 'income'
+    ;(s.subsections || []).forEach((sub) => (sub.items || []).forEach((it) => {
+      if (it.type !== 'billed' && it.type !== 'cost') it.type = billedDefault ? 'billed' : 'cost'
+    }))
+    delete s.kind
+  })
+  return d
+}
 const sum = (a) => (a || []).reduce((s, v) => s + (Number(v) || 0), 0)
 const colSum = (rows, i) => rows.reduce((s, r) => s + (Number(r.values[i]) || 0), 0)
+// per-month cost / billed split for any list of items
+const colCost = (items, i) => items.reduce((s, it) => s + (isBilled(it) ? 0 : (Number(it.values[i]) || 0)), 0)
+const colBilled = (items, i) => items.reduce((s, it) => s + (isBilled(it) ? (Number(it.values[i]) || 0) : 0), 0)
 
 function fmtMoney(v, dash = '–') {
   const n = Number(v) || 0
@@ -103,18 +116,19 @@ function exportPdf(doc, calc) {
     pdf.setDrawColor('#e2ddd5'); pdf.line(M, y + 13, PW - M, y + 13)
     y += 13
   }
+  const GREENP = '#15803d'
   summaryRow('Deposit Date', doc.depositDates, '', { raw: true, color: '#777' })
-  summaryRow('Expected Cash In', calc.monthIn, calc.totalIn, { bold: true, color: '#15803d' })
-  summaryRow('Cash Out (Spend)', calc.monthOut, calc.totalOut, { bold: true })
-  summaryRow('Net Cash Flow', calc.net, calc.totalIn - calc.totalOut, { color: '#5a5a5a', cellColor: (v) => v < 0 ? RED : (v > 0 ? '#15803d' : '#5a5a5a') })
-  summaryRow('Remaining Balance', calc.remaining, calc.ending, { color: '#5a5a5a', cellColor: (v) => v < 0 ? RED : '#15803d' })
+  summaryRow('Total Billed', calc.monthBilled, calc.totalBilled, { bold: true, color: GREENP })
+  summaryRow('Total Cost', calc.monthCost, calc.totalCost, { bold: true })
+  summaryRow('Subtotal (Net)', calc.net, calc.subtotal, { color: '#5a5a5a', cellColor: (v) => v < 0 ? RED : (v > 0 ? GREENP : '#5a5a5a') })
+  summaryRow('Remaining Balance', calc.remaining, calc.ending, { color: '#5a5a5a', cellColor: (v) => v < 0 ? RED : GREENP })
   y += 8
 
   // ── detail ──
   doc.sections.forEach((sec) => {
-    const income = sec.kind === 'income'
+    const allItems = sec.subsections.reduce((a, sub) => a.concat(sub.items), [])
     newPageIf(40)
-    header((income ? '▲ CASH IN — ' : '') + sec.name)
+    header(sec.name)
     sec.subsections.forEach((sub) => {
       newPageIf(26)
       fillRow('#efe9df', 12)
@@ -122,11 +136,12 @@ function exportPdf(doc, calc) {
       y += 12
       sub.items.forEach((it) => {
         newPageIf(12)
-        const opt = it.deferred ? { italic: true, color: GOLD } : {}
-        txt(it.name, cols[0], { size: 6.8, ...opt })
-        txt(it.notes, cols[1], { size: 6.5, color: it.deferred ? GOLD : '#888', italic: it.deferred })
+        const bill = isBilled(it)
+        const opt = it.deferred ? { italic: true, color: GOLD } : (bill ? { color: GREENP } : {})
+        txt((bill ? '[BILLED] ' : '') + it.name, cols[0], { size: 6.8, ...opt })
+        txt(it.notes, cols[1], { size: 6.5, color: it.deferred ? GOLD : (bill ? GREENP : '#888'), italic: it.deferred })
         it.values.forEach((v, i) => txt(fmtMoney(v), cols[2 + i], { size: 6.8, ...opt }))
-        txt(fmtMoney(sum(it.values)), cols[cols.length - 1], { size: 6.8, bold: true, color: it.deferred ? GOLD : '#1a1a2e' })
+        txt(fmtMoney(sum(it.values)), cols[cols.length - 1], { size: 6.8, bold: true, color: it.deferred ? GOLD : (bill ? GREENP : '#1a1a2e') })
         pdf.setDrawColor('#eee'); pdf.line(M, y + 11, PW - M, y + 11)
         y += 11
       })
@@ -138,15 +153,26 @@ function exportPdf(doc, calc) {
       txt(fmtMoney(sum(sub.items.map((it) => sum(it.values)))), cols[cols.length - 1], { bold: true, size: 6.8 })
       y += 12
     })
-    // section total
-    newPageIf(14)
-    const accent = income ? '#15803d' : ORANGE
-    fillRow(income ? '#e7f5ec' : '#fdebd9', 13)
-    const secMonth = months.map((_, i) => sec.subsections.reduce((s, sub) => s + colSum(sub.items, i), 0))
-    txt(sec.name + ' TOTAL' + (income ? ' (IN)' : ''), cols[0], { bold: true, size: 7, color: accent })
-    secMonth.forEach((v, i) => txt(fmtMoney(v), cols[2 + i], { bold: true, size: 7, color: accent }))
-    txt(fmtMoney(sum(secMonth)), cols[cols.length - 1], { bold: true, size: 7, color: accent })
-    y += 17
+    // section roll-up: total cost, total billed, subtotal (net)
+    const secCostM = months.map((_, i) => colCost(allItems, i))
+    const secBilledM = months.map((_, i) => colBilled(allItems, i))
+    const secCostT = sum(secCostM), secBilledT = sum(secBilledM)
+    newPageIf(42)
+    fillRow('#fdebd9', 13)
+    txt(sec.name + ' — TOTAL COST', cols[0], { bold: true, size: 7, color: ORANGE })
+    secCostM.forEach((v, i) => txt(fmtMoney(v), cols[2 + i], { bold: true, size: 7, color: ORANGE }))
+    txt(fmtMoney(secCostT), cols[cols.length - 1], { bold: true, size: 7, color: ORANGE })
+    y += 13
+    fillRow('#e7f5ec', 13)
+    txt(sec.name + ' — TOTAL BILLED', cols[0], { bold: true, size: 7, color: GREENP })
+    secBilledM.forEach((v, i) => txt(fmtMoney(v), cols[2 + i], { bold: true, size: 7, color: GREENP }))
+    txt(fmtMoney(secBilledT), cols[cols.length - 1], { bold: true, size: 7, color: GREENP })
+    y += 13
+    fillRow('#eef1f6', 13)
+    txt(sec.name + ' — SUBTOTAL (NET)', cols[0], { bold: true, size: 7, color: NAVY })
+    secBilledM.forEach((v, i) => { const nv = v - secCostM[i]; txt(fmtMoney(nv), cols[2 + i], { bold: true, size: 7, color: nv < 0 ? RED : (nv > 0 ? GREENP : NAVY) }) })
+    txt(fmtMoney(secBilledT - secCostT), cols[cols.length - 1], { bold: true, size: 7, color: (secBilledT - secCostT) < 0 ? RED : NAVY })
+    y += 18
   })
 
   newPageIf(20)
@@ -269,9 +295,13 @@ export default function CashFlow() {
     const sub = findSub(c, secId, subId); if (!sub) return
     const it = sub.items.find((x) => x.id === itemId); if (it) it.deferred = !it.deferred
   })
-  const addItem = (secId, subId) => mutate((c) => {
+  const addItem = (secId, subId, type = 'cost') => mutate((c) => {
     const sub = findSub(c, secId, subId); if (!sub) return
-    sub.items.push({ id: uid('it'), name: 'New Line Item', notes: '', values: new Array(c.months.length).fill(0), deferred: false })
+    sub.items.push({ id: uid('it'), name: type === 'billed' ? 'Billed / Revenue' : 'New Line Item', notes: '', type, values: new Array(c.months.length).fill(0), deferred: false })
+  })
+  const toggleItemType = (secId, subId, itemId) => mutate((c) => {
+    const sub = findSub(c, secId, subId); if (!sub) return
+    const it = sub.items.find((x) => x.id === itemId); if (it) it.type = isBilled(it) ? 'cost' : 'billed'
   })
   const delItem = (secId, subId, itemId) => mutate((c) => {
     const sub = findSub(c, secId, subId); if (!sub) return
@@ -283,8 +313,7 @@ export default function CashFlow() {
   })
   const renameSub = (secId, subId, name) => mutate((c) => { const sub = findSub(c, secId, subId); if (sub) sub.name = name })
   const delSub = (secId, subId) => mutate((c) => { const s = c.sections.find((x) => x.id === secId); if (s) s.subsections = s.subsections.filter((x) => x.id !== subId) })
-  const addSection = (kind = 'expense') => mutate((c) => { c.sections.push({ id: uid('sec'), name: kind === 'income' ? 'NEW CASH-IN SECTION' : 'NEW SECTION', kind, subsections: [{ id: uid('sub'), name: 'NEW SUBSECTION', items: [{ id: uid('it'), name: 'New Line Item', notes: '', values: new Array(c.months.length).fill(0), deferred: false }] }] }) })
-  const toggleKind = (secId) => mutate((c) => { const s = c.sections.find((x) => x.id === secId); if (s) s.kind = isIncome(s) ? 'expense' : 'income' })
+  const addSection = () => mutate((c) => { c.sections.push({ id: uid('sec'), name: 'NEW SECTION', subsections: [{ id: uid('sub'), name: 'NEW SUBSECTION', items: [{ id: uid('it'), name: 'New Line Item', notes: '', type: 'cost', values: new Array(c.months.length).fill(0), deferred: false }] }] }) })
   const renameSection = (secId, name) => mutate((c) => { const s = c.sections.find((x) => x.id === secId); if (s) s.name = name })
   const delSection = (secId) => mutate((c) => { c.sections = c.sections.filter((x) => x.id !== secId) })
   const setMeta = (field, val) => mutate((c) => { c[field] = val })
@@ -294,21 +323,18 @@ export default function CashFlow() {
   const calc = useMemo(() => {
     if (!doc) return null
     const N = doc.months.length
-    const monthIn = new Array(N).fill(0), monthOut = new Array(N).fill(0)
-    doc.sections.forEach((sec) => {
-      const bucket = isIncome(sec) ? monthIn : monthOut
-      sec.subsections.forEach((sub) => sub.items.forEach((it) => {
-        for (let i = 0; i < N; i++) bucket[i] += Number(it.values[i]) || 0
-      }))
-    })
-    const net = monthIn.map((v, i) => v - monthOut[i])
-    const cumOut = []; const remaining = []
-    let ro = 0, bal = doc.startingCapital || 0
-    for (let i = 0; i < N; i++) { ro += monthOut[i]; cumOut.push(ro); bal += net[i]; remaining.push(bal) }
-    const totalIn = monthIn.reduce((s, v) => s + v, 0)
-    const totalOut = monthOut.reduce((s, v) => s + v, 0)
-    const hasIncome = doc.sections.some(isIncome)
-    return { monthIn, monthOut, net, cumOut, remaining, totalIn, totalOut, grand: totalOut, ending: remaining[N - 1], hasIncome }
+    const monthBilled = new Array(N).fill(0), monthCost = new Array(N).fill(0)
+    doc.sections.forEach((sec) => sec.subsections.forEach((sub) => sub.items.forEach((it) => {
+      const bucket = isBilled(it) ? monthBilled : monthCost
+      for (let i = 0; i < N; i++) bucket[i] += Number(it.values[i]) || 0
+    })))
+    const net = monthBilled.map((v, i) => v - monthCost[i]) // billed − cost
+    const remaining = []
+    let bal = doc.startingCapital || 0
+    for (let i = 0; i < N; i++) { bal += net[i]; remaining.push(bal) }
+    const totalBilled = monthBilled.reduce((s, v) => s + v, 0)
+    const totalCost = monthCost.reduce((s, v) => s + v, 0)
+    return { monthBilled, monthCost, net, remaining, totalBilled, totalCost, subtotal: totalBilled - totalCost, ending: remaining[N - 1] }
   }, [doc])
 
   if (!role) return (<><style>{STYLE}</style><PinGate onUnlock={unlock} /></>)
@@ -371,8 +397,8 @@ export default function CashFlow() {
           <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4,1fr)', gap: 12, marginTop: 16 }}>
             {[
               ['Starting Capital', fmtMoney(doc.startingCapital, '$0'), NAVY, true],
-              ['Total Cash In', fmtMoney(calc.totalIn), GREEN],
-              ['Total Cash Out', fmtMoney(calc.totalOut), ORANGE],
+              ['Total Billed', fmtMoney(calc.totalBilled), GREEN],
+              ['Total Cost', fmtMoney(calc.totalCost), ORANGE],
               ['Ending Balance', fmtMoney(calc.ending, '$0'), calc.ending < 0 ? RED : GREEN],
             ].map(([label, val, color, capEdit], i) => (
               <div key={i} style={{ background: CARD, borderRadius: 10, padding: '14px 16px', border: '1px solid ' + BORDER }}>
@@ -400,22 +426,22 @@ export default function CashFlow() {
                     <td style={numTd} />
                   </tr>
                   <tr style={{ background: '#f1f8f2' }}>
-                    <td style={{ ...td, position: 'sticky', left: 0, background: '#f1f8f2', fontWeight: 700, color: GREEN }}>Expected Cash In</td>
-                    <td style={{ ...td, color: DIM, fontSize: 11 }}>Inflows</td>
-                    {calc.monthIn.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 600, color: v ? GREEN : DIM }}>{fmtMoney(v)}</td>)}
-                    <td style={{ ...numTd, fontWeight: 700, color: GREEN }}>{fmtMoney(calc.totalIn)}</td>
+                    <td style={{ ...td, position: 'sticky', left: 0, background: '#f1f8f2', fontWeight: 700, color: GREEN }}>Total Billed</td>
+                    <td style={{ ...td, color: DIM, fontSize: 11 }}>Cash in</td>
+                    {calc.monthBilled.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 600, color: v ? GREEN : DIM }}>{fmtMoney(v)}</td>)}
+                    <td style={{ ...numTd, fontWeight: 700, color: GREEN }}>{fmtMoney(calc.totalBilled)}</td>
                   </tr>
                   <tr style={{ background: '#fdf6ee' }}>
-                    <td style={{ ...td, position: 'sticky', left: 0, background: '#fdf6ee', fontWeight: 700, color: NAVY }}>Cash Out (Spend)</td>
-                    <td style={{ ...td, color: DIM, fontSize: 11 }}>Outflows</td>
-                    {calc.monthOut.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700 }}>{fmtMoney(v)}</td>)}
-                    <td style={{ ...numTd, fontWeight: 700, color: ORANGE }}>{fmtMoney(calc.totalOut)}</td>
+                    <td style={{ ...td, position: 'sticky', left: 0, background: '#fdf6ee', fontWeight: 700, color: NAVY }}>Total Cost</td>
+                    <td style={{ ...td, color: DIM, fontSize: 11 }}>Cash out</td>
+                    {calc.monthCost.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700 }}>{fmtMoney(v)}</td>)}
+                    <td style={{ ...numTd, fontWeight: 700, color: ORANGE }}>{fmtMoney(calc.totalCost)}</td>
                   </tr>
                   <tr>
-                    <td style={{ ...td, position: 'sticky', left: 0, background: CARD, fontWeight: 600 }}>Net Cash Flow</td>
-                    <td style={{ ...td, color: DIM, fontSize: 11 }}>In − Out</td>
-                    {calc.net.map((v, i) => <td key={i} style={{ ...numTd, color: v < 0 ? RED : (v > 0 ? GREEN : MID) }}>{fmtMoney(v)}</td>)}
-                    <td style={{ ...numTd, fontWeight: 700, color: (calc.totalIn - calc.totalOut) < 0 ? RED : GREEN }}>{fmtMoney(calc.totalIn - calc.totalOut)}</td>
+                    <td style={{ ...td, position: 'sticky', left: 0, background: CARD, fontWeight: 700 }}>Subtotal (Net)</td>
+                    <td style={{ ...td, color: DIM, fontSize: 11 }}>Billed − Cost</td>
+                    {calc.net.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 600, color: v < 0 ? RED : (v > 0 ? GREEN : MID) }}>{fmtMoney(v)}</td>)}
+                    <td style={{ ...numTd, fontWeight: 700, color: calc.subtotal < 0 ? RED : GREEN }}>{fmtMoney(calc.subtotal)}</td>
                   </tr>
                   <tr style={{ background: '#f7f9f7' }}>
                     <td style={{ ...td, position: 'sticky', left: 0, background: '#f7f9f7', fontWeight: 700 }}>Remaining Balance</td>
@@ -436,29 +462,23 @@ export default function CashFlow() {
                 </thead>
 
                 {doc.sections.map((sec) => {
-                  const secMonth = doc.months.map((_, i) => sec.subsections.reduce((s, sub) => s + colSum(sub.items, i), 0))
-                  const secTotal = sum(secMonth)
-                  const income = isIncome(sec)
-                  const secBg = income ? '#15543b' : NAVY        // green header for cash-in sections
-                  const secAccent = income ? GREEN : ORANGE      // totals accent
+                  const allItems = sec.subsections.reduce((a, sub) => a.concat(sub.items), [])
+                  const secCostMonth = doc.months.map((_, i) => colCost(allItems, i))
+                  const secBilledMonth = doc.months.map((_, i) => colBilled(allItems, i))
+                  const secNetMonth = secBilledMonth.map((v, i) => v - secCostMonth[i])
+                  const secCost = sum(secCostMonth), secBilled = sum(secBilledMonth)
                   return (
                     <tbody key={sec.id}>
                       {/* section header */}
-                      <tr style={{ background: secBg }}>
-                        <td style={{ padding: '7px 8px', position: 'sticky', left: 0, background: secBg, zIndex: 1 }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ ...NB, fontSize: 9.5, fontWeight: 700, letterSpacing: 1, padding: '2px 7px', borderRadius: 4, background: income ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.14)', color: '#fff', whiteSpace: 'nowrap' }}>{income ? '▲ CASH IN' : '▼ CASH OUT'}</span>
-                            {editable
-                              ? <input className="cf-input" value={sec.name} onChange={(e) => renameSection(sec.id, e.target.value)} style={{ ...NB, fontSize: 14, fontWeight: 700, letterSpacing: .5, color: '#fff', textTransform: 'uppercase' }} />
-                              : <span style={{ ...NB, fontSize: 14, fontWeight: 700, letterSpacing: .5, color: '#fff', textTransform: 'uppercase' }}>{sec.name}</span>}
-                          </span>
+                      <tr style={{ background: NAVY }}>
+                        <td style={{ padding: '7px 8px', position: 'sticky', left: 0, background: NAVY, zIndex: 1 }}>
+                          {editable
+                            ? <input className="cf-input" value={sec.name} onChange={(e) => renameSection(sec.id, e.target.value)} style={{ ...NB, fontSize: 14, fontWeight: 700, letterSpacing: .5, color: '#fff', textTransform: 'uppercase' }} />
+                            : <span style={{ ...NB, fontSize: 14, fontWeight: 700, letterSpacing: .5, color: '#fff', textTransform: 'uppercase' }}>{sec.name}</span>}
                         </td>
-                        <td colSpan={N + 1} style={{ background: secBg }} />
-                        <td style={{ background: secBg, textAlign: 'right', padding: '0 6px', whiteSpace: 'nowrap' }} className="cf-noprint">
-                          {editable && <>
-                            <IconBtn title={income ? 'Switch to Cash Out (expense)' : 'Switch to Cash In (income)'} color="#fff" onClick={() => toggleKind(sec.id)}>⇄</IconBtn>{' '}
-                            <IconBtn title="Delete section" color="#ffb4a8" onClick={() => { if (confirm('Delete section "' + sec.name + '" and all its items?')) delSection(sec.id) }}>✕</IconBtn>
-                          </>}
+                        <td colSpan={N + 1} style={{ background: NAVY }} />
+                        <td style={{ background: NAVY, textAlign: 'right', padding: '0 6px', whiteSpace: 'nowrap' }} className="cf-noprint">
+                          {editable && <IconBtn title="Delete section" color="#ffb4a8" onClick={() => { if (confirm('Delete section "' + sec.name + '" and all its items?')) delSection(sec.id) }}>✕</IconBtn>}
                         </td>
                       </tr>
 
@@ -481,16 +501,25 @@ export default function CashFlow() {
 
                             {/* items */}
                             {sub.items.map((it) => {
-                              const itColor = it.deferred ? GOLD : TEXT
-                              const itStyle = it.deferred ? { color: GOLD, fontStyle: 'italic' } : { color: TEXT }
+                              const billed = isBilled(it)
+                              const itColor = it.deferred ? GOLD : (billed ? GREEN : TEXT)
+                              const itStyle = { color: itColor, fontStyle: it.deferred ? 'italic' : 'normal' }
+                              const chip = (
+                                <span title={editable ? 'Click to switch Cost / Billed' : (billed ? 'Billed (cash in)' : 'Cost (cash out)')}
+                                  onClick={editable ? () => toggleItemType(sec.id, sub.id, it.id) : undefined}
+                                  style={{ ...NB, fontSize: 9, fontWeight: 700, letterSpacing: .5, padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap', cursor: editable ? 'pointer' : 'default', color: billed ? '#0f6b3d' : '#8a6a00', background: billed ? '#d8f0e0' : '#f3ead2', border: '1px solid ' + (billed ? '#aedcbf' : '#e3d2a6') }}>
+                                  {billed ? 'BILLED' : 'COST'}
+                                </span>
+                              )
                               return (
                                 <tr key={it.id} className="cf-row">
-                                  <td style={{ ...td, position: 'sticky', left: 0, background: CARD, ...itStyle, minWidth: mob ? 150 : 230 }}>
+                                  <td style={{ ...td, position: 'sticky', left: 0, background: CARD, ...itStyle, minWidth: mob ? 160 : 250 }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                       {editable && (
                                         <button className="cf-rowdel cf-btn cf-noprint" title="Delete line item" onClick={() => delItem(sec.id, sub.id, it.id)}
                                           style={{ opacity: 0, background: 'transparent', color: RED, fontSize: 13, padding: 0, lineHeight: 1, transition: 'opacity .15s' }}>✕</button>
                                       )}
+                                      {(editable || billed) && chip}
                                       {editable
                                         ? <input className="cf-input" value={it.name} onChange={(e) => setItemField(sec.id, sub.id, it.id, 'name', e.target.value)} style={{ ...itStyle, fontSize: 13 }} />
                                         : <span>{it.name}</span>}
@@ -517,7 +546,10 @@ export default function CashFlow() {
                             {editable && (
                               <tr className="cf-noprint">
                                 <td colSpan={N + 3} style={{ ...td, borderBottom: '1px solid #eee', background: '#fcfbf9' }}>
-                                  <button className="cf-btn" onClick={() => addItem(sec.id, sub.id)} style={{ background: 'transparent', color: ORANGE, fontSize: 12, padding: '2px 6px', border: '1px dashed ' + ORANGE, borderRadius: 5 }}>+ Add line item</button>
+                                  <span style={{ display: 'inline-flex', gap: 8 }}>
+                                    <button className="cf-btn" onClick={() => addItem(sec.id, sub.id, 'cost')} style={{ background: 'transparent', color: ORANGE, fontSize: 12, padding: '2px 8px', border: '1px dashed ' + ORANGE, borderRadius: 5 }}>+ Cost line</button>
+                                    <button className="cf-btn" onClick={() => addItem(sec.id, sub.id, 'billed')} style={{ background: 'transparent', color: GREEN, fontSize: 12, padding: '2px 8px', border: '1px dashed ' + GREEN, borderRadius: 5 }}>+ Billed line</button>
+                                  </span>
                                 </td>
                               </tr>
                             )}
@@ -542,14 +574,26 @@ export default function CashFlow() {
                         </tr>
                       )}
 
-                      {/* section total */}
-                      <tr style={{ background: income ? '#e7f5ec' : '#fdebd9' }}>
-                        <td style={{ ...td, position: 'sticky', left: 0, background: income ? '#e7f5ec' : '#fdebd9', fontWeight: 700, color: secAccent, fontSize: 13 }}>{sec.name} TOTAL {income ? '(IN)' : ''}</td>
-                        <td style={{ ...td, background: income ? '#e7f5ec' : '#fdebd9' }} />
-                        {secMonth.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700, color: secAccent, fontSize: 13 }}>{fmtMoney(v)}</td>)}
-                        <td style={{ ...numTd, fontWeight: 700, color: secAccent, fontSize: 13 }}>{fmtMoney(secTotal)}</td>
+                      {/* section roll-up: total cost, total billed, subtotal (net) */}
+                      <tr style={{ background: '#fdebd9' }}>
+                        <td style={{ ...td, position: 'sticky', left: 0, background: '#fdebd9', fontWeight: 700, color: ORANGE, fontSize: 12.5 }}>{sec.name} — TOTAL COST</td>
+                        <td style={{ ...td, background: '#fdebd9' }} />
+                        {secCostMonth.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700, color: ORANGE, fontSize: 12.5 }}>{fmtMoney(v)}</td>)}
+                        <td style={{ ...numTd, fontWeight: 700, color: ORANGE, fontSize: 12.5 }}>{fmtMoney(secCost)}</td>
                       </tr>
-                      <tr><td colSpan={N + 3} style={{ height: 10, background: BG }} /></tr>
+                      <tr style={{ background: '#e7f5ec' }}>
+                        <td style={{ ...td, position: 'sticky', left: 0, background: '#e7f5ec', fontWeight: 700, color: GREEN, fontSize: 12.5 }}>{sec.name} — TOTAL BILLED</td>
+                        <td style={{ ...td, background: '#e7f5ec' }} />
+                        {secBilledMonth.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700, color: GREEN, fontSize: 12.5 }}>{fmtMoney(v)}</td>)}
+                        <td style={{ ...numTd, fontWeight: 700, color: GREEN, fontSize: 12.5 }}>{fmtMoney(secBilled)}</td>
+                      </tr>
+                      <tr style={{ background: '#eef1f6' }}>
+                        <td style={{ ...td, position: 'sticky', left: 0, background: '#eef1f6', fontWeight: 700, color: NAVY, fontSize: 13 }}>{sec.name} — SUBTOTAL (NET)</td>
+                        <td style={{ ...td, background: '#eef1f6', color: DIM, fontSize: 11 }}>Billed − Cost</td>
+                        {secNetMonth.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700, fontSize: 13, color: v < 0 ? RED : (v > 0 ? GREEN : NAVY) }}>{fmtMoney(v)}</td>)}
+                        <td style={{ ...numTd, fontWeight: 700, fontSize: 13, color: (secBilled - secCost) < 0 ? RED : (secBilled - secCost > 0 ? GREEN : NAVY) }}>{fmtMoney(secBilled - secCost)}</td>
+                      </tr>
+                      <tr><td colSpan={N + 3} style={{ height: 12, background: BG }} /></tr>
                     </tbody>
                   )
                 })}
@@ -557,9 +601,8 @@ export default function CashFlow() {
             </div>
 
             {editable && (
-              <div className="cf-noprint" style={{ padding: 16, textAlign: 'center', borderTop: '1px solid ' + BORDER, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button className="cf-btn" onClick={() => addSection('income')} style={{ background: GREEN, color: '#fff', fontSize: 13, padding: '10px 20px', borderRadius: 8, letterSpacing: 1.5 }}>+ Add Cash-In Section</button>
-                <button className="cf-btn" onClick={() => addSection('expense')} style={{ background: NAVY, color: '#fff', fontSize: 13, padding: '10px 20px', borderRadius: 8, letterSpacing: 1.5 }}>+ Add Cash-Out Section</button>
+              <div className="cf-noprint" style={{ padding: 16, textAlign: 'center', borderTop: '1px solid ' + BORDER }}>
+                <button className="cf-btn" onClick={addSection} style={{ background: NAVY, color: '#fff', fontSize: 13, padding: '10px 20px', borderRadius: 8, letterSpacing: 1.5 }}>+ Add Section</button>
               </div>
             )}
           </div>
