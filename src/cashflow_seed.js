@@ -32,7 +32,18 @@ export function seedDoc() {
     savedAt: 0,
     sections: [
       {
-        id: id(), name: 'PRECONSTRUCTION & ESTIMATING',
+        id: id(), name: 'EXPECTED CASH IN', kind: 'income',
+        subsections: [
+          {
+            id: id(), name: 'PROJECTED REVENUE',
+            items: [
+              item('Add expected inflow', 'e.g. contract draw, deposit, capital injection', zeros()),
+            ],
+          },
+        ],
+      },
+      {
+        id: id(), name: 'PRECONSTRUCTION & ESTIMATING', kind: 'expense',
         subsections: [
           {
             id: id(), name: 'ONE-TIME SETUP',
@@ -58,7 +69,7 @@ export function seedDoc() {
         ],
       },
       {
-        id: id(), name: 'COMPLIANCE & ADMINISTRATION',
+        id: id(), name: 'COMPLIANCE & ADMINISTRATION', kind: 'expense',
         subsections: [
           {
             id: id(), name: 'ONE-TIME SETUP',
@@ -88,7 +99,7 @@ export function seedDoc() {
         ],
       },
       {
-        id: id(), name: 'MARKETING & BIZ DEV',
+        id: id(), name: 'MARKETING & BIZ DEV', kind: 'expense',
         subsections: [
           {
             id: id(), name: 'ONE-TIME STARTUP',
@@ -114,7 +125,7 @@ export function seedDoc() {
         ],
       },
       {
-        id: id(), name: 'ACP CLEANPOWER — HOUSTON (JUN 1–4, 2026)',
+        id: id(), name: 'ACP CLEANPOWER — HOUSTON (JUN 1–4, 2026)', kind: 'expense',
         subsections: [
           {
             id: id(), name: 'CONFERENCE COSTS',
