@@ -47,7 +47,6 @@ const normalize = (d) => {
   return d
 }
 const sum = (a) => (a || []).reduce((s, v) => s + (Number(v) || 0), 0)
-const colSum = (rows, i) => rows.reduce((s, r) => s + (Number(r.values[i]) || 0), 0)
 // per-month cost / billed split for any list of items
 const colCost = (items, i) => items.reduce((s, it) => s + (isBilled(it) ? 0 : (Number(it.values[i]) || 0)), 0)
 const colBilled = (items, i) => items.reduce((s, it) => s + (isBilled(it) ? (Number(it.values[i]) || 0) : 0), 0)
@@ -145,12 +144,13 @@ function exportPdf(doc, calc) {
         pdf.setDrawColor('#eee'); pdf.line(M, y + 11, PW - M, y + 11)
         y += 11
       })
-      // subtotal
+      // subtotal — net (billed − cost)
       newPageIf(13)
       fillRow('#f6f2ec', 12)
-      txt(sub.name + ' Subtotal', cols[0], { bold: true, size: 6.8, color: '#5a5a5a' })
-      months.forEach((_, i) => txt(fmtMoney(colSum(sub.items, i)), cols[2 + i], { bold: true, size: 6.8 }))
-      txt(fmtMoney(sum(sub.items.map((it) => sum(it.values)))), cols[cols.length - 1], { bold: true, size: 6.8 })
+      txt(sub.name + ' Subtotal (net)', cols[0], { bold: true, size: 6.8, color: '#5a5a5a' })
+      const subNet = months.map((_, i) => colBilled(sub.items, i) - colCost(sub.items, i))
+      subNet.forEach((v, i) => txt(fmtMoney(v), cols[2 + i], { bold: true, size: 6.8, color: v < 0 ? RED : (v > 0 ? GREENP : '#5a5a5a') }))
+      txt(fmtMoney(sum(subNet)), cols[cols.length - 1], { bold: true, size: 6.8, color: sum(subNet) < 0 ? RED : '#5a5a5a' })
       y += 12
     })
     // section roll-up: total cost, total billed, subtotal (net)
@@ -483,7 +483,8 @@ export default function CashFlow() {
                       </tr>
 
                       {sec.subsections.map((sub) => {
-                        const subTotal = sum(sub.items.map((it) => sum(it.values)))
+                        const subNetMonth = doc.months.map((_, i) => colBilled(sub.items, i) - colCost(sub.items, i)) // billed − cost
+                        const subTotal = sum(subNetMonth)
                         return (
                           <React.Fragment key={sub.id}>
                             {/* subsection header */}
@@ -554,12 +555,12 @@ export default function CashFlow() {
                               </tr>
                             )}
 
-                            {/* subsection subtotal */}
+                            {/* subsection subtotal — net (billed − cost) */}
                             <tr style={{ background: '#f6f2ec' }}>
-                              <td style={{ ...td, position: 'sticky', left: 0, background: '#f6f2ec', fontWeight: 700, color: MID, fontSize: 12 }}>{sub.name} Subtotal</td>
-                              <td style={{ ...td, background: '#f6f2ec' }} />
-                              {doc.months.map((_, i) => <td key={i} style={{ ...numTd, fontWeight: 700, fontSize: 12 }}>{fmtMoney(colSum(sub.items, i))}</td>)}
-                              <td style={{ ...numTd, fontWeight: 700, fontSize: 12 }}>{fmtMoney(subTotal)}</td>
+                              <td style={{ ...td, position: 'sticky', left: 0, background: '#f6f2ec', fontWeight: 700, color: MID, fontSize: 12 }}>{sub.name} Subtotal <span style={{ color: DIM, fontWeight: 400, fontSize: 10.5 }}>(net)</span></td>
+                              <td style={{ ...td, background: '#f6f2ec', color: DIM, fontSize: 10.5 }}>Billed − Cost</td>
+                              {subNetMonth.map((v, i) => <td key={i} style={{ ...numTd, fontWeight: 700, fontSize: 12, color: v < 0 ? RED : (v > 0 ? GREEN : MID) }}>{fmtMoney(v)}</td>)}
+                              <td style={{ ...numTd, fontWeight: 700, fontSize: 12, color: subTotal < 0 ? RED : (subTotal > 0 ? GREEN : MID) }}>{fmtMoney(subTotal)}</td>
                             </tr>
                           </React.Fragment>
                         )
