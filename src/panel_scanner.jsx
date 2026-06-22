@@ -1086,8 +1086,7 @@ const APPS_SCRIPT = `function doPost(e){
     } finally { clock.releaseLock(); }
   }
   var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
-  var img = (d.qc === 'Pass' && d.photo) ? '=IMAGE("' + d.photo + '")' : '';
-  var row = [d.section,d.row,d.panel,d.serial,d.by,d.project,d.timestamp,d.qcSerial,d.qc,img,d.id];
+  var row = [d.section,d.row,d.panel,d.serial,d.by,d.project,d.timestamp,d.qcSerial,d.qc,d.id];
   // Hold the lock only for the actual write, so appends run with minimal contention.
   var wlock = LockService.getScriptLock();
   try { wlock.waitLock(45000); } catch (err) { return ContentService.createTextOutput('busy'); }
@@ -1095,15 +1094,15 @@ const APPS_SCRIPT = `function doPost(e){
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
-    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','By','Project','Timestamp','QC Scan','QC Verified','QC Photo','ID']); try { sh.hideColumns(11); sh.setColumnWidth(10,120); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {} }
+    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','By','Project','Timestamp','QC Scan','QC Verified','ID']); try { sh.hideColumns(10); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {} }
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
-        var ids = sh.getRange(2,11,n,1).getValues();
+        var ids = sh.getRange(2,10,n,1).getValues();
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(d.id)) {
             if (d.mode === 'delete') sh.deleteRow(i + 2);
-            else { sh.getRange(i+2,1,1,11).setValues([row]); if (img) { try { sh.setRowHeight(i+2,90) } catch (e2) {} } }
+            else sh.getRange(i+2,1,1,10).setValues([row]);
             return ContentService.createTextOutput('ok');
           }
         }
@@ -1111,7 +1110,6 @@ const APPS_SCRIPT = `function doPost(e){
       if (d.mode === 'delete') return ContentService.createTextOutput('ok');
     }
     sh.appendRow(row);
-    if (img) { try { sh.setRowHeight(sh.getLastRow(),90) } catch (e3) {} }
     return ContentService.createTextOutput('ok');
   } finally { wlock.releaseLock(); }
 }`
