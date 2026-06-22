@@ -1,6 +1,19 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
+import CashFlow from './cashflow.jsx'
+
+// Standalone, PIN-gated cash-flow tool lives at /cashflow (or #cashflow),
+// independent of the main employee-portal login.
+function pickRoot() {
+  try {
+    const p = window.location.pathname.replace(/\/+$/, '').toLowerCase()
+    const h = window.location.hash.replace(/^#\/?/, '').toLowerCase()
+    if (p.endsWith('/cashflow') || h === 'cashflow') return CashFlow
+  } catch (e) {}
+  return App
+}
+const RootComponent = pickRoot()
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { err: null }; }
@@ -19,5 +32,5 @@ class ErrorBoundary extends React.Component {
 }
 
 createRoot(document.getElementById('root')).render(
-  React.createElement(ErrorBoundary, null, React.createElement(App))
+  React.createElement(ErrorBoundary, null, React.createElement(RootComponent))
 )
