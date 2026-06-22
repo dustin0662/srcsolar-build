@@ -25,3 +25,12 @@ class ErrorBoundary extends React.Component {
 createRoot(document.getElementById('root')).render(
   React.createElement(ErrorBoundary, null, React.createElement(PanelScanner, {}))
 )
+
+// Register the service worker so the scanner is installable as a PWA (Add to
+// Home Screen) on Android & iPhone. Network-only SW — no stale caching.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
