@@ -57,11 +57,12 @@ function locate(tree, s) {
   return { proj, sec, row };
 }
 
-function scanRow(tree, s) {
+function scanRow(tree, s, origin) {
   const { proj, sec, row } = locate(tree, s);
   return {
     id: s.id, serial: s.serial || '', raw: s.raw || s.serial || '', format: s.format || '',
-    brand: s.brand || (proj && proj.brand) || '',
+    qc: s.qc ? 'Yes' : '',
+    photo: s.photoKey && origin ? origin + '/.netlify/functions/scanner?photo=' + s.photoKey : '',
     projectId: s.projectId || '', project: proj ? proj.name : '', section: sec ? sec.name : '', row: row ? row.name : '',
     panel: s.panel, timestamp: s.ts ? new Date(s.ts).toISOString() : new Date().toISOString(),
     by: s.by || '', note: s.note || '', status: s.status || 'ok',
@@ -134,11 +135,11 @@ export default async (req) => {
       if (added) {
         await cas(store, 'summary', (sum) => {
           const cur = sum[s.rowId] || { c: 0, x: 0 };
-          sum[s.rowId] = { c: cur.c + 1, x: Math.max(cur.x, s.panel || 0) };
+          sum[s.rowId] = { c: cur.c + 1, x: Math.max(cur.x, s.panel || 0), q: cur.q || 0 };
           return sum;
         }, () => ({}));
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s)));
+        await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s, url.origin)));
       }
       return json({ ok: true });
     }
@@ -178,7 +179,7 @@ export default async (req) => {
 
       if (updated) {
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'update' }, scanRow(tree, updated)));
+        await forward(tree.webhook, Object.assign({ mode: 'update' }, scanRow(tree, updated, url.origin)));
       }
       return json({ ok: true });
     }
@@ -199,7 +200,7 @@ export default async (req) => {
         try { await store.delete('photo:' + id); } catch (e) {}
         await recount(store, fromRow);
         const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
-        await forward(tree.webhook, Object.assign({ mode: 'delete' }, scanRow(tree, removed)));
+        await forward(tree.webhook, Object.assign({ mode: 'delete' }, scanRow(tree, removed, url.origin)));
       }
       return json({ ok: true });
     }
@@ -216,5 +217,6 @@ async function recount(store, rowId) {
   const scans = doc.scans || [];
   const c = scans.length;
   const x = scans.reduce((mx, s) => Math.max(mx, (s && s.panel) || 0), 0);
-  await cas(store, 'summary', (sum) => { if (c === 0) delete sum[rowId]; else sum[rowId] = { c, x }; return sum; }, () => ({}));
+  const q = scans.reduce((n, s) => n + (s && s.qc ? 1 : 0), 0);
+  await cas(store, 'summary', (sum) => { if (c === 0) delete sum[rowId]; else sum[rowId] = { c, x, q }; return sum; }, () => ({}));
 }

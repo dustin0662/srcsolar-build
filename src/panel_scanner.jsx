@@ -195,7 +195,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
   const fileRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
-  const capDefaultsRef = useRef({ panel: 1, brand: "" })
+  const capDefaultsRef = useRef({ panel: 1 })
   const logScanRef = useRef(null) // latest logScan, so the live scanner avoids stale closures
   const audioRef = useRef(null) // WebAudio context for scan beep (created on user gesture)
 
@@ -246,7 +246,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const proj = tree.projects.find((p) => p.id === projId) || null
   const section = (proj && (proj.sections || []).find((s) => s.id === secId)) || null
   const row = (section && (section.rows || []).find((r) => r.id === rowId)) || null
-  capDefaultsRef.current = { panel: panelNo, brand: (proj && proj.brand) || "" } // latest defaults for live-scan hits
+  capDefaultsRef.current = { panel: panelNo } // latest defaults for live-scan hits
   logScanRef.current = (s, f, p) => logScan(s, f, p) // always call the latest logScan from the live scanner
 
   // ── Completeness from the lightweight summary index ─────────────────────────
@@ -258,6 +258,13 @@ export default function PanelScanner({ onExit, portalUser }) {
     return { count: s.c, max: s.x, target, done, missing }
   }
   const sectionDone = (s) => (s.rows || []).length > 0 && (s.rows || []).every((r) => rowStat(r).done)
+  // QC: 10% of all logged panels should be manually reviewed.
+  function projQC(p) {
+    let total = 0, ver = 0
+    ;(p.sections || []).forEach((s) => (s.rows || []).forEach((r) => { const su = summary[r.id] || {}; total += su.c || 0; ver += su.q || 0 }))
+    const target = Math.ceil(total * 0.1)
+    return { total, ver, target, done: total > 0 && ver >= target }
+  }
 
   // ── Persistence ─────────────────────────────────────────────────────────────
   async function saveProjects(projects) {
@@ -269,18 +276,16 @@ export default function PanelScanner({ onExit, portalUser }) {
   async function addProject() {
     const r = await askForm("New Project", [
       { key: "name", label: "Project name", placeholder: "e.g. Midway" },
-      { key: "brand", label: "Panel brand", value: "Q CELLS" },
     ], "Create Project")
     const name = r && (r.name || "").trim(); if (!name) return
-    saveProjects(tree.projects.concat([{ id: uid(), name, brand: (r.brand || "").trim(), color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
+    saveProjects(tree.projects.concat([{ id: uid(), name, color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
   }
   async function editProject(p) {
     const r = await askForm("Edit Project", [
       { key: "name", label: "Project name", value: p.name },
-      { key: "brand", label: "Panel brand", value: p.brand || "Q CELLS" },
     ])
     const name = r && (r.name || "").trim(); if (!name) return
-    mutateTree((t) => { const pp = t.find((x) => x.id === p.id); pp.name = name; pp.brand = (r.brand || "").trim() })
+    mutateTree((t) => { const pp = t.find((x) => x.id === p.id); pp.name = name })
   }
   async function addSection() {
     const r = await askForm("New Section", [{ key: "name", label: "Section name", value: "Section " + ((proj.sections || []).length + 1), placeholder: "e.g. Block A" }], "Create Section")
@@ -332,7 +337,7 @@ export default function PanelScanner({ onExit, portalUser }) {
       setPrompt({ kind: "over", target: row.panelTarget, pending: { serial, format, photo, panel } })
       return
     }
-    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: serial, format: format || "", brand: capDefaultsRef.current.brand || "", ts: Date.now(), by: op, note: "", status: "ok" }
+    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: serial, format: format || "", ts: Date.now(), by: op, note: "", status: "ok" }
     setBusy(true)
     try {
       await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: photo || undefined }) })
@@ -387,7 +392,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
   async function saveCorrection() {
     if (!editing) return
-    const patch = { serial: (editing.serial || "").trim(), brand: (editing.brand || "").trim(), panel: Math.max(1, parseInt(editing.panel, 10) || 1), note: editing.note || "", status: editing.status || "ok", rowId: editing.rowId, sectionId: editing.sectionId, projectId: editing.projectId }
+    const patch = { serial: (editing.serial || "").trim(), panel: Math.max(1, parseInt(editing.panel, 10) || 1), note: editing.note || "", status: editing.status || "ok", rowId: editing.rowId, sectionId: editing.sectionId, projectId: editing.projectId }
     setBusy(true)
     try {
       await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: editing.id, fromRow: editing._fromRow, patch }) })
@@ -412,7 +417,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   // Push the inline edits from the review carousel; replaces the matching sheet row.
   async function saveView(advance) {
     if (!viewScan) return
-    const patch = { serial: (viewScan.serial || "").trim(), brand: (viewScan.brand || "").trim(), panel: Math.max(1, parseInt(viewScan.panel, 10) || 1), note: viewScan.note || "", status: viewScan.status || "ok", rowId: viewScan.rowId, sectionId: viewScan.sectionId, projectId: viewScan.projectId }
+    const patch = { serial: (viewScan.serial || "").trim(), panel: Math.max(1, parseInt(viewScan.panel, 10) || 1), note: viewScan.note || "", status: viewScan.status || "ok", rowId: viewScan.rowId, sectionId: viewScan.sectionId, projectId: viewScan.projectId }
     setBusy(true)
     try {
       await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: viewScan.id, fromRow: viewScan._fromRow, patch }) })
@@ -426,6 +431,27 @@ export default function PanelScanner({ onExit, portalUser }) {
         if (idx >= 0 && idx < list.length - 1) { const s = list[idx + 1]; setViewScan(Object.assign({ _fromRow: s.rowId }, s)) }
       }
     } catch (e) { flash("Update failed", "err") }
+    setBusy(false)
+  }
+
+  // Mark the current panel QC-verified (writes QC + barcode image to the sheet),
+  // then advance to the next panel for a fast review pass.
+  async function qcVerify(advance) {
+    if (!viewScan) return
+    setBusy(true)
+    try {
+      await fetch(API + "?action=updateScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: viewScan.id, fromRow: viewScan._fromRow, patch: { qc: true, qcBy: op, qcAt: Date.now() } }) })
+      const fresh = await fetch(API + "?row=" + rowId, { cache: "no-store" }).then((r) => r.json()).catch(() => null)
+      if (fresh) setRowDoc({ scans: fresh.scans || [] })
+      fetchSummary()
+      flash("QC verified ✓", "ok")
+      if (advance) {
+        const list = sortScans((fresh && fresh.scans) || rowDoc.scans)
+        const idx = list.findIndex((s) => s.id === viewScan.id)
+        if (idx >= 0 && idx < list.length - 1) { const s = list[idx + 1]; setViewScan(Object.assign({ _fromRow: s.rowId }, s)) }
+        else setViewScan(null)
+      } else { setViewScan((v) => v ? Object.assign({}, v, { qc: true, qcBy: op }) : v) }
+    } catch (e) { flash("QC save failed", "err") }
     setBusy(false)
   }
 
@@ -488,7 +514,6 @@ export default function PanelScanner({ onExit, portalUser }) {
             <div key={p.id} style={{ ...card, borderLeft: "5px solid " + p.color }} onClick={() => { setProjId(p.id); setSecId(null); setRowId(null) }}>
               <div style={{ ...BB, fontSize: 22, letterSpacing: 1, color: INK }}>{p.name.toUpperCase()}</div>
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{(p.sections || []).length} sections · {total} panels</div>
-              {p.brand && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 2 }}>{p.brand}</div>}
               <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                 <span onClick={(e) => { e.stopPropagation(); editProject(p) }} style={{ ...NB, fontSize: 12, color: A, letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
                 <span onClick={(e) => { e.stopPropagation(); deleteProject(p) }} style={{ ...NB, fontSize: 12, color: "#c00", letterSpacing: 1, textTransform: "uppercase" }}>Delete</span>
@@ -500,9 +525,15 @@ export default function PanelScanner({ onExit, portalUser }) {
       </div>
     </>)
   } else if (!section) {
+    const qc = projQC(proj)
     body = (<>
       <TopBar back={() => setProjId(null)} backLabel="Projects" />
       <Title t={proj.name.toUpperCase()} sub="Sections" />
+      {qc.total > 0 && (
+        <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: qc.done ? "rgba(34,197,94,.1)" : "rgba(249,115,22,.08)", border: "1px solid " + (qc.done ? "rgba(34,197,94,.4)" : "rgba(249,115,22,.35)") }}>
+          <div style={{ ...NB, fontSize: 15, color: qc.done ? "#15803d" : "#b45309" }}><strong>QC review:</strong> {qc.ver} / {qc.target} verified <span style={{ color: "#999" }}>(10% of {qc.total} panels){qc.done ? " · target met ✓" : ""}</span></div>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "repeat(3,1fr)", gap: m ? 10 : 14 }}>
         {(proj.sections || []).map((s) => {
           const done = sectionDone(s); const cnt = (s.rows || []).reduce((a, r) => a + ((summary[r.id] || {}).c || 0), 0)
@@ -578,7 +609,7 @@ export default function PanelScanner({ onExit, portalUser }) {
           </>) : (
             <button onClick={() => { unlockAudio(); setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
           )}
-          <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })}>or enter a serial manually</div>
+          <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => setCapture({ serial: "", format: "", panel: panelNo, manual: true })}>or enter a serial manually</div>
           <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 14, cursor: "pointer" }}>
             <input type="checkbox" checked={photoMode} onChange={(e) => { setPhotoMode(e.target.checked); if (e.target.checked) setScanning(false); try { localStorage.setItem("scanner_photomode", e.target.checked ? "1" : "0") } catch (er) {} }} style={{ width: 20, height: 20, flexShrink: 0 }} />
             <span style={{ ...NB, fontSize: 13, color: "#555" }}>Photo mode — sharp photo each panel, auto-advances</span>
@@ -608,7 +639,7 @@ export default function PanelScanner({ onExit, portalUser }) {
             </label>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setScanning(false); setCapture(null) }} style={{ ...BTN_GHOST, flex: 1 }}>Stop</button>
-              <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, brand: (proj && proj.brand) || "", manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
+              <button onClick={() => setCapture({ serial: "", format: "", panel: panelNo, manual: true })} style={{ ...BTN_GHOST, flex: 1 }}>Enter manually</button>
             </div>
             {!capture && <div style={{ ...NB, fontSize: 12, color: "#999", marginTop: 8, textAlign: "center" }}>Center the barcode in the band — it logs automatically and moves to the next panel.</div>}
           </div>
@@ -622,10 +653,8 @@ export default function PanelScanner({ onExit, portalUser }) {
             {capture.photo && <img src={capture.photo} alt="scan" style={{ width: m ? "100%" : 200, maxWidth: 260, borderRadius: 8, border: "1px solid rgba(0,0,0,.1)", marginBottom: 10 }} />}
             <label style={lbl}>SERIAL</label>
             <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!!capture.manual} />
-            <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
-              <div style={{ flex: 2 }}><label style={lbl}>BRAND</label><input value={capture.brand} onChange={(e) => setCapture({ ...capture, brand: e.target.value })} placeholder="Q CELLS" style={{ ...IST, marginBottom: 12 }} /></div>
-            </div>
+            <label style={lbl}>PANEL #</label>
+            <input type="number" inputMode="numeric" value={capture.panel} onChange={(e) => setCapture({ ...capture, panel: e.target.value })} style={{ ...IST, marginBottom: 12, width: 130 }} />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <button disabled={busy} onClick={confirmCapture} style={{ ...BTN, flex: m ? "1 1 100%" : "0 0 auto", opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : (scanning ? "✓ Confirm & Next" : "✓ Confirm")}</button>
               <button onClick={() => setCapture(null)} style={{ ...BTN_GHOST, flex: m ? 1 : "0 0 auto" }}>{scanning ? "Rescan" : "Cancel"}</button>
@@ -648,7 +677,6 @@ export default function PanelScanner({ onExit, portalUser }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...BB, fontSize: 18, color: INK }}>PANEL {s.panel}</div>
               <div style={{ ...NB, fontSize: 13, color: "#444", wordBreak: "break-all" }}>{s.serial}</div>
-              {s.brand && <div style={{ ...NB, fontSize: 12, color: "#777" }}>{s.brand}</div>}
               <div style={{ ...NB, fontSize: 11, color: "#999" }}>{fmtTime(s.ts)} · {s.by}{s.status && s.status !== "ok" ? " · " + s.status : ""}</div>
             </div>
             <span style={{ ...BB, fontSize: 24, color: "#ccc", flexShrink: 0 }}>›</span>
@@ -687,12 +715,11 @@ export default function PanelScanner({ onExit, portalUser }) {
               <div style={{ flex: 2 }}><label style={lbl}>SERIAL</label><input value={viewScan.serial || ""} onChange={(e) => setViewScan({ ...viewScan, serial: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
               <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={viewScan.panel} onChange={(e) => setViewScan({ ...viewScan, panel: e.target.value })} style={{ ...IST, marginBottom: 10 }} /></div>
             </div>
-            <label style={lbl}>BRAND</label>
-            <input value={viewScan.brand || ""} onChange={(e) => setViewScan({ ...viewScan, brand: e.target.value })} style={{ ...IST, marginBottom: 10 }} />
-            <div style={{ ...NB, fontSize: 12, color: "#999", marginBottom: 14 }}>{fmtTime(viewScan.ts)} · {viewScan.by}</div>
+            <div style={{ ...NB, fontSize: 13, color: viewScan.qc ? "#16a34a" : "#999", margin: "2px 0 12px" }}>{viewScan.qc ? "✓ QC VERIFIED" + (viewScan.qcBy ? " · " + viewScan.qcBy : "") : "Not QC verified"} · {fmtTime(viewScan.ts)} · {viewScan.by}</div>
+            <button disabled={busy} onClick={() => qcVerify(true)} style={{ ...BTN, width: "100%", marginBottom: 10, background: viewScan.qc ? "#16a34a" : A, color: viewScan.qc ? "#fff" : "#1a1206", opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : (viewScan.qc ? "✓ QC Verified — Next →" : "✓ QC Verified & Next →")}</button>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button disabled={busy} onClick={() => saveView(true)} style={{ ...BTN, flex: m ? "1 1 100%" : 2, opacity: busy ? .6 : 1 }}>{busy ? "Updating…" : "Update & Next →"}</button>
-              <button disabled={busy} onClick={() => saveView(false)} style={{ ...BTN_GHOST, flex: 1 }}>Update</button>
+              <button disabled={busy} onClick={() => saveView(true)} style={{ ...BTN_GHOST, flex: m ? "1 1 100%" : 2 }}>{busy ? "Saving…" : "Save Edits & Next →"}</button>
+              <button disabled={busy} onClick={() => saveView(false)} style={{ ...BTN_GHOST, flex: 1 }}>Save Edits</button>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setEditing(Object.assign({}, viewScan)); setViewScan(null) }} style={{ ...BTN_GHOST, flex: 1 }}>More…</button>
@@ -707,8 +734,6 @@ export default function PanelScanner({ onExit, portalUser }) {
         <Modal m={m} title="Correct Panel" onClose={() => setEditing(null)}>
           <label style={lbl}>SERIAL</label>
           <input value={editing.serial} onChange={(e) => setEditing({ ...editing, serial: e.target.value })} style={{ ...IST, marginBottom: 12 }} />
-          <label style={lbl}>BRAND</label>
-          <input value={editing.brand || ""} onChange={(e) => setEditing({ ...editing, brand: e.target.value })} style={{ ...IST, marginBottom: 12 }} />
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><label style={lbl}>PANEL #</label><input type="number" inputMode="numeric" value={editing.panel} onChange={(e) => setEditing({ ...editing, panel: e.target.value })} style={{ ...IST, marginBottom: 12 }} /></div>
             <div style={{ flex: 1 }}><label style={lbl}>STATUS</label><select value={editing.status || "ok"} onChange={(e) => setEditing({ ...editing, status: e.target.value })} style={{ ...IST, marginBottom: 12 }}><option value="ok">OK</option><option value="damaged">Damaged</option><option value="rescan">Needs re-scan</option></select></div>
@@ -745,7 +770,7 @@ export default function PanelScanner({ onExit, portalUser }) {
           <p style={ptext}>The barcode couldn't be read from that photo. Retake it, or enter the serial by hand.</p>
           <div style={{ display: "flex", gap: 10, marginTop: 18, flexDirection: m ? "column" : "row", flexWrap: "wrap" }}>
             <button style={BTN} onClick={() => { setPrompt(null); setTimeout(() => { fileRef.current && fileRef.current.click() }, 50) }}>Retake Photo</button>
-            <button style={BTN_GHOST} onClick={() => { const ph = prompt.photo; setPrompt(null); setCapture({ serial: "", format: "", photo: ph, panel: panelNo, brand: (proj && proj.brand) || "", manual: true }) }}>Enter Manually</button>
+            <button style={BTN_GHOST} onClick={() => { const ph = prompt.photo; setPrompt(null); setCapture({ serial: "", format: "", photo: ph, panel: panelNo, manual: true }) }}>Enter Manually</button>
             <button style={BTN_GHOST} onClick={() => setPrompt(null)}>Cancel</button>
           </div>
         </Modal>
@@ -1038,7 +1063,8 @@ const APPS_SCRIPT = `function doPost(e){
     } finally { clock.releaseLock(); }
   }
   var tab = String(d.section || 'Scans').replace(/[\\\\\\/?*\\[\\]:]/g,' ').substring(0,99).trim() || 'Scans';
-  var row = [d.section,d.row,d.panel,d.serial,d.brand,d.by,d.project,d.timestamp,d.id];
+  var img = (d.qc && d.photo) ? '=IMAGE("' + d.photo + '")' : '';
+  var row = [d.section,d.row,d.panel,d.serial,d.by,d.project,d.timestamp,d.qc,img,d.id];
   // Hold the lock only for the actual write, so appends run with minimal contention.
   var wlock = LockService.getScriptLock();
   try { wlock.waitLock(45000); } catch (err) { return ContentService.createTextOutput('busy'); }
@@ -1046,15 +1072,15 @@ const APPS_SCRIPT = `function doPost(e){
     var sh = ss.getSheetByName(tab) || ss.insertSheet(tab);
     var def = ss.getSheetByName('Sheet1');
     if (def && def.getName() !== tab && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
-    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','Brand','By','Project','Timestamp','ID']); try { sh.hideColumns(9); } catch (err) {} }
+    if (sh.getLastRow() === 0) { sh.appendRow(['Section','Row','Panel','Serial','By','Project','Timestamp','QC Verified','QC Photo','ID']); try { sh.hideColumns(10); sh.setColumnWidth(9,120); sh.setFrozenRows(1); sh.getRange('1:1').setFontWeight('bold'); } catch (err) {} }
     if (d.mode === 'update' || d.mode === 'delete') {
       var n = Math.max(sh.getLastRow() - 1, 0);
       if (n > 0) {
-        var ids = sh.getRange(2,9,n,1).getValues();
+        var ids = sh.getRange(2,10,n,1).getValues();
         for (var i = 0; i < ids.length; i++) {
           if (String(ids[i][0]) === String(d.id)) {
             if (d.mode === 'delete') sh.deleteRow(i + 2);
-            else sh.getRange(i+2,1,1,9).setValues([row]);
+            else { sh.getRange(i+2,1,1,10).setValues([row]); if (img) { try { sh.setRowHeight(i+2,90) } catch (e2) {} } }
             return ContentService.createTextOutput('ok');
           }
         }
@@ -1062,6 +1088,7 @@ const APPS_SCRIPT = `function doPost(e){
       if (d.mode === 'delete') return ContentService.createTextOutput('ok');
     }
     sh.appendRow(row);
+    if (img) { try { sh.setRowHeight(sh.getLastRow(),90) } catch (e3) {} }
     return ContentService.createTextOutput('ok');
   } finally { wlock.releaseLock(); }
 }`
