@@ -268,6 +268,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const fileRef = useRef(null)
   const uploadRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
+  const restoredRef = useRef(false) // boot restore runs at most once
   const capDefaultsRef = useRef({ panel: 1 })
   const logScanRef = useRef(null) // latest logScan, so the live scanner avoids stale closures
   const audioRef = useRef(null) // WebAudio context for scan beep (created on user gesture)
@@ -309,6 +310,35 @@ export default function PanelScanner({ onExit, portalUser }) {
   const fetchRow = useCallback(async (id) => { if (!id) return; try { const r = await fetch(API + "?row=" + id, { cache: "no-store" }); const d = await r.json(); if (rowIdRef.current === id) setRowDoc({ scans: d.scans || [] }) } catch (e) {} }, [])
 
   useEffect(() => { (async () => { await Promise.all([fetchTree(), fetchSummary()]); setLoading(false) })() }, [fetchTree, fetchSummary])
+
+  // Restore the last project/section/row after boot so an OOM-induced silent
+  // page reload (budget Androids in Photo mode) drops the user right back on
+  // their row at the correct next panel — not the projects list. Runs once,
+  // validating each level against the freshly-loaded tree (another user may have
+  // removed one), and only when the user hasn't already navigated.
+  useEffect(() => {
+    if (loading || restoredRef.current) return
+    restoredRef.current = true // also unlocks the persist effect below
+    try {
+      const raw = localStorage.getItem("scanner_nav")
+      if (!raw || projId) return
+      const nav = JSON.parse(raw) || {}
+      const p = tree.projects.find((x) => x.id === nav.projId); if (!p) return
+      setProjId(p.id)
+      const s = (p.sections || []).find((x) => x.id === nav.secId); if (!s) return
+      setSecId(s.id)
+      const r = (s.rows || []).find((x) => x.id === nav.rowId); if (!r) return
+      setRowId(r.id); loadRow(r.id)
+    } catch (e) {}
+  }, [loading, tree])
+
+  // Persist the selection on every change (including nulls when navigating back)
+  // so the restore above has something to return to. Held off until the restore
+  // pass runs so the initial null selection can't clobber the stored value.
+  useEffect(() => {
+    if (!restoredRef.current) return
+    try { localStorage.setItem("scanner_nav", JSON.stringify({ projId, secId, rowId })) } catch (e) {}
+  }, [projId, secId, rowId])
 
   // Capture Android's install prompt so we can surface an explicit Install button.
   useEffect(() => {
@@ -399,9 +429,14 @@ export default function PanelScanner({ onExit, portalUser }) {
   function setRowComplete(r, val) { mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); rr.complete = val }) }
 
   // ── Scanning ────────────────────────────────────────────────────────────────
+  // Load a row's scans and set the next panel number from authoritative server
+  // data (one past the highest logged panel). Shared by openRow and boot restore.
+  async function loadRow(id) {
+    try { const res = await fetch(API + "?row=" + id, { cache: "no-store" }); const d = await res.json(); const scans = d.scans || []; setRowDoc({ scans }); setPanelNo(scans.length ? Math.max(...scans.map((s) => s.panel || 0)) + 1 : 1) } catch (e) { flash("Couldn't load row", "err") }
+  }
   async function openRow(r) {
     setRowId(r.id); setCapture(null); setRowDoc({ scans: [] })
-    try { const res = await fetch(API + "?row=" + r.id, { cache: "no-store" }); const d = await res.json(); const scans = d.scans || []; setRowDoc({ scans }); setPanelNo(scans.length ? Math.max(...scans.map((s) => s.panel || 0)) + 1 : 1) } catch (e) { flash("Couldn't load row", "err") }
+    await loadRow(r.id)
   }
 
   // Log one panel. Used by both auto-scan hits and manual entry.
@@ -445,8 +480,13 @@ export default function PanelScanner({ onExit, portalUser }) {
       const decodeCv = await decodeCanvasFromFile(file, DECODE_EDGE)
       const decoded = await decodeBarcode(decodeCv)
       const cropCv = decoded && decoded.box ? cropToLabel(decodeCv, decoded.box) : null
-      const photo = canvasFrom(cropCv || decodeCv, 1024).toDataURL("image/jpeg", 0.7)
-      freeCanvas(cropCv); freeCanvas(decodeCv) // release backing stores promptly
+      // Encode the stored thumbnail at a modest size, then free EVERY canvas
+      // (decode, crop, and the thumbnail itself) before doing anything else —
+      // keeping three full-res canvases + a data-URL alive at once is what tips
+      // ~2GB phones into the OOM that silently reloads the page.
+      const thumbCv = canvasFrom(cropCv || decodeCv, 800)
+      const photo = thumbCv.toDataURL("image/jpeg", 0.6)
+      freeCanvas(thumbCv); freeCanvas(cropCv); freeCanvas(decodeCv) // release backing stores promptly
       setBusy(false)
       if (decoded && decoded.serial) { await logScan(decoded.serial, decoded.format, photo) } // confident read → auto-log + advance
       else { setPrompt({ kind: "scanfail", photo }) } // couldn't read — don't guess
