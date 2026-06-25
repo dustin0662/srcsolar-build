@@ -57,17 +57,21 @@ function canvasFrom(img, maxEdge) {
   return cv
 }
 
-// Rotate a canvas by 90/180/270 degrees into a new canvas.
-function rotateCanvas(src, deg) {
+// Rotate src by 90/180/270 degrees into the provided dst canvas (reused across
+// rotations to avoid allocating a new full-size canvas each time — important on
+// low-RAM devices).
+function rotateInto(src, deg, dst) {
   const swap = deg === 90 || deg === 270
-  const cv = document.createElement("canvas")
-  cv.width = swap ? src.height : src.width
-  cv.height = swap ? src.width : src.height
-  const ctx = cv.getContext("2d")
-  ctx.translate(cv.width / 2, cv.height / 2)
+  dst.width = swap ? src.height : src.width
+  dst.height = swap ? src.width : src.height
+  const ctx = dst.getContext("2d")
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, dst.width, dst.height)
+  ctx.translate(dst.width / 2, dst.height / 2)
   ctx.rotate(deg * Math.PI / 180)
   ctx.drawImage(src, -src.width / 2, -src.height / 2)
-  return cv
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  return dst
 }
 
 // Decode a barcode/QR from a canvas.
@@ -75,38 +79,74 @@ function rotateCanvas(src, deg) {
 // iOS Safari / desktop (no BarcodeDetector): ZXing with TRY_HARDER, retried at
 // several rotations to handle EXIF-rotated iPhone photos and vertical barcodes.
 async function decodeBarcode(canvas) {
+  let scratch = null
+  // Rotate into a single reused scratch canvas (deg 0 uses the original).
+  const rot = (deg) => { if (!deg) return canvas; if (!scratch) scratch = document.createElement("canvas"); return rotateInto(canvas, deg, scratch) }
+  const done = (r) => { freeCanvas(scratch); return r }
   try {
     if (typeof window !== "undefined" && "BarcodeDetector" in window) {
       const det = makeDetector()
       for (const deg of [0, 90, 270]) {
-        const c = deg ? rotateCanvas(canvas, deg) : canvas
-        const codes = await det.detect(c)
+        const codes = await det.detect(rot(deg))
         if (codes && codes.length) {
           const b = deg === 0 && codes[0].boundingBox
           const box = b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null // crop only at 0° (un-rotated coords)
-          return { serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native", box }
+          return done({ serial: String(codes[0].rawValue || "").trim(), format: codes[0].format || "native", box })
         }
       }
     }
   } catch (e) { /* fall through to zxing */ }
-  const hints = zxHints()
+  const reader = new BrowserMultiFormatReader(zxHints()) // one reader, reused across rotations
   for (const deg of [0, 90, 270, 180]) {
-    const c = deg ? rotateCanvas(canvas, deg) : canvas
     try {
-      const reader = new BrowserMultiFormatReader(hints)
-      const res = await reader.decodeFromCanvas(c)
+      const res = await reader.decodeFromCanvas(rot(deg))
       if (res) {
         let fmt = ""; try { fmt = String(res.getBarcodeFormat()) } catch (e) {}
         let box = null
         if (deg === 0) { try { const pts = res.getResultPoints && res.getResultPoints(); if (pts && pts.length) { const xs = pts.map((p) => p.getX()), ys = pts.map((p) => p.getY()); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } } } catch (e) {} }
-        return { serial: String(res.getText() || "").trim(), format: fmt, box }
+        return done({ serial: String(res.getText() || "").trim(), format: fmt, box })
       }
     } catch (e) { /* not found at this rotation — try next */ }
   }
-  return null
+  return done(null)
 }
 
-// Crop the high-res decode canvas to just the barcode label (with padding) so the
+// Decode resolution. Kept modest so low-RAM phones don't OOM building canvases
+// from a full-res camera photo. Lower still on devices reporting <=3 GB RAM.
+const DECODE_EDGE = (typeof navigator !== "undefined" && navigator.deviceMemory && navigator.deviceMemory <= 3) ? 1000 : 1280
+
+// Load a File into a downscaled canvas for decoding, without ever holding the
+// full-resolution image in memory. Uses createImageBitmap with resize options
+// (decodes + scales in one step); falls back to <img> on older browsers.
+async function decodeCanvasFromFile(file, maxEdge) {
+  // Probe dimensions cheaply via a bitmap, then create a resized bitmap.
+  try {
+    const probe = await createImageBitmap(file)
+    const scale = Math.min(1, maxEdge / Math.max(probe.width, probe.height))
+    const w = Math.max(1, Math.round(probe.width * scale)), h = Math.max(1, Math.round(probe.height * scale))
+    let bmp = probe
+    if (scale < 1) {
+      try { bmp = await createImageBitmap(file, { resizeWidth: w, resizeHeight: h, resizeQuality: "medium" }); probe.close && probe.close() }
+      catch (e) { bmp = probe } // resize options unsupported — use probe, draw scaled below
+    }
+    const cv = document.createElement("canvas")
+    cv.width = w; cv.height = h
+    cv.getContext("2d").drawImage(bmp, 0, 0, w, h)
+    try { bmp.close && bmp.close() } catch (e) {}
+    return cv
+  } catch (e) {
+    // Fallback: object-URL <img> path (higher peak memory, but rarely reached).
+    const img = await loadImage(file)
+    const cv = canvasFrom(img, maxEdge)
+    try { URL.revokeObjectURL(img.src) } catch (er) {}
+    return cv
+  }
+}
+
+// Free a canvas's backing store promptly (helps low-RAM devices).
+function freeCanvas(cv) { try { if (cv) { cv.width = 0; cv.height = 0 } } catch (e) {} }
+
+
 // stored audit photo is tiny. Returns null when the box is too small/unreliable.
 function cropToLabel(src, box) {
   if (!box || box.w <= 0) return null
@@ -374,12 +414,12 @@ export default function PanelScanner({ onExit, portalUser }) {
     if (!file) return
     setBusy(true)
     try {
-      const img = await loadImage(file)
-      const decodeCv = canvasFrom(img, 2000)
+      // Decode from a downscaled canvas (low memory — avoids OOM on budget phones).
+      const decodeCv = await decodeCanvasFromFile(file, DECODE_EDGE)
       const decoded = await decodeBarcode(decodeCv)
       const cropCv = decoded && decoded.box ? cropToLabel(decodeCv, decoded.box) : null
-      const photo = canvasFrom(cropCv || img, 1280).toDataURL("image/jpeg", 0.72)
-      try { URL.revokeObjectURL(img.src) } catch (er) {}
+      const photo = canvasFrom(cropCv || decodeCv, 1024).toDataURL("image/jpeg", 0.7)
+      freeCanvas(cropCv); freeCanvas(decodeCv) // release backing stores promptly
       setBusy(false)
       if (decoded && decoded.serial) { await logScan(decoded.serial, decoded.format, photo) } // confident read → auto-log + advance
       else { setPrompt({ kind: "scanfail", photo }) } // couldn't read — don't guess
