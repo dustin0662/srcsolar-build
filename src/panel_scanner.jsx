@@ -20,10 +20,12 @@ const NB = { fontFamily: "'Barlow Condensed',sans-serif" }
 const PROJ_COLORS = ["#F97316", "#EAB308", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#ef4444"]
 const IS_IOS = typeof navigator !== "undefined" && (/iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
 
-// Restrict to the barcode types we actually use. ITF/Codabar/RSS are excluded —
-// they produce false positives (e.g. random lines decoded as "2222222222").
-const ZX_FORMATS = [BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX, BarcodeFormat.AZTEC, BarcodeFormat.PDF_417, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E]
-const ND_FORMATS = ["qr_code", "data_matrix", "aztec", "pdf417", "code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e"]
+// Restrict to 1D (linear) barcodes only — panel serial labels are always linear.
+// All 2D/matrix codes (QR, Data Matrix, Aztec, PDF417) are intentionally excluded
+// so a stray QR code in frame is never decoded or logged. ITF/Codabar/RSS are
+// also excluded — they produce false positives (e.g. random lines as "2222222222").
+const ZX_FORMATS = [BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E]
+const ND_FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e"]
 function zxHints() { const h = new Map(); h.set(DecodeHintType.TRY_HARDER, true); h.set(DecodeHintType.POSSIBLE_FORMATS, ZX_FORMATS); return h }
 function makeDetector() { try { return new window.BarcodeDetector({ formats: ND_FORMATS }) } catch (e) { return new window.BarcodeDetector() } }
 const POLL_MS = 8000
