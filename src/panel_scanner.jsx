@@ -352,11 +352,13 @@ export default function PanelScanner({ onExit, portalUser }) {
   }, [])
   async function doInstall() { if (!installEvt) return; try { installEvt.prompt(); await installEvt.userChoice } catch (e) {} setInstallEvt(null) }
 
-  // Live multi-user refresh — keep counts and the open row in sync with others.
+  // Live multi-user refresh — keep structure, counts and the open row in sync
+  // with other devices. Refreshing the tree also self-heals any local drift so a
+  // stale copy can never be written back over good server data.
   useEffect(() => {
-    const t = setInterval(() => { fetchSummary(); if (rowIdRef.current) fetchRow(rowIdRef.current) }, POLL_MS)
+    const t = setInterval(() => { fetchTree(); fetchSummary(); if (rowIdRef.current) fetchRow(rowIdRef.current) }, POLL_MS)
     return () => clearInterval(t)
-  }, [fetchSummary, fetchRow])
+  }, [fetchTree, fetchSummary, fetchRow])
 
   const proj = tree.projects.find((p) => p.id === projId) || null
   const section = (proj && (proj.sections || []).find((s) => s.id === secId)) || null
@@ -382,30 +384,40 @@ export default function PanelScanner({ onExit, portalUser }) {
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────────
-  async function saveProjects(projects) {
-    setTree((t) => ({ ...t, projects }))
-    try { await fetch(API + "?action=projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projects }) }) } catch (e) { flash("Save failed — check connection", "err") }
+  // Structure changes are sent as ONE granular operation that the server applies
+  // to its own authoritative tree (never a full-blob replace from possibly-stale
+  // local state — that's what silently deleted a whole section). We update the
+  // local tree optimistically for instant UI, then reconcile with the server.
+  async function treeOp(op, localFn) {
+    if (loading) return // never act on a not-yet-loaded tree
+    setTree((t) => { const next = JSON.parse(JSON.stringify(t.projects)); try { localFn(next) } catch (e) { return t } return { ...t, projects: next } })
+    try {
+      const res = await fetch(API + "?action=treeOp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ op }) })
+      if (!res.ok) flash("Save conflict — refreshing", "err")
+    } catch (e) { flash("Save failed — check connection", "err") }
+    await fetchTree() // reconcile with the authoritative server tree
   }
-  const mutateTree = (fn) => { const next = JSON.parse(JSON.stringify(tree.projects)); fn(next); saveProjects(next) }
 
   async function addProject() {
     const r = await askForm("New Project", [
       { key: "name", label: "Project name", placeholder: "e.g. Midway" },
     ], "Create Project")
     const name = r && (r.name || "").trim(); if (!name) return
-    saveProjects(tree.projects.concat([{ id: uid(), name, color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }]))
+    const project = { id: uid(), name, color: PROJ_COLORS[tree.projects.length % PROJ_COLORS.length], createdAt: Date.now(), sections: [] }
+    treeOp({ type: "addProject", project }, (t) => { t.push(project) })
   }
   async function editProject(p) {
     const r = await askForm("Edit Project", [
       { key: "name", label: "Project name", value: p.name },
     ])
     const name = r && (r.name || "").trim(); if (!name) return
-    mutateTree((t) => { const pp = t.find((x) => x.id === p.id); pp.name = name })
+    treeOp({ type: "editProject", projectId: p.id, name }, (t) => { const pp = t.find((x) => x.id === p.id); if (pp) pp.name = name })
   }
   async function addSection() {
     const r = await askForm("New Section", [{ key: "name", label: "Section name", value: "Section " + ((proj.sections || []).length + 1), placeholder: "e.g. Block A" }], "Create Section")
     const name = r && (r.name || "").trim(); if (!name) return
-    mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = (p.sections || []).concat([{ id: uid(), name, createdAt: Date.now(), panelsPerRow: 0, rows: [] }]) })
+    const section = { id: uid(), name, createdAt: Date.now(), panelsPerRow: 0, rows: [] }
+    treeOp({ type: "addSection", projectId: projId, section }, (t) => { const p = t.find((x) => x.id === projId); if (p) p.sections = (p.sections || []).concat([section]) })
   }
   async function addRow(selectAfter) {
     const r = await askForm("New Row", [
@@ -414,10 +426,10 @@ export default function PanelScanner({ onExit, portalUser }) {
     ], "Create Row")
     const name = r && (r.name || "").trim(); if (!name) return
     const panelTarget = Math.max(0, parseInt(r.target, 10) || 0)
-    const id = uid()
-    mutateTree((t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); s.rows = (s.rows || []).concat([{ id, name, panelTarget, complete: false, createdAt: Date.now() }]) })
-    if (selectAfter) { setRowId(id); setRowDoc({ scans: [] }); setPanelNo(1); setCapture(null) }
-    return id
+    const row = { id: uid(), name, panelTarget, complete: false, createdAt: Date.now() }
+    treeOp({ type: "addRow", projectId: projId, sectionId: secId, row }, (t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); if (s) s.rows = (s.rows || []).concat([row]) })
+    if (selectAfter) { setRowId(row.id); setRowDoc({ scans: [] }); setPanelNo(1); setCapture(null) }
+    return row.id
   }
   async function renameRow(r0) {
     const r = await askForm("Edit Row", [
@@ -426,9 +438,11 @@ export default function PanelScanner({ onExit, portalUser }) {
     ])
     const name = r && (r.name || "").trim(); if (!name) return
     const panelTarget = Math.max(0, parseInt(r.target, 10) || 0)
-    mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r0.id); rr.name = name; rr.panelTarget = panelTarget })
+    treeOp({ type: "editRow", projectId: projId, sectionId: secId, rowId: r0.id, name, panelTarget }, (t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r0.id); if (rr) { rr.name = name; rr.panelTarget = panelTarget } })
   }
-  function setRowComplete(r, val) { mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); rr.complete = val }) }
+  function setRowComplete(r, val) {
+    treeOp({ type: "setRowComplete", projectId: projId, sectionId: secId, rowId: r.id, complete: val }, (t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); if (rr) rr.complete = val })
+  }
 
   // ── Scanning ────────────────────────────────────────────────────────────────
   // Load a row's scans and set the next panel number from authoritative server
@@ -445,6 +459,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   async function logScan(serial0, format, photo, panelOverride, force) {
     const serial = (serial0 || "").trim()
     if (!serial) { flash("Enter a serial first", "err"); return }
+    if (!rowId) { flash("No row open — reopen the row, then scan", "err"); return } // never drop a scan to a missing selection
     const panel = Math.max(1, parseInt(panelOverride != null ? panelOverride : panelNo, 10) || panelNo)
     if (!force) {
       const dupe = rowDoc.scans.find((s) => (s.serial || "").trim() === serial)
@@ -454,7 +469,9 @@ export default function PanelScanner({ onExit, portalUser }) {
       setPrompt({ kind: "over", target: row.panelTarget, pending: { serial, format, photo, panel } })
       return
     }
-    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: serial, format: format || "", ts: Date.now(), by: op, note: "", status: "ok" }
+    // Carry the names on the scan so the sheet is correct even if the server's
+    // tree snapshot hasn't caught up to a just-created row (server prefers these).
+    const scan = { id: uid(), projectId: projId, sectionId: secId, rowId, panel, serial, raw: serial, format: format || "", ts: Date.now(), by: op, note: "", status: "ok", project: proj && proj.name || "", section: section && section.name || "", row: row && row.name || "" }
     setBusy(true)
     try {
       await fetch(API + "?action=scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scan, photo: photo || undefined }) })

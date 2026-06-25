@@ -59,13 +59,65 @@ function locate(tree, s) {
 
 function scanRow(tree, s, origin) {
   const { proj, sec, row } = locate(tree, s);
+  // Prefer names carried on the scan payload; fall back to the tree lookup only
+  // when absent. A freshly-created row may not be in the tree snapshot yet, so
+  // the lookup can return blank — the payload name keeps the sheet correct.
   return {
     id: s.id, serial: s.serial || '', raw: s.raw || s.serial || '', format: s.format || '',
     qcSerial: s.qcSerial || '', qc: s.qcResult || '',
-    projectId: s.projectId || '', project: proj ? proj.name : '', section: sec ? sec.name : '', row: row ? row.name : '',
+    projectId: s.projectId || '', project: s.project || (proj ? proj.name : ''), section: s.section || (sec ? sec.name : ''), row: s.row || (row ? row.name : ''),
     panel: s.panel, timestamp: s.ts ? new Date(s.ts).toISOString() : new Date().toISOString(),
     by: s.by || '', note: s.note || '', status: s.status || 'ok',
   };
+}
+
+// Apply one granular structure operation to the tree in place. Returns true if
+// it changed something, false if the parent was missing (caller reports error).
+// Children are deduped by id so a retried op never creates duplicates.
+function applyTreeOp(tree, op) {
+  const projects = tree.projects || (tree.projects = []);
+  const findProj = (id) => projects.find((p) => p && p.id === id);
+  const findSec = (p, id) => p && (p.sections || []).find((x) => x && x.id === id);
+  const findRow = (s, id) => s && (s.rows || []).find((x) => x && x.id === id);
+  switch (op && op.type) {
+    case 'addProject': {
+      const pr = op.project; if (!pr || !pr.id) return false;
+      if (!findProj(pr.id)) projects.push(pr);
+      return true;
+    }
+    case 'editProject': {
+      const p = findProj(op.projectId); if (!p) return false;
+      if (typeof op.name === 'string') p.name = op.name;
+      return true;
+    }
+    case 'addSection': {
+      const p = findProj(op.projectId); if (!p) return false;
+      const sec = op.section; if (!sec || !sec.id) return false;
+      p.sections = p.sections || [];
+      if (!findSec(p, sec.id)) p.sections.push(sec);
+      return true;
+    }
+    case 'addRow': {
+      const p = findProj(op.projectId); const s = findSec(p, op.sectionId); if (!s) return false;
+      const row = op.row; if (!row || !row.id) return false;
+      s.rows = s.rows || [];
+      if (!findRow(s, row.id)) s.rows.push(row);
+      return true;
+    }
+    case 'editRow': {
+      const p = findProj(op.projectId); const s = findSec(p, op.sectionId); const r = findRow(s, op.rowId); if (!r) return false;
+      if (typeof op.name === 'string') r.name = op.name;
+      if (op.panelTarget != null) r.panelTarget = Math.max(0, parseInt(op.panelTarget, 10) || 0);
+      return true;
+    }
+    case 'setRowComplete': {
+      const p = findProj(op.projectId); const s = findSec(p, op.sectionId); const r = findRow(s, op.rowId); if (!r) return false;
+      r.complete = !!op.complete;
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 export default async (req) => {
@@ -97,7 +149,7 @@ export default async (req) => {
       const sum = (await store.get('summary', { type: 'json' })) || {};
       return json({ summary: sum });
     }
-    const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+    const tree = (await store.get('tree', { type: 'json', consistency: 'strong' })) || emptyTree();
     return json(tree);
   }
 
@@ -106,9 +158,30 @@ export default async (req) => {
     try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
     const action = url.searchParams.get('action');
 
-    // Replace the project/section/row structure (small, infrequent).
+    // Apply ONE granular structure change to the authoritative server tree.
+    // Unlike a full-blob replace, this can never drop sections/rows the client
+    // doesn't currently know about, so a stale phone can't erase data.
+    if (action === 'treeOp') {
+      const op = body && body.op;
+      if (!op || !op.type) return json({ error: 'op required' }, 400);
+      let ok = true;
+      const next = await cas(store, 'tree', (t) => { ok = applyTreeOp(t, op); if (!ok) return undefined; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
+      if (!ok) return json({ error: 'parent not found', rev: next && next.rev }, 409);
+      return json({ ok: true, rev: next.rev });
+    }
+
+    // Legacy full-structure replace. Kept for compatibility, but hardened: it
+    // refuses to drop any row that currently holds scans (a data-bearing node),
+    // so an out-of-date client build can never wipe logged work.
     if (action === 'projects') {
-      const next = await cas(store, 'tree', (t) => { t.projects = Array.isArray(body.projects) ? body.projects : []; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
+      const incoming = Array.isArray(body.projects) ? body.projects : [];
+      const sum = (await store.get('summary', { type: 'json', consistency: 'strong' })) || {};
+      const liveRowIds = Object.keys(sum).filter((id) => sum[id] && sum[id].c > 0);
+      const incomingRowIds = new Set();
+      incoming.forEach((p) => (p.sections || []).forEach((s) => (s.rows || []).forEach((r) => incomingRowIds.add(r.id))));
+      const dropped = liveRowIds.filter((id) => !incomingRowIds.has(id));
+      if (dropped.length) return json({ error: 'refused: would drop ' + dropped.length + ' row(s) with scans', dropped }, 409);
+      const next = await cas(store, 'tree', (t) => { t.projects = incoming; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
       return json({ ok: true, rev: next.rev });
     }
 
@@ -137,7 +210,7 @@ export default async (req) => {
           sum[s.rowId] = { c: cur.c + 1, x: Math.max(cur.x, s.panel || 0), q: cur.q || 0 };
           return sum;
         }, () => ({}));
-        const tree = (await store.get('tree', { type: 'json' })) || emptyTree();
+        const tree = (await store.get('tree', { type: 'json', consistency: 'strong' })) || emptyTree();
         await forward(tree.webhook, Object.assign({ mode: 'create' }, scanRow(tree, s, url.origin)));
       }
       return json({ ok: true });
