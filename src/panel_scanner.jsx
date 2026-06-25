@@ -266,6 +266,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   const [dlg, setDlg] = useState(null) // in-app prompt/confirm (native dialogs are blocked on mobile)
 
   const fileRef = useRef(null)
+  const uploadRef = useRef(null)
   const rowIdRef = useRef(null); rowIdRef.current = rowId
   const capDefaultsRef = useRef({ panel: 1 })
   const logScanRef = useRef(null) // latest logScan, so the live scanner avoids stale closures
@@ -690,7 +691,9 @@ export default function PanelScanner({ onExit, portalUser }) {
         {!scanning && !capture && (<>
           {photoMode ? (<>
             <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPickFile} style={{ display: "none" }} />
+            <input ref={uploadRef} type="file" accept="image/*" onChange={onPickFile} style={{ display: "none" }} />
             <button disabled={busy} onClick={() => fileRef.current && fileRef.current.click()} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px", opacity: busy ? .6 : 1 }}>{busy ? "Reading…" : "📷 Take Photo"}</button>
+            <div style={{ ...NB, fontSize: 13, color: A, marginTop: 12, cursor: "pointer", textAlign: "center" }} onClick={() => uploadRef.current && uploadRef.current.click()}>or upload a photo</div>
           </>) : (
             <button onClick={() => { unlockAudio(); setCamErr(""); setScanning(true) }} style={{ ...BTN, width: "100%", fontSize: 17, padding: "18px" }}>📷 Start Scanning</button>
           )}
