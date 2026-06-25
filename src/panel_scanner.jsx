@@ -112,23 +112,52 @@ async function decodeBarcode(canvas) {
 }
 
 // Decode resolution. Kept modest so low-RAM phones don't OOM building canvases
-// from a full-res camera photo. Lower still on devices reporting <=3 GB RAM.
-const DECODE_EDGE = (typeof navigator !== "undefined" && navigator.deviceMemory && navigator.deviceMemory <= 3) ? 1000 : 1280
+// from a full-res camera photo. Lower still on devices reporting low RAM.
+const DECODE_EDGE = (() => {
+  const m = typeof navigator !== "undefined" ? navigator.deviceMemory : undefined
+  if (m && m <= 2) return 900
+  if (m && m <= 4) return 1100
+  return 1280
+})()
+
+// Read image pixel dimensions from the file header WITHOUT decoding the pixels
+// (reads only the first 64 KB). Avoids allocating a full-res bitmap just to learn
+// the size — critical on ~2 GB phones. Returns {w,h} or null.
+async function readImageSize(file) {
+  try {
+    const dv = new DataView(await file.slice(0, 65536).arrayBuffer())
+    if (dv.byteLength > 24 && dv.getUint16(0) === 0xFFD8) { // JPEG
+      let off = 2
+      while (off + 9 < dv.byteLength) {
+        if (dv.getUint8(off) !== 0xFF) { off++; continue }
+        const marker = dv.getUint8(off + 1)
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+          return { w: dv.getUint16(off + 7), h: dv.getUint16(off + 5) }
+        }
+        off += 2 + dv.getUint16(off + 2)
+      }
+    } else if (dv.byteLength > 24 && dv.getUint32(0) === 0x89504E47) { // PNG
+      return { w: dv.getUint32(16), h: dv.getUint32(20) }
+    }
+  } catch (e) {}
+  return null
+}
 
 // Load a File into a downscaled canvas for decoding, without ever holding the
-// full-resolution image in memory. Uses createImageBitmap with resize options
-// (decodes + scales in one step); falls back to <img> on older browsers.
+// full-resolution image in memory: parse the size from the header, then ask
+// createImageBitmap to decode + downscale in one step. Falls back to <img>.
 async function decodeCanvasFromFile(file, maxEdge) {
-  // Probe dimensions cheaply via a bitmap, then create a resized bitmap.
   try {
-    const probe = await createImageBitmap(file)
-    const scale = Math.min(1, maxEdge / Math.max(probe.width, probe.height))
-    const w = Math.max(1, Math.round(probe.width * scale)), h = Math.max(1, Math.round(probe.height * scale))
-    let bmp = probe
-    if (scale < 1) {
-      try { bmp = await createImageBitmap(file, { resizeWidth: w, resizeHeight: h, resizeQuality: "medium" }); probe.close && probe.close() }
-      catch (e) { bmp = probe } // resize options unsupported — use probe, draw scaled below
+    const size = await readImageSize(file)
+    let opts
+    if (size && size.w && size.h) {
+      const scale = Math.min(1, maxEdge / Math.max(size.w, size.h))
+      if (scale < 1) opts = { resizeWidth: Math.max(1, Math.round(size.w * scale)), resizeHeight: Math.max(1, Math.round(size.h * scale)), resizeQuality: "medium" }
     }
+    const bmp = await createImageBitmap(file, opts || {})
+    // Guard: if resize wasn't applied (no opts / unsupported), downscale on draw.
+    const s2 = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * s2)), h = Math.max(1, Math.round(bmp.height * s2))
     const cv = document.createElement("canvas")
     cv.width = w; cv.height = h
     cv.getContext("2d").drawImage(bmp, 0, 0, w, h)
