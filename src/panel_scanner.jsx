@@ -395,9 +395,6 @@ export default function PanelScanner({ onExit, portalUser }) {
     const panelTarget = Math.max(0, parseInt(r.target, 10) || 0)
     mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r0.id); rr.name = name; rr.panelTarget = panelTarget })
   }
-  async function deleteProject(p) { if (!await askConfirm(`Delete project "${p.name}" and its layout? (Logged scans stay in the sheet.)`, { danger: true, okLabel: "Delete" })) return; saveProjects(tree.projects.filter((x) => x.id !== p.id)) }
-  async function deleteSection(s) { if (!await askConfirm(`Delete "${s.name}"?`, { danger: true, okLabel: "Delete" })) return; mutateTree((t) => { const p = t.find((x) => x.id === projId); p.sections = p.sections.filter((x) => x.id !== s.id) }) }
-  async function deleteRow(r) { if (!await askConfirm(`Delete "${r.name}"?`, { danger: true, okLabel: "Delete" })) return; mutateTree((t) => { const s = t.find((x) => x.id === projId).sections.find((x) => x.id === secId); s.rows = s.rows.filter((x) => x.id !== r.id) }) }
   function setRowComplete(r, val) { mutateTree((t) => { const rr = t.find((x) => x.id === projId).sections.find((x) => x.id === secId).rows.find((x) => x.id === r.id); rr.complete = val }) }
 
   // ── Scanning ────────────────────────────────────────────────────────────────
@@ -546,17 +543,6 @@ export default function PanelScanner({ onExit, portalUser }) {
     setBusy(false)
   }
 
-  async function deleteScan(s) {
-    if (!await askConfirm(`Delete panel ${s.panel} (${s.serial})?`, { danger: true, okLabel: "Delete" })) return
-    setBusy(true)
-    try {
-      await fetch(API + "?action=deleteScan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: s.id, fromRow: s.rowId }) })
-      setRowDoc((d) => ({ scans: d.scans.filter((x) => x.id !== s.id) }))
-      fetchSummary(); flash("Deleted", "ok")
-    } catch (e) { flash("Delete failed", "err") }
-    setBusy(false)
-  }
-
   async function saveWebhook(urlVal) { setTree((t) => ({ ...t, webhook: urlVal })); try { await fetch(API + "?action=webhook", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ webhook: urlVal }) }); flash("Sheet link saved ✓", "ok") } catch (e) { flash("Save failed", "err") } }
 
   function requestNewSection() {
@@ -618,7 +604,6 @@ export default function PanelScanner({ onExit, portalUser }) {
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{(p.sections || []).length} sections · {total} panels</div>
               <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                 <span onClick={(e) => { e.stopPropagation(); editProject(p) }} style={{ ...NB, fontSize: 12, color: A, letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
-                <span onClick={(e) => { e.stopPropagation(); deleteProject(p) }} style={{ ...NB, fontSize: 12, color: "#c00", letterSpacing: 1, textTransform: "uppercase" }}>Delete</span>
               </div>
             </div>
           )
@@ -646,7 +631,6 @@ export default function PanelScanner({ onExit, portalUser }) {
                 {done && <span style={{ ...NB, fontSize: 11, color: "#16a34a", letterSpacing: 1 }}>✓ DONE</span>}
               </div>
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{(s.rows || []).length} rows · {cnt} panels</div>
-              <div onClick={(e) => { e.stopPropagation(); deleteSection(s) }} style={{ ...NB, fontSize: 12, color: "#c00", marginTop: 10, letterSpacing: 1, textTransform: "uppercase" }}>Delete</div>
             </div>
           )
         })}
@@ -669,7 +653,6 @@ export default function PanelScanner({ onExit, portalUser }) {
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{st.count}{r.panelTarget ? " / " + r.panelTarget : ""} panels</div>
               <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                 <span onClick={(e) => { e.stopPropagation(); renameRow(r) }} style={{ ...NB, fontSize: 12, color: A, letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
-                <span onClick={(e) => { e.stopPropagation(); deleteRow(r) }} style={{ ...NB, fontSize: 12, color: "#c00", letterSpacing: 1, textTransform: "uppercase" }}>Delete</span>
               </div>
             </div>
           )
@@ -838,8 +821,7 @@ export default function PanelScanner({ onExit, portalUser }) {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={() => { setEditing(Object.assign({}, viewScan)); setViewScan(null) }} style={{ ...BTN_GHOST, flex: 1 }}>More…</button>
-              <button style={{ ...BTN_GHOST, color: "#c00", borderColor: "rgba(204,0,0,.4)" }} onClick={async () => { const s = viewScan; setViewScan(null); await deleteScan(s) }}>Delete</button>
-              <button style={BTN_GHOST} onClick={() => setViewScan(null)}>Close</button>
+              <button style={{ ...BTN_GHOST, flex: 1 }} onClick={() => setViewScan(null)}>Close</button>
             </div>
           </Modal>
         )
