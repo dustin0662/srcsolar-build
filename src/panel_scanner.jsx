@@ -48,6 +48,16 @@ function loadImage(file) {
   })
 }
 
+// Load an <img> from a src string (e.g. a stored photo data URL).
+function loadImageSrc(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
 // Draw an image onto a canvas scaled to a max edge (Safari/Chrome auto-apply EXIF).
 function canvasFrom(img, maxEdge) {
   let { width: w, height: h } = img
@@ -532,6 +542,21 @@ export default function PanelScanner({ onExit, portalUser }) {
     setCapture(null)
   }
 
+  // Read the human-readable serial digits off a stored label photo (data URL)
+  // with OCR. Best-effort — the result is always shown in the editable field for
+  // the user to verify, never auto-logged. Returns the digits or null.
+  async function ocrPhoto(photo) {
+    if (!photo) return null
+    setBusy(true)
+    try {
+      const img = await loadImageSrc(photo)
+      const cv = canvasFrom(img, 1000)
+      const digits = await ocrDigits(cv)
+      freeCanvas(cv)
+      return digits
+    } catch (e) { return null } finally { setBusy(false) }
+  }
+
   // Decide row-complete vs missing-panels prompt from authoritative server data.
   async function maybePromptRowComplete(r) {
     let scans = rowDoc.scans
@@ -809,6 +834,7 @@ export default function PanelScanner({ onExit, portalUser }) {
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(0,0,0,.08)" }}>
             <div style={{ ...NB, fontSize: 13, color: capture.serial ? "#16a34a" : "#d97706", letterSpacing: 1, marginBottom: 8 }}>{capture.manual ? "Enter the serial" : "✓ Scanned" + (capture.format ? " (" + capture.format + ")" : "") + " — confirm below"}</div>
             {capture.photo && <img src={capture.photo} alt="scan" style={{ width: m ? "100%" : 200, maxWidth: 260, borderRadius: 8, border: "1px solid rgba(0,0,0,.1)", marginBottom: 10 }} />}
+            {capture.photo && <button disabled={busy} onClick={async () => { const digits = await ocrPhoto(capture.photo); if (digits) { setCapture((c) => ({ ...c, serial: digits })); flash("Read serial — double-check it", "ok") } else flash("Couldn't read the number — type it in", "err") }} style={{ ...BTN_GHOST, marginBottom: 10, opacity: busy ? .6 : 1 }}>{busy ? "Reading…" : "📖 Scan number from photo"}</button>}
             <label style={lbl}>SERIAL</label>
             <input value={capture.serial} onChange={(e) => setCapture({ ...capture, serial: e.target.value })} placeholder="Panel serial" style={{ ...IST, marginBottom: 12 }} autoFocus={!!capture.manual} />
             <label style={lbl}>PANEL #</label>
@@ -937,11 +963,12 @@ export default function PanelScanner({ onExit, portalUser }) {
       {prompt && prompt.kind === "scanfail" && (
         <Modal m={m} title="Couldn't Read Barcode" onClose={() => setPrompt(null)}>
           {prompt.photo && <img src={prompt.photo} alt="scan" style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(0,0,0,.1)", marginBottom: 12 }} />}
-          <p style={ptext}>The barcode couldn't be read from that photo. Retake it, or enter the serial by hand.</p>
+          <p style={ptext}>The barcode couldn't be read from that photo. Read the number off the label, retake it, or enter the serial by hand.</p>
           <div style={{ display: "flex", gap: 10, marginTop: 18, flexDirection: m ? "column" : "row", flexWrap: "wrap" }}>
-            <button style={BTN} onClick={() => { setPrompt(null); setTimeout(() => { fileRef.current && fileRef.current.click() }, 50) }}>Retake Photo</button>
-            <button style={BTN_GHOST} onClick={() => { const ph = prompt.photo; setPrompt(null); setCapture({ serial: "", format: "", photo: ph, panel: panelNo, manual: true }) }}>Enter Manually</button>
-            <button style={BTN_GHOST} onClick={() => setPrompt(null)}>Cancel</button>
+            <button disabled={busy} style={{ ...BTN, opacity: busy ? .6 : 1 }} onClick={async () => { const ph = prompt.photo; const digits = await ocrPhoto(ph); setPrompt(null); setCapture({ serial: digits || "", format: "", photo: ph, panel: panelNo, manual: true }); flash(digits ? "Read serial — double-check it" : "Couldn't read the number — type it in", digits ? "ok" : "err") }}>{busy ? "Reading…" : "Scan Text for Number"}</button>
+            <button disabled={busy} style={BTN_GHOST} onClick={() => { setPrompt(null); setTimeout(() => { fileRef.current && fileRef.current.click() }, 50) }}>Retake Photo</button>
+            <button disabled={busy} style={BTN_GHOST} onClick={() => { const ph = prompt.photo; setPrompt(null); setCapture({ serial: "", format: "", photo: ph, panel: panelNo, manual: true }) }}>Enter Manually</button>
+            <button disabled={busy} style={BTN_GHOST} onClick={() => setPrompt(null)}>Cancel</button>
           </div>
         </Modal>
       )}
