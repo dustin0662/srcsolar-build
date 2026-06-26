@@ -128,8 +128,11 @@ export default async (req) => {
   if (req.method === 'GET') {
     const photo = url.searchParams.get('photo');
     if (photo) {
-      const data = await store.get('photo:' + photo); // stored as a data URL string
-      if (!data) return new Response('', { status: 404 });
+      // Strong read so a just-written photo is visible to other devices/regions
+      // immediately (default reads are eventually consistent — that's why
+      // live-scan bursts appeared to "not sync" cross-device).
+      const data = await store.get('photo:' + photo, { consistency: 'strong' }); // data URL string
+      if (!data) return new Response('', { status: 404, headers: { 'cache-control': 'no-store' } }); // don't cache a pre-propagation miss
       const cache = 'public, max-age=31536000, immutable';
       // Decode the data URL to real image bytes so <img> can render it.
       const m = /^data:([^;,]+)(;base64)?,([\s\S]*)$/.exec(String(data));
@@ -142,7 +145,9 @@ export default async (req) => {
     }
     const rowId = url.searchParams.get('row');
     if (rowId) {
-      const doc = (await store.get('row:' + rowId, { type: 'json' })) || { scans: [] };
+      // Strong read so a cross-device viewer promptly gets new scans and their
+      // photoKey (which lives in the row record), not a stale snapshot.
+      const doc = (await store.get('row:' + rowId, { type: 'json', consistency: 'strong' })) || { scans: [] };
       return json({ scans: doc.scans || [] });
     }
     if (url.searchParams.get('summary') !== null) {
