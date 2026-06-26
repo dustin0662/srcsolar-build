@@ -122,6 +122,17 @@ const DECODE_EDGE = (() => {
   return 1280
 })()
 
+// Live-camera resolution. Budget phones (≤4 GB) can't sustain a sharp, focused
+// 1080p stream while also running the barcode detector — autofocus never settles
+// and the soft frames won't decode. 720p is ample for a linear panel label and
+// lets weak ISPs keep focus. Capable phones still get 1080p.
+const LIVE_RES = (() => {
+  const m = typeof navigator !== "undefined" ? navigator.deviceMemory : undefined
+  if (m && m <= 4) return { w: 1280, h: 720 }
+  return { w: 1920, h: 1080 }
+})()
+const LOW_MEM = typeof navigator !== "undefined" && navigator.deviceMemory != null && navigator.deviceMemory <= 2
+
 // Read image pixel dimensions from the file header WITHOUT decoding the pixels
 // (reads only the first 64 KB). Avoids allocating a full-res bitmap just to learn
 // the size — critical on ~2 GB phones. Returns {w,h} or null.
@@ -356,7 +367,7 @@ export default function PanelScanner({ onExit, portalUser }) {
   // with other devices. Refreshing the tree also self-heals any local drift so a
   // stale copy can never be written back over good server data.
   useEffect(() => {
-    const t = setInterval(() => { fetchTree(); fetchSummary(); if (rowIdRef.current) fetchRow(rowIdRef.current) }, POLL_MS)
+    const t = setInterval(() => { if (!LOW_MEM) fetchTree(); fetchSummary(); if (rowIdRef.current) fetchRow(rowIdRef.current) }, POLL_MS)
     return () => clearInterval(t)
   }, [fetchTree, fetchSummary, fetchRow])
 
@@ -1062,19 +1073,27 @@ function LiveScanner({ paused, steady, onHit, onSettle, onError }) {
       if (!v) return
       try {
         if (typeof window !== "undefined" && "BarcodeDetector" in window) {
-          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] }, audio: false })
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: LIVE_RES.w }, height: { ideal: LIVE_RES.h }, advanced: [{ focusMode: "continuous" }] }, audio: false })
           v.srcObject = stream; v.setAttribute("playsinline", "true"); v.muted = true
           await v.play()
+          // getUserMedia's advanced focusMode is often ignored — ask the track directly.
+          try { const tr = stream.getVideoTracks()[0]; if (tr && tr.applyConstraints) tr.applyConstraints({ advanced: [{ focusMode: "continuous" }] }) } catch (e) {}
           const det = makeDetector()
-          const loop = async () => {
+          let lastDetect = 0
+          // Throttle detection to ~9/sec. Running detect every animation frame
+          // saturates budget phones, starving autofocus so frames stay blurry.
+          const loop = async (ts) => {
             if (stopped) return
-            if (!pausedRef.current && !settlingRef.current) { try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {} }
+            if (!pausedRef.current && !settlingRef.current && ts - lastDetect >= 110) {
+              lastDetect = ts
+              try { const codes = await det.detect(v); if (codes && codes.length) { const b = codes[0].boundingBox; hit(codes[0].rawValue, codes[0].format, b ? { x: b.x, y: b.y, w: b.width, h: b.height } : null) } } catch (e) {}
+            }
             raf = requestAnimationFrame(loop)
           }
           raf = requestAnimationFrame(loop)
         } else {
           reader = new BrowserMultiFormatReader(zxHints())
-          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }, v, (result) => {
+          await reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: LIVE_RES.w }, height: { ideal: LIVE_RES.h } }, audio: false }, v, (result) => {
             if (result && !pausedRef.current) {
               let box = null
               try { const pts = result.getResultPoints && result.getResultPoints(); if (pts && pts.length) { const xs = pts.map((p) => p.getX()), ys = pts.map((p) => p.getY()); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) } } } catch (e) {}
