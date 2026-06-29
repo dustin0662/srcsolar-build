@@ -97,6 +97,11 @@ function applyTreeOp(tree, op) {
       if (!findSec(p, sec.id)) p.sections.push(sec);
       return true;
     }
+    case 'editSection': {
+      const p = findProj(op.projectId); const s = findSec(p, op.sectionId); if (!s) return false;
+      if (typeof op.name === 'string') s.name = op.name;
+      return true;
+    }
     case 'addRow': {
       const p = findProj(op.projectId); const s = findSec(p, op.sectionId); if (!s) return false;
       const row = op.row; if (!row || !row.id) return false;
@@ -118,6 +123,30 @@ function applyTreeOp(tree, op) {
     default:
       return false;
   }
+}
+
+// Rows that still hold scans (present in summary) but are no longer referenced
+// anywhere in the tree — i.e. orphaned by a structure loss. Their scan data is
+// intact in the row shard; we just need to re-attach the row to the tree. Names
+// come from the scans when present (older scans predate stored names).
+async function collectOrphans(store) {
+  const tree = (await store.get('tree', { type: 'json', consistency: 'strong' })) || emptyTree();
+  const sum = (await store.get('summary', { type: 'json', consistency: 'strong' })) || {};
+  const inTree = new Set();
+  (tree.projects || []).forEach((p) => (p.sections || []).forEach((s) => (s.rows || []).forEach((r) => r && inTree.add(r.id))));
+  const ids = Object.keys(sum).filter((id) => sum[id] && sum[id].c > 0 && !inTree.has(id));
+  const orphans = [];
+  for (const rowId of ids) {
+    const doc = (await store.get('row:' + rowId, { type: 'json' })) || { scans: [] };
+    const s0 = (doc.scans || [])[0] || {};
+    orphans.push({
+      rowId, projectId: s0.projectId || '', sectionId: s0.sectionId || '',
+      project: s0.project || '', section: s0.section || '', row: s0.row || '',
+      count: (sum[rowId] && sum[rowId].c) || (doc.scans || []).length,
+      sampleSerial: s0.serial || '', by: s0.by || '',
+    });
+  }
+  return { tree, orphans };
 }
 
 export default async (req) => {
@@ -153,6 +182,10 @@ export default async (req) => {
     if (url.searchParams.get('summary') !== null) {
       const sum = (await store.get('summary', { type: 'json' })) || {};
       return json({ summary: sum });
+    }
+    if (url.searchParams.get('orphans') !== null) {
+      const { orphans } = await collectOrphans(store);
+      return json({ orphans });
     }
     const tree = (await store.get('tree', { type: 'json', consistency: 'strong' })) || emptyTree();
     return json(tree);
@@ -193,6 +226,31 @@ export default async (req) => {
     if (action === 'webhook') {
       const next = await cas(store, 'tree', (t) => { t.webhook = typeof body.webhook === 'string' ? body.webhook.trim() : ''; t.rev = (t.rev || 0) + 1; return t; }, emptyTree);
       return json({ ok: true, rev: next.rev });
+    }
+
+    // Re-attach orphaned rows (scans intact in their shard but missing from the
+    // tree after a structure loss) by recreating their project/section/row nodes
+    // with the SAME ids, so the existing scans light back up. Idempotent.
+    if (action === 'recover') {
+      const { orphans } = await collectOrphans(store);
+      if (!orphans.length) return json({ ok: true, recovered: 0 });
+      const next = await cas(store, 'tree', (t) => {
+        t.projects = t.projects || [];
+        for (const o of orphans) {
+          if (!o.projectId || !o.rowId) continue;
+          let p = t.projects.find((x) => x && x.id === o.projectId);
+          if (!p) { p = { id: o.projectId, name: o.project || 'Recovered Project', color: '#F97316', createdAt: 0, sections: [] }; t.projects.push(p); }
+          p.sections = p.sections || [];
+          let s = o.sectionId ? p.sections.find((x) => x && x.id === o.sectionId) : null;
+          if (o.sectionId && !s) { s = { id: o.sectionId, name: o.section || 'Recovered Section', createdAt: 0, panelsPerRow: 0, rows: [] }; p.sections.push(s); }
+          if (!s) continue;
+          s.rows = s.rows || [];
+          if (!s.rows.some((x) => x && x.id === o.rowId)) s.rows.push({ id: o.rowId, name: o.row || 'Recovered Row', panelTarget: 0, complete: false, createdAt: 0 });
+        }
+        t.rev = (t.rev || 0) + 1;
+        return t;
+      }, emptyTree);
+      return json({ ok: true, recovered: orphans.length, rev: next.rev });
     }
 
     // Append a scan to its row's shard. Concurrency-safe: row + summary use CAS.

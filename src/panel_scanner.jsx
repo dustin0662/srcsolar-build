@@ -262,6 +262,7 @@ export default function PanelScanner({ onExit, portalUser }) {
 
   const [tree, setTree] = useState({ projects: [], webhook: "" })
   const [summary, setSummary] = useState({})
+  const [orphans, setOrphans] = useState([])
   const [rowDoc, setRowDoc] = useState({ scans: [] })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -331,8 +332,11 @@ export default function PanelScanner({ onExit, portalUser }) {
   const fetchTree = useCallback(async () => { try { const r = await fetch(API, { cache: "no-store" }); const d = await r.json(); setTree({ projects: d.projects || [], webhook: d.webhook || "" }) } catch (e) {} }, [])
   const fetchSummary = useCallback(async () => { try { const r = await fetch(API + "?summary", { cache: "no-store" }); const d = await r.json(); setSummary(d.summary || {}) } catch (e) {} }, [])
   const fetchRow = useCallback(async (id) => { if (!id) return; try { const r = await fetch(API + "?row=" + id, { cache: "no-store" }); const d = await r.json(); if (rowIdRef.current === id) setRowDoc({ scans: d.scans || [] }) } catch (e) {} }, [])
+  // Rows whose scans survive on the server but aren't shown anywhere in the tree
+  // (orphaned by an earlier structure loss) — surfaced so they can be recovered.
+  const fetchOrphans = useCallback(async () => { try { const r = await fetch(API + "?orphans", { cache: "no-store" }); const d = await r.json(); setOrphans(d.orphans || []) } catch (e) {} }, [])
 
-  useEffect(() => { (async () => { await Promise.all([fetchTree(), fetchSummary()]); setLoading(false) })() }, [fetchTree, fetchSummary])
+  useEffect(() => { (async () => { await Promise.all([fetchTree(), fetchSummary()]); setLoading(false); fetchOrphans() })() }, [fetchTree, fetchSummary, fetchOrphans])
 
   // Restore the last project/section/row after boot so an OOM-induced silent
   // page reload (budget Androids in Photo mode) drops the user right back on
@@ -439,6 +443,27 @@ export default function PanelScanner({ onExit, portalUser }) {
     const name = r && (r.name || "").trim(); if (!name) return
     const section = { id: uid(), name, createdAt: Date.now(), panelsPerRow: 0, rows: [] }
     treeOp({ type: "addSection", projectId: projId, section }, (t) => { const p = t.find((x) => x.id === projId); if (p) p.sections = (p.sections || []).concat([section]) })
+  }
+  async function renameSection(s0) {
+    const r = await askForm("Edit Section", [{ key: "name", label: "Section name", value: s0.name }])
+    const name = r && (r.name || "").trim(); if (!name) return
+    treeOp({ type: "editSection", projectId: projId, sectionId: s0.id, name }, (t) => { const ss = t.find((x) => x.id === projId).sections.find((x) => x.id === s0.id); if (ss) ss.name = name })
+  }
+  // Re-attach orphaned rows (scans intact on the server but missing from the
+  // tree after an earlier structure loss) so their panels show again.
+  async function recoverRows() {
+    if (!orphans.length) { flash("Nothing to recover", "ok"); return }
+    const n = orphans.length
+    if (!(await askConfirm(`${n} scanned row${n > 1 ? "s" : ""} with data aren't showing in the app. Recover ${n > 1 ? "them" : "it"}? Names may come back as “Recovered …” — you can rename them to match your sheet.`, { okLabel: "Recover" }))) return
+    setBusy(true)
+    try {
+      const res = await fetch(API + "?action=recover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) })
+      const d = await res.json().catch(() => ({}))
+      await Promise.all([fetchTree(), fetchSummary()])
+      await fetchOrphans()
+      flash(d && d.recovered ? `Recovered ${d.recovered} row${d.recovered > 1 ? "s" : ""} ✓` : "Recovery failed — try again", d && d.recovered ? "ok" : "err")
+    } catch (e) { flash("Recovery failed — check connection", "err") }
+    setBusy(false)
   }
   async function addRow(selectAfter) {
     const r = await askForm("New Row", [
@@ -680,6 +705,12 @@ export default function PanelScanner({ onExit, portalUser }) {
     body = (<>
       <TopBar back={onExit || null} backLabel="Exit" />
       <Title t="PANEL SCANNER" sub="Pick a project to start scanning" />
+      {orphans.length > 0 && (
+        <div onClick={recoverRows} style={{ ...card, marginBottom: 14, borderLeft: "4px solid #ef4444", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer" }}>
+          <span style={{ ...NB, fontSize: 14, color: INK }}>⚠ {orphans.length} scanned row{orphans.length > 1 ? "s" : ""} with data {orphans.length > 1 ? "aren't" : "isn't"} showing</span>
+          <span style={{ ...NB, fontSize: 13, letterSpacing: 1, textTransform: "uppercase", color: "#dc2626" }}>{busy ? "…" : "Recover"}</span>
+        </div>
+      )}
       {!standalone && installEvt && (
         <div onClick={doInstall} style={{ ...card, marginBottom: 14, borderLeft: "4px solid " + A, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <span style={{ ...NB, fontSize: 14, color: INK }}>📲 Install Panel Scanner as an app</span>
@@ -727,6 +758,9 @@ export default function PanelScanner({ onExit, portalUser }) {
                 {done && <span style={{ ...NB, fontSize: 11, color: "#16a34a", letterSpacing: 1 }}>✓ DONE</span>}
               </div>
               <div style={{ ...NB, fontSize: 13, color: "#777", marginTop: 6 }}>{(s.rows || []).length} rows · {cnt} panels</div>
+              <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+                <span onClick={(e) => { e.stopPropagation(); renameSection(s) }} style={{ ...NB, fontSize: 12, color: A, letterSpacing: 1, textTransform: "uppercase" }}>Edit</span>
+              </div>
             </div>
           )
         })}
