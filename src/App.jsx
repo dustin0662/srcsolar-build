@@ -5417,11 +5417,11 @@ export default function App(){
               {loginErr&&<div style={{background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.3)',color:'#EF4444',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
               <div style={{marginBottom:16}}>
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_email')}</div>
-                <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_email_ph')}/>
+                <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_email_ph')} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-email-noautofill" data-lpignore="true" data-form-type="other"/>
               </div>
               <div style={{marginBottom:24}}>
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_password')}</div>
-                <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_password_ph')} onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}}/>
+                <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_password_ph')} onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}} autoComplete="new-password" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-pass-noautofill" data-lpignore="true" data-form-type="other"/>
               </div>
               <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#FB923C'}} onMouseLeave={function(e){e.target.style.background=A}}>
                 {T('login_signin')}
