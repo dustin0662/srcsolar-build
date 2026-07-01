@@ -157,6 +157,11 @@ const I18N = {
     cap_02_t: 'Apprenticeship Enabled', cap_02_b: 'Certified apprenticeship programs combining site experience with technical training to build skilled local labor pools for every region we operate.',
     cap_03_t: 'EPC Subcontracting', cap_03_b: 'Precision tracking installation, pile driving, and mechanical assembly for utility-scale EPCs with industry-leading accuracy.',
     port_kicker: 'Team Experience', port_title: 'TEAM PROJECT PORTFOLIO',
+    founder_kicker: 'Meet the Founder',
+    founder_name: 'DUSTIN HANSON',
+    founder_title: 'Founder · Sunrise Construction & Development',
+    founder_bio_1: 'Boots-on-the-ground first, boardroom second. Dustin built Sunrise Construction & Development on years of utility-scale solar experience — pile driving, racking, module installation — under some of the largest EPCs in the country.',
+    founder_bio_2: 'His standard runs through every crew on every site: safety first, precision installs, and personal accountability to the EPCs and owners we serve. When something needs a decision, he is on the phone. When something needs a hand, he is in the field.',
     port_intro: "A personal portfolio of projects our team members have worked on across their careers.",
     port_disclaimer: 'These projects represent the individual field experience of our team members — not necessarily work performed by Sunrise Construction & Development.',
     cov_national: 'National Coverage', cov_utility: 'Utility-Scale', cov_isnet: 'ISNet Compliant', cov_safety: 'Safety First',
@@ -235,6 +240,11 @@ const I18N = {
     cap_02_t: 'Programa de Aprendices', cap_02_b: 'Programas de aprendizaje certificados que combinan experiencia en obra con capacitación técnica para formar fuerza laboral local calificada en cada región donde operamos.',
     cap_03_t: 'Subcontratación EPC', cap_03_b: 'Instalación de tracking de precisión, hincado de pilotes y ensamble mecánico para EPCs a gran escala con precisión líder en la industria.',
     port_kicker: 'Experiencia del Equipo', port_title: 'PORTAFOLIO DE PROYECTOS DEL EQUIPO',
+    founder_kicker: 'Conoce al Fundador',
+    founder_name: 'DUSTIN HANSON',
+    founder_title: 'Fundador · Sunrise Construction & Development',
+    founder_bio_1: 'Primero en el terreno, después en la oficina. Dustin construyó Sunrise Construction & Development sobre años de experiencia solar a gran escala — hincado de pilotes, racking, instalación de módulos — bajo algunos de los EPCs más grandes del país.',
+    founder_bio_2: 'Su estándar se aplica en cada cuadrilla en cada obra: seguridad primero, instalaciones precisas y responsabilidad personal con los EPCs y propietarios a los que servimos. Cuando algo requiere una decisión, está al teléfono. Cuando algo requiere una mano, está en el campo.',
     port_intro: 'Un portafolio personal de proyectos en los que los miembros de nuestro equipo han trabajado a lo largo de sus carreras.',
     port_disclaimer: 'Estos proyectos representan la experiencia individual de campo de los miembros de nuestro equipo — no necesariamente trabajo realizado por Sunrise Construction & Development.',
     cov_national: 'Cobertura Nacional', cov_utility: 'Escala Industrial', cov_isnet: 'Certificado ISNet', cov_safety: 'Seguridad Primero',
@@ -6129,6 +6139,30 @@ export default function App(){
             <h2 style={{...BB,fontSize:'clamp(36px,8vw,76px)',letterSpacing:2,marginBottom:m?24:48,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)'}}>{T('caps_title')}</h2>
             <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(3,1fr)',gap:2}}>
               {[{n:'01',t:T('cap_01_t'),b:T('cap_01_b')},{n:'02',t:T('cap_02_t'),b:T('cap_02_b')},{n:'03',t:T('cap_03_t'),b:T('cap_03_b')}].map((c,ci)=><CapCard key={ci} c={c} ci={ci}/>)}
+            </div>
+          </div>
+        </Sec>
+
+        {/* ── MEET THE FOUNDER ── */}
+        <Sec id="founder">
+          <div style={{maxWidth:1200,margin:'0 auto'}}>
+            <div style={{display:'grid',gridTemplateColumns:m?'1fr':'minmax(0,1fr) minmax(0,1.05fr)',gap:m?24:56,alignItems:'center'}}>
+              <div style={{position:'relative',overflow:'hidden',border:'1px solid rgba(249,115,22,.28)',boxShadow:'0 10px 40px rgba(0,0,0,.35), 0 0 40px rgba(249,115,22,.06)'}}>
+                <img src="/team/dustin-hanson.jpg" alt="Dustin Hanson — founder, Sunrise Construction & Development" loading="lazy" style={{width:'100%',height:'auto',display:'block',aspectRatio:'16/9',objectFit:'cover'}}/>
+                <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'20px 20px 16px',background:'linear-gradient(180deg,transparent 0%,rgba(0,0,0,.75) 100%)'}}>
+                  <div style={{...NB,fontSize:9,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:3}}>In the Field</div>
+                  <div style={{...BB,fontSize:m?16:18,letterSpacing:1,color:'#F5F0EB',lineHeight:1.1}}>DUSTIN HANSON</div>
+                </div>
+              </div>
+              <div>
+                <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:12,display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:22,height:1,background:A}}/>{T('founder_kicker')}
+                </div>
+                <h2 style={{...BB,fontSize:m?'clamp(34px,8vw,54px)':'clamp(40px,4.6vw,64px)',letterSpacing:2,color:'#F5F0EB',textShadow:'0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.9)',lineHeight:.95,marginBottom:6}}>{T('founder_name')}</h2>
+                <div style={{...NB,fontSize:m?13:15,fontWeight:400,letterSpacing:'2px',color:A,textTransform:'uppercase',marginBottom:m?16:22}}>{T('founder_title')}</div>
+                <p style={{...NB,fontSize:m?15:17,fontWeight:300,color:'#E8E2DC',lineHeight:1.7,marginBottom:m?14:18}}>{T('founder_bio_1')}</p>
+                <p style={{...NB,fontSize:m?14:16,fontWeight:300,color:'#CCC8C2',lineHeight:1.7,marginBottom:0}}>{T('founder_bio_2')}</p>
+              </div>
             </div>
           </div>
         </Sec>
