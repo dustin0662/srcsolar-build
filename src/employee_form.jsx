@@ -232,16 +232,23 @@ function buildPDF(form, submittedISO) {
     y += 26;
   }
 
+  var LABEL_X = M + 4;
+  var VALUE_X = M + 208;         // value column start
+  var LABEL_W = VALUE_X - LABEL_X - 12;
+  var VALUE_W = pw - VALUE_X - M;
   function row(label, value) {
     var v = value == null || value === '' ? '—' : String(value);
-    doc.setFontSize(10);
-    var wrap = doc.splitTextToSize(v, pw - M * 2 - 190);
-    var h = Math.max(14, wrap.length * 13);
+    // Wrap the label within its own column so long labels never collide with the value.
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    var lwrap = doc.splitTextToSize(label.toUpperCase(), LABEL_W);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+    var vwrap = doc.splitTextToSize(v, VALUE_W);
+    var h = Math.max(14, lwrap.length * 12, vwrap.length * 13);
     ensure(h + 4);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(120, 120, 120);
-    doc.text(label.toUpperCase(), M + 4, y + 2);
+    doc.text(lwrap, LABEL_X, y + 2);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 30, 40);
-    doc.text(wrap, M + 180, y + 2);
+    doc.text(vwrap, VALUE_X, y + 2);
     y += h + 4;
   }
 
