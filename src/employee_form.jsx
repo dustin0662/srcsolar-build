@@ -32,6 +32,7 @@ const TX = {
   submitting: { en: 'Submitting…', es: 'Enviando…' },
   back: { en: '← Back', es: '← Regresar' },
   err_required: { en: 'Please fill in all required fields (marked *).', es: 'Complete todos los campos obligatorios (marcados con *).' },
+  submit_failed: { en: 'Could not submit — please check your connection and try again.', es: 'No se pudo enviar — verifique su conexión e inténtelo de nuevo.' },
   // success
   success_title: { en: 'Form Submitted', es: 'Formulario Enviado' },
   success_msg: { en: 'Thank you. Your information has been sent to Human Resources.', es: 'Gracias. Su información ha sido enviada a Recursos Humanos.' },
@@ -179,7 +180,7 @@ function emptyForm() {
 // Read an image file, downscale it (keeps stored/emailed size reasonable), and
 // return a JPEG data URL plus its pixel dimensions (used to lay it out in the PDF).
 function resizePhoto(file, maxDim, quality) {
-  maxDim = maxDim || 1600; quality = quality || 0.82;
+  maxDim = maxDim || 1400; quality = quality || 0.80;
   return new Promise(function (resolve, reject) {
     var reader = new FileReader();
     reader.onerror = function () { reject(new Error('read failed')); };
@@ -381,19 +382,36 @@ export function EmployeeForm({ lang, onExit }) {
     setLastDoc(doc);
     var pdf = pdfToBase64(doc);
     var item = Object.assign({}, form, { id: id, submittedAt: submittedISO, lang: L, pdf: pdf });
+    // NOTE: no `keepalive` here. keepalive requests are capped at 64 KB by the
+    // Fetch spec; with two ID photos + the PDF the body is several MB, which
+    // would silently fail and strand the submission on this device only.
+    var stored = false, notFound = false;
     try {
-      var res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ item: item }), keepalive: true });
-      if (!res.ok) throw new Error('bad status');
-    } catch (e) {
-      // Offline / function unavailable (e.g. plain vite dev): keep it locally so
-      // the admin view still works. Mirrors the CRM's local fallback.
+      var res = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ item: item }) });
+      if (res.ok) stored = true;
+      else if (res.status === 404) notFound = true; // function absent (plain vite dev)
+    } catch (e) { /* network error — treated as failure below */ }
+
+    if (!stored && notFound) {
+      // Local dev only: the function isn't deployed, so keep it locally so the
+      // admin view still works when testing without `netlify dev`.
       try {
         var raw = localStorage.getItem(LOCAL_KEY);
-        var list = raw ? JSON.parse(raw) : [];
-        list.push(item);
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(list));
+        var listL = raw ? JSON.parse(raw) : [];
+        listL.push(item);
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(listL));
+        stored = true;
       } catch (e2) {}
     }
+
+    if (!stored) {
+      // Real server failure — surface it instead of showing a false success.
+      setSubmitting(false);
+      setErr(tr('submit_failed', L));
+      try { window.scrollTo(0, 0); } catch (e4) {}
+      return;
+    }
+
     setSubmitting(false);
     setDone(true);
     try { window.scrollTo(0, 0); } catch (e3) {}
