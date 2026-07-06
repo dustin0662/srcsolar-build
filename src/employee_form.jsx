@@ -49,8 +49,14 @@ const TX = {
   preferredName: { en: 'Preferred Name', es: 'Nombre Preferido' },
   dob: { en: 'Date of Birth', es: 'Fecha de Nacimiento' },
   ssn: { en: 'Social Security Number', es: 'Número de Seguro Social' },
-  dlNumber: { en: "Driver's License Number", es: 'Número de Licencia de Conducir' },
-  dlState: { en: "Driver's License State", es: 'Estado de la Licencia de Conducir' },
+  govIdType: { en: 'Government-Issued Photo ID Type', es: 'Tipo de Identificación con Foto del Gobierno' },
+  govIdNumber: { en: 'USA Government-Issued Photo ID Number', es: 'Número de Identificación con Foto Emitida por el Gobierno de EE. UU.' },
+  ssnPhoto: { en: 'Photo of Social Security Card', es: 'Foto de la Tarjeta de Seguro Social' },
+  govIdPhoto: { en: 'Photo of USA Government-Issued Photo ID', es: 'Foto de la Identificación con Foto Emitida por el Gobierno de EE. UU.' },
+  photo_hint: { en: 'Upload a clear photo (JPG or PNG). Required.', es: 'Suba una foto clara (JPG o PNG). Obligatorio.' },
+  photo_choose: { en: 'Choose Photo / Take Photo', es: 'Elegir Foto / Tomar Foto' },
+  photo_replace: { en: 'Replace Photo', es: 'Reemplazar Foto' },
+  photo_download: { en: 'Download photo', es: 'Descargar foto' },
   personalEmail: { en: 'Personal Email', es: 'Correo Electrónico Personal' },
   primaryPhone: { en: 'Primary Phone', es: 'Teléfono Principal' },
   secondaryPhone: { en: 'Secondary Phone', es: 'Teléfono Secundario' },
@@ -133,8 +139,10 @@ const SECTIONS = [
     { k: 'preferredName', type: 'text' },
     { k: 'dob', type: 'date', req: true },
     { k: 'ssn', type: 'text', req: true },
-    { k: 'dlNumber', type: 'text' },
-    { k: 'dlState', type: 'text' },
+    { k: 'ssnPhoto', type: 'photo', req: true, wide: true },
+    { k: 'govIdType', type: 'text' },
+    { k: 'govIdNumber', type: 'text' },
+    { k: 'govIdPhoto', type: 'photo', req: true, wide: true },
     { k: 'personalEmail', type: 'email', req: true },
     { k: 'primaryPhone', type: 'tel', req: true },
     { k: 'secondaryPhone', type: 'tel' },
@@ -178,10 +186,37 @@ const ALL_FIELDS = SECTIONS.reduce(function (acc, s) { return acc.concat(s.field
 
 function emptyForm() {
   var o = {};
-  ALL_FIELDS.forEach(function (f) { o[f.k] = f.type === 'checkboxes' ? [] : ''; });
+  ALL_FIELDS.forEach(function (f) { o[f.k] = f.type === 'checkboxes' ? [] : (f.type === 'photo' ? null : ''); });
   o.signature = '';
   o.ackAgree = false;
   return o;
+}
+
+// Read an image file, downscale it (keeps stored/emailed size reasonable), and
+// return a JPEG data URL plus its pixel dimensions (used to lay it out in the PDF).
+function resizePhoto(file, maxDim, quality) {
+  maxDim = maxDim || 1600; quality = quality || 0.82;
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function () { reject(new Error('read failed')); };
+    reader.onload = function () {
+      var img = new Image();
+      img.onerror = function () { reject(new Error('not an image')); };
+      img.onload = function () {
+        var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h >= w && h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve({ name: file.name || 'photo.jpg', url: canvas.toDataURL('image/jpeg', quality), w: w, h: h });
+        } catch (e) { reject(e); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function fmtDate(v) {
@@ -226,9 +261,28 @@ function buildPDF(form, submittedISO) {
     y += h + 4;
   }
 
+  function imageRow(label, ph) {
+    ensure(20);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(120, 120, 120);
+    doc.text(label.toUpperCase(), M + 4, y + 2); y += 14;
+    if (ph && ph.url) {
+      var maxW = pw - M * 2, maxH = 240;
+      var iw = ph.w || maxW, ih = ph.h || maxH;
+      var scale = Math.min(maxW / iw, maxH / ih, 1);
+      var w = iw * scale, h = ih * scale;
+      ensure(h + 12);
+      try { doc.addImage(ph.url, 'JPEG', M + 4, y, w, h); y += h + 14; }
+      catch (e) { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 30, 40); doc.text('(image could not be embedded)', M + 4, y + 4); y += 18; }
+    } else {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 30, 40);
+      doc.text('—', M + 4, y + 2); y += 16;
+    }
+  }
+
   SECTIONS.forEach(function (s) {
     sectionHeader(tr(s.title, 'en'));
     s.fields.forEach(function (f) {
+      if (f.type === 'photo') { imageRow(tr(f.k, 'en'), form[f.k]); return; }
       var val = form[f.k];
       if (f.type === 'checkboxes') val = Array.isArray(val) ? val.join(', ') : '';
       row(tr(f.k, 'en'), val);
@@ -311,11 +365,19 @@ export function EmployeeForm({ lang, onExit }) {
   function validate() {
     for (var i = 0; i < ALL_FIELDS.length; i++) {
       var f = ALL_FIELDS[i];
-      if (f.req && !String(form[f.k] || '').trim()) return false;
+      if (!f.req) continue;
+      if (f.type === 'photo') { if (!form[f.k] || !form[f.k].url) return false; }
+      else if (!String(form[f.k] || '').trim()) return false;
     }
     if (!String(form.signature || '').trim()) return false;
     if (!form.ackAgree) return false;
     return true;
+  }
+
+  async function setPhoto(k, file) {
+    if (!file) return;
+    try { var p = await resizePhoto(file); setForm(function (prev) { var n = Object.assign({}, prev); n[k] = p; return n; }); }
+    catch (e) { window.alert('Could not read that image. Please choose a JPG or PNG photo.'); }
   }
 
   async function submit() {
@@ -378,6 +440,22 @@ export function EmployeeForm({ lang, onExit }) {
               <div style={{ ...BB, fontSize: 22, letterSpacing: 1.5, color: TEXT, marginBottom: 18, borderBottom: '2px solid ' + A, paddingBottom: 8, display: 'inline-block' }}>{tr(s.title, L)}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 16 }}>
                 {s.fields.map(function (f) {
+                  if (f.type === 'photo') {
+                    var ph = form[f.k];
+                    return (
+                      <div key={f.k} style={{ gridColumn: '1 / -1' }}>
+                        <Label req={f.req}>{tr(f.k, L)}</Label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                          <label style={{ ...NB, fontSize: 14, letterSpacing: '1px', textTransform: 'uppercase', padding: '11px 20px', background: ph ? '#f9f7f5' : A, color: ph ? MID : '#1a1206', fontWeight: 700, border: '1px solid ' + (ph ? BORDER : A), cursor: 'pointer', display: 'inline-block' }}>
+                            {ph ? tr('photo_replace', L) : tr('photo_choose', L)}
+                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={function (e) { var file = e.target.files && e.target.files[0]; e.target.value = ''; setPhoto(f.k, file); }} />
+                          </label>
+                          <span style={{ ...NB, fontSize: 12, color: DIM }}>{ph ? (ph.name || '') : tr('photo_hint', L)}</span>
+                        </div>
+                        {ph && ph.url && <img src={ph.url} alt="" style={{ maxHeight: 170, maxWidth: '100%', marginTop: 12, border: '1px solid ' + BORDER, borderRadius: 4, display: 'block' }} />}
+                      </div>
+                    );
+                  }
                   if (f.type === 'radio') {
                     return (
                       <div key={f.k} style={{ gridColumn: '1 / -1' }}>
@@ -560,6 +638,20 @@ export function EmployeeFormAdmin({ lang, onExit }) {
               {openId === row.id && rec && (
                 <div style={{ borderTop: '1px solid ' + BORDER, padding: '18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14 }}>
                   {ALL_FIELDS.map(function (f) {
+                    if (f.type === 'photo') {
+                      var ph = rec[f.k];
+                      return (
+                        <div key={f.k} style={{ gridColumn: '1 / -1' }}>
+                          <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: DIM, marginBottom: 4 }}>{tr(f.k, 'en')}</div>
+                          {ph && ph.url ? (
+                            <div>
+                              <img src={ph.url} alt="" style={{ maxHeight: 220, maxWidth: '100%', border: '1px solid ' + BORDER, borderRadius: 4, display: 'block' }} />
+                              <a href={ph.url} download={ph.name || 'photo.jpg'} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', color: A, textDecoration: 'underline', display: 'inline-block', marginTop: 6 }}>{tr('photo_download', L)}</a>
+                            </div>
+                          ) : <div style={{ ...NB, fontSize: 14, color: TEXT }}>—</div>}
+                        </div>
+                      );
+                    }
                     var v = rec[f.k];
                     if (f.type === 'checkboxes') v = Array.isArray(v) ? v.join(', ') : '';
                     return (
