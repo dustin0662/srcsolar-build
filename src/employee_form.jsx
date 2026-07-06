@@ -157,27 +157,11 @@ const SECTIONS = [
     { k: 'emPrimaryPhone', type: 'tel', req: true },
     { k: 'emSecondaryPhone', type: 'tel' },
   ] },
-  { title: 'sec_employment', fields: [
-    { k: 'employeeId', type: 'text' },
-    { k: 'department', type: 'text' },
-    { k: 'jobTitle', type: 'text' },
-    { k: 'supervisor', type: 'text' },
-    { k: 'hireDate', type: 'date' },
-    { k: 'employmentStatus', type: 'text' },
-    { k: 'workLocation', type: 'text' },
-    { k: 'payType', type: 'radio' },
-    { k: 'payAmount', type: 'text' },
-  ] },
   { title: 'sec_deposit', fields: [
     { k: 'bankName', type: 'text' },
     { k: 'routingNumber', type: 'text' },
     { k: 'accountNumber', type: 'text' },
     { k: 'accountType', type: 'radio' },
-  ] },
-  { title: 'sec_resources', fields: [
-    { k: 'companyEmailRequired', type: 'radio' },
-    { k: 'companyEmailAddress', type: 'email' },
-    { k: 'equipment', type: 'checkboxes' },
   ] },
 ];
 
@@ -625,9 +609,9 @@ export function EmployeeFormAdmin({ lang, onExit }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 18px', flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 200 }}>
                   <div style={{ ...NB, fontSize: 18, fontWeight: 700, color: TEXT }}>{row.name || '—'}</div>
-                  <div style={{ ...NB, fontSize: 13, color: MID, marginTop: 2 }}>
-                    {(row.jobTitle || '—') + (row.department ? '  ·  ' + row.department : '')}
-                  </div>
+                  {(row.jobTitle || row.department) && <div style={{ ...NB, fontSize: 13, color: MID, marginTop: 2 }}>
+                    {(row.jobTitle || '') + (row.jobTitle && row.department ? '  ·  ' : '') + (row.department || '')}
+                  </div>}
                   <div style={{ ...NB, fontSize: 12, color: DIM, marginTop: 2 }}>{fmtDate(row.submittedAt)}{row._local ? '  ·  (local)' : ''}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
