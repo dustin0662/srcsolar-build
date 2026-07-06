@@ -54,7 +54,7 @@ const TX = {
   ssnPhoto: { en: 'Photo of Social Security Card', es: 'Foto de la Tarjeta de Seguro Social' },
   govIdPhoto: { en: 'Photo of USA Government-Issued Photo ID', es: 'Foto de la Identificación con Foto Emitida por el Gobierno de EE. UU.' },
   photo_hint: { en: 'Upload a clear photo (JPG or PNG). Required.', es: 'Suba una foto clara (JPG o PNG). Obligatorio.' },
-  photo_choose: { en: 'Choose Photo / Take Photo', es: 'Elegir Foto / Tomar Foto' },
+  photo_choose: { en: 'Upload Photo', es: 'Subir Foto' },
   photo_replace: { en: 'Replace Photo', es: 'Reemplazar Foto' },
   photo_download: { en: 'Download photo', es: 'Descargar foto' },
   personalEmail: { en: 'Personal Email', es: 'Correo Electrónico Personal' },
@@ -448,7 +448,7 @@ export function EmployeeForm({ lang, onExit }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                           <label style={{ ...NB, fontSize: 14, letterSpacing: '1px', textTransform: 'uppercase', padding: '11px 20px', background: ph ? '#f9f7f5' : A, color: ph ? MID : '#1a1206', fontWeight: 700, border: '1px solid ' + (ph ? BORDER : A), cursor: 'pointer', display: 'inline-block' }}>
                             {ph ? tr('photo_replace', L) : tr('photo_choose', L)}
-                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={function (e) { var file = e.target.files && e.target.files[0]; e.target.value = ''; setPhoto(f.k, file); }} />
+                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={function (e) { var file = e.target.files && e.target.files[0]; e.target.value = ''; setPhoto(f.k, file); }} />
                           </label>
                           <span style={{ ...NB, fontSize: 12, color: DIM }}>{ph ? (ph.name || '') : tr('photo_hint', L)}</span>
                         </div>
