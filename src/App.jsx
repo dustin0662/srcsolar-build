@@ -3,6 +3,7 @@ import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import DocumentPortal from "./document_portal.jsx"
+import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
@@ -5103,7 +5104,7 @@ export default function App(){
   const[scrollY,setScrollY]=useState(0)
   const[totalH,setTotalH]=useState(4000)
   const[mob,setMob]=useState(typeof window!=='undefined'?window.innerWidth<768:false)
-  const[page,setPage]=useState('landing')
+  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}return 'landing'})
   const[user,setUser]=useState(null)
   const[lang,setLangState]=useState(function(){try{var v=localStorage.getItem('site-lang');return v==='en'||v==='es'?v:null}catch(e){return null}})
   function setLang(L){setLangState(L);try{localStorage.setItem('site-lang',L)}catch(e){}}
@@ -5803,6 +5804,8 @@ export default function App(){
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
+        {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
         {['hse'].includes(page)&&(
           <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
