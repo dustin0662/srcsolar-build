@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import KmzSatelliteTracker from './kmz_satellite_tracker.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -860,6 +861,17 @@ function inputStyle() {
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 export default function SiteMap({ onExit }) {
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem('site-map-view-mode') || 'drawing'; } catch { return 'drawing'; }
+  });
+  useEffect(() => { try { localStorage.setItem('site-map-view-mode', viewMode); } catch {} }, [viewMode]);
+  if (viewMode === 'satellite') {
+    return <KmzSatelliteTracker onExit={onExit} onSwitchToDrawing={() => setViewMode('drawing')} />;
+  }
+  return <SiteMapDrawing onExit={onExit} onSwitchToSatellite={() => setViewMode('satellite')} />;
+}
+
+function SiteMapDrawing({ onExit, onSwitchToSatellite }) {
   const [sections, setSections] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [mode, setMode] = useState('all'); // 'all' | 'view-N' | 'edit-N' | 'move' | 'editgrid' | 'import'
@@ -1046,6 +1058,15 @@ export default function SiteMap({ onExit }) {
         {onExit && (
           <button onClick={onExit} style={btnStyle('#475569', true)} title="Back to dashboard">
             Back
+          </button>
+        )}
+        {onSwitchToSatellite && (
+          <button
+            onClick={onSwitchToSatellite}
+            style={btnStyle(BRAND_ORANGE, true)}
+            title="Switch to satellite (KMZ) mode"
+          >
+            SATELLITE
           </button>
         )}
         <div style={{ width: 1, height: 28, background: '#334155', margin: '0 4px' }} />
