@@ -128,7 +128,7 @@ function parseKmlText(kmlText) {
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
-export default function KmzSatelliteTracker({ onExit, onSwitchToDrawing }) {
+export default function KmzSatelliteTracker({ onExit, onSwitchToDrawing, initialKmzFile, onConsumeInitial }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);          // parallel to points[]
@@ -146,8 +146,15 @@ export default function KmzSatelliteTracker({ onExit, onSwitchToDrawing }) {
   const [projectName, setProjectName] = useState('Untitled');
   const [pointRadius, setPointRadius] = useState(4);
 
-  /* -------- Persistence -------- */
+  /* -------- Persistence / initial load -------- */
   useEffect(() => {
+    // 1. Explicit KMZ file handed in from the "New Project" flow wins.
+    if (initialKmzFile) {
+      loadKmzFile(initialKmzFile);
+      if (onConsumeInitial) onConsumeInitial();
+      return;
+    }
+    // 2. Restore previous session.
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -159,7 +166,7 @@ export default function KmzSatelliteTracker({ onExit, onSwitchToDrawing }) {
         }
       }
     } catch {}
-    // First run: auto-load example
+    // 3. First run: auto-load bundled example.
     loadExample();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

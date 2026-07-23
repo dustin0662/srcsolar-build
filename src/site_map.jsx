@@ -490,7 +490,7 @@ function Section2D({
 /* ------------------------------------------------------------------ */
 /*  Import Modal                                                       */
 /* ------------------------------------------------------------------ */
-function SmImportModal({ onClose, onAccept }) {
+function SmImportModal({ onClose, onAccept, onKmzImport }) {
   const [file, setFile] = useState(null);
   const [srcCanvas, setSrcCanvas] = useState(null);
   const [points, setPoints] = useState([]);
@@ -502,7 +502,15 @@ function SmImportModal({ onClose, onAccept }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
+  const isKmzLike = (f) => /\.(kmz|kml)$/i.test(f.name || '');
+
   const handleFile = async (f) => {
+    // KMZ/KML → hand off to satellite mode; drawing mode can't render geo points on a raster canvas
+    if (isKmzLike(f) && onKmzImport) {
+      onKmzImport(f);
+      onClose();
+      return;
+    }
     setFile(f);
     setLoading(true);
     setRects([]);
@@ -648,18 +656,40 @@ function SmImportModal({ onClose, onAccept }) {
             backgroundColor: '#1e293b',
           }}>
             {!srcCanvas && !loading && (
-              <label style={{
-                padding: '40px 60px', border: `2px dashed #475569`,
-                borderRadius: 12, cursor: 'pointer', color: '#94a3b8',
-                fontFamily: FONT_BODY, fontSize: 18,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-              }}>
-                <span style={{ fontSize: 36 }}>+</span>
-                Upload PDF or Image
-                <input type="file" accept=".pdf,image/*" hidden onChange={e => {
-                  if (e.target.files[0]) handleFile(e.target.files[0]);
-                }} />
-              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
+                <label style={{
+                  padding: '40px 60px', border: `2px dashed #475569`,
+                  borderRadius: 12, cursor: 'pointer', color: '#94a3b8',
+                  fontFamily: FONT_BODY, fontSize: 18,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  minWidth: 320,
+                }}>
+                  <span style={{ fontSize: 36 }}>+</span>
+                  Upload PDF or Image
+                  <span style={{ fontSize: 12, color: '#64748b', letterSpacing: 1.5 }}>
+                    Drawing mode · detects points on the drawing
+                  </span>
+                  <input type="file" accept=".pdf,image/*" hidden onChange={e => {
+                    if (e.target.files[0]) handleFile(e.target.files[0]);
+                  }} />
+                </label>
+                {onKmzImport && (
+                  <label style={{
+                    padding: '18px 40px', border: `2px dashed ${BRAND_ORANGE}66`,
+                    borderRadius: 12, cursor: 'pointer', color: BRAND_ORANGE,
+                    fontFamily: FONT_BODY, fontSize: 15,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    minWidth: 320, background: `${BRAND_ORANGE}0a`,
+                  }}>
+                    Upload KMZ or KML
+                    <span style={{ fontSize: 11, color: '#94a3b8', letterSpacing: 1.5 }}>
+                      Opens Satellite mode with your points on a live map
+                    </span>
+                    <input type="file" accept=".kmz,.kml,application/vnd.google-earth.kmz,application/vnd.google-earth.kml+xml"
+                      hidden onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]); }} />
+                  </label>
+                )}
+              </div>
             )}
             {loading && <span style={{ color: '#94a3b8', fontSize: 18 }}>Processing...</span>}
             {srcCanvas && (
@@ -864,14 +894,32 @@ export default function SiteMap({ onExit }) {
   const [viewMode, setViewMode] = useState(() => {
     try { return localStorage.getItem('site-map-view-mode') || 'drawing'; } catch { return 'drawing'; }
   });
+  const [pendingKmz, setPendingKmz] = useState(null);
   useEffect(() => { try { localStorage.setItem('site-map-view-mode', viewMode); } catch {} }, [viewMode]);
+  const handleKmzImport = useCallback((file) => {
+    setPendingKmz(file);
+    setViewMode('satellite');
+  }, []);
   if (viewMode === 'satellite') {
-    return <KmzSatelliteTracker onExit={onExit} onSwitchToDrawing={() => setViewMode('drawing')} />;
+    return (
+      <KmzSatelliteTracker
+        onExit={onExit}
+        onSwitchToDrawing={() => { setPendingKmz(null); setViewMode('drawing'); }}
+        initialKmzFile={pendingKmz}
+        onConsumeInitial={() => setPendingKmz(null)}
+      />
+    );
   }
-  return <SiteMapDrawing onExit={onExit} onSwitchToSatellite={() => setViewMode('satellite')} />;
+  return (
+    <SiteMapDrawing
+      onExit={onExit}
+      onSwitchToSatellite={() => setViewMode('satellite')}
+      onKmzImport={handleKmzImport}
+    />
+  );
 }
 
-function SiteMapDrawing({ onExit, onSwitchToSatellite }) {
+function SiteMapDrawing({ onExit, onSwitchToSatellite, onKmzImport }) {
   const [sections, setSections] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [mode, setMode] = useState('all'); // 'all' | 'view-N' | 'edit-N' | 'move' | 'editgrid' | 'import'
@@ -1275,6 +1323,7 @@ function SiteMapDrawing({ onExit, onSwitchToSatellite }) {
         <SmImportModal
           onClose={() => setShowImport(false)}
           onAccept={handleImportAccept}
+          onKmzImport={onKmzImport}
         />
       )}
     </div>
