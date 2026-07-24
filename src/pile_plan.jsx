@@ -1087,6 +1087,7 @@ export default function PilePlan({ onExit, portalUser }) {
               layerMode={tileLayer}
               onLayerMode={setTileLayer}
               active={notePt}
+              mode={mode}
               onPickPoint={(i) => {
                 const pv = paintRef.current;
                 if (mode === 'pan') { setNotePt(i); return; }
