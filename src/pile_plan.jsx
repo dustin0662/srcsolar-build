@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { jsPDF } from 'jspdf';
 import { DOTS, PLAN_W, PLAN_H } from './pile_data.js';
 import { processImport } from './tt_import.js';
+import { processKmzImport } from './kmz_import.js';
+import TTMapView from './tt_mapview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 
 /* ------------------------------------------------------------------ */
@@ -118,7 +120,7 @@ const decNums = (s, n) => { const out = new Array(n).fill(0); if (typeof s === '
 const DWYER_POINTS = DOTS.map((d) => [d[0], d[1]]);
 function defaultProject(name) {
   const N = DWYER_POINTS.length;
-  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, overlay3d: null, log: [], lastModified: Date.now() };
+  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, overlay3d: null, geo: null, log: [], lastModified: Date.now() };
 }
 function normalizeDoc(d) {
   if (!d) return defaultProject();
@@ -131,7 +133,8 @@ function normalizeDoc(d) {
   const notes = (d.notes && typeof d.notes === 'object') ? d.notes : {};
   const bg = (d.bg && typeof d.bg === 'object' && d.bg.url) ? d.bg : null;
   const overlay3d = (d.overlay3d && typeof d.overlay3d === 'object') ? d.overlay3d : null;
-  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, overlay3d, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
+  const geo = (d.geo && typeof d.geo === 'object' && Array.isArray(d.geo.lonLat)) ? d.geo : null;
+  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, overlay3d, geo, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
 }
 function ensureMigrated() {
   let reg = storage.get(REG_KEY);
@@ -595,6 +598,9 @@ export default function PilePlan({ onExit, portalUser }) {
   const [bgT, setBgT] = useState(init.current.bgT);
   const [bgOn, setBgOn] = useState(!!(init.current.bg && init.current.bg.on)); // local view toggle
   const [overlay3d, setOverlay3d] = useState(init.current.overlay3d || null);
+  const [geo, setGeo] = useState(init.current.geo || null);
+  const [mapMode, setMapMode] = useState(!!(init.current.geo && init.current.geo.lonLat && init.current.geo.lonLat.length));
+  const [tileLayer, setTileLayer] = useState('satellite');
   const [log, setLog] = useState(init.current.log);
   const [lastModified, setLastModified] = useState(init.current.lastModified);
 
@@ -620,8 +626,8 @@ export default function PilePlan({ onExit, portalUser }) {
   const skipPersist = useRef(false);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, log, lastModified });
-  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, log, lastModified]);
+    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, log, lastModified });
+  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, log, lastModified]);
   useEffect(() => { storage.set(REG_KEY, projects); }, [projects]);
   useEffect(() => { storage.set(ACTIVE_KEY, activeId); }, [activeId]);
   // pull the shared project registry so assigned projects appear on any device
@@ -645,6 +651,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const bgRef = useRef(bg); useEffect(() => { bgRef.current = bg; }, [bg]);
   const bgTRef = useRef(bgT); useEffect(() => { bgTRef.current = bgT; }, [bgT]);
   const overlay3dRef = useRef(overlay3d); useEffect(() => { overlay3dRef.current = overlay3d; }, [overlay3d]);
+  const geoRef = useRef(geo); useEffect(() => { geoRef.current = geo; }, [geo]);
   const notesRef = useRef(notes); useEffect(() => { notesRef.current = notes; }, [notes]);
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const lastModifiedRef = useRef(lastModified); useEffect(() => { lastModifiedRef.current = lastModified; }, [lastModified]);
@@ -742,6 +749,7 @@ export default function PilePlan({ onExit, portalUser }) {
     }
     if ((d.bgT || 0) > (bgTRef.current || 0)) { setBg(nd.bg); setBgT(d.bgT || 0); setBgOn(!!(nd.bg && nd.bg.on)); }
     if (d.overlay3d !== undefined) setOverlay3d(d.overlay3d || null);
+    if (d.geo !== undefined) setGeo(nd.geo || null);
     if (Array.isArray(d.log)) { setLog((local) => mergeLogs(local, d.log)); d.log.forEach((e) => syncedIdsRef.current.add(e.id)); }
     lastRevRef.current = d.rev;
     setTimeout(() => { applyingRemoteRef.current = false; }, 0);
@@ -751,7 +759,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const entries = logRef.current.filter((e) => !syncedIdsRef.current.has(e.id));
     try {
       setCloudStatus('syncing');
-      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, overlay3d: overlay3dRef.current, lastModified: lastModifiedRef.current, entries };
+      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, overlay3d: overlay3dRef.current, geo: geoRef.current, lastModified: lastModifiedRef.current, entries };
       const r = await fetch(ENDPOINT + '?project=' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error('http ' + r.status);
       const d = await r.json();
@@ -779,7 +787,7 @@ export default function PilePlan({ onExit, portalUser }) {
   useEffect(() => {
     if (!readyRef.current || applyingRemoteRef.current) return;
     clearTimeout(pushTimerRef.current); pushTimerRef.current = setTimeout(() => { pushCloud(); }, 1000);
-  }, [stage, qc, at, notes, bg, bgT, overlay3d, log, projName, points, pushCloud]);
+  }, [stage, qc, at, notes, bg, bgT, overlay3d, geo, log, projName, points, pushCloud]);
   // redact legacy name
   useEffect(() => { if (/dwyer/i.test(projName || '')) { setProjName('Project Alpha'); setProjects((ps) => ps.map((p) => p.id === activeId ? { ...p, name: 'Project Alpha' } : p)); setLastModified(Date.now()); } }, [projName, activeId]);
 
@@ -827,7 +835,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const openProject = (id) => {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
-    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setLog(d.log); setLastModified(d.lastModified);
+    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setGeo(d.geo || null); setMapMode(!!(d.geo && d.geo.lonLat && d.geo.lonLat.length)); setLog(d.log); setLastModified(d.lastModified);
     undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
@@ -842,7 +850,7 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const createProject = (name, imp) => {
     const id = newProjId(); const N = imp.points.length;
-    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
+    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, geo: imp.geo || null, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''}${imp.geo ? ', geo-referenced' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
     storage.set(projKey(id), doc);
     const next = [...projects, { id, name: doc.name, createdAt: Date.now() }]; setProjects(next);
     fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {});
@@ -1069,20 +1077,52 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         )}
         <div style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
-          <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: mode === 'pan' ? 'grab' : mode === 'bg' ? 'move' : 'crosshair' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
-            onClick={(e) => { if (modeRef.current !== 'pan' || pannedRef.current) { pannedRef.current = false; return; } const el = e.target; if (el && el.dataset && el.dataset.i != null) setNotePt(+el.dataset.i); }}>
-            <g transform={`translate(${vw.x} ${vw.y}) scale(${vw.s})`}>
-              {bg && bgOn && <image href={bg.url} x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} opacity={bg.opacity != null ? bg.opacity : 0.85} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
-              {bg && bgOn && mode === 'bg' && <rect x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} fill="none" stroke={ORANGE} strokeWidth={1.5 / vw.s} strokeDasharray={`${6 / vw.s} ${4 / vw.s}`} style={{ pointerEvents: 'none' }} />}
-              {dotEls}
-            </g>
-          </svg>
-          <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-            <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
-            <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
-            <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
-            <button onClick={resetView} style={{ ...zbtn, fontSize: 12, fontFamily: NBF }} title="Fit">FIT</button>
-          </div>
+          {mapMode && geo && geo.lonLat && geo.lonLat.length ? (
+            <TTMapView
+              geo={geo}
+              stage={stage}
+              qc={qc}
+              sections={sections}
+              sectionCount={sectionCount}
+              layerMode={tileLayer}
+              onLayerMode={setTileLayer}
+              active={notePt}
+              onPickPoint={(i) => {
+                const pv = paintRef.current;
+                if (mode === 'pan') { setNotePt(i); return; }
+                if (mode === 'fill') { fillAt(i); return; }
+                if (allowedRef.current && !allowedRef.current.has(pv)) { setNotePt(i); return; }
+                snapshotUndo();
+                burstRef.current = { count: 0, paint: pv, last: null };
+                applyPaintToIndex(i);
+                burstFlush();
+              }}
+            />
+          ) : (
+            <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: mode === 'pan' ? 'grab' : mode === 'bg' ? 'move' : 'crosshair' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
+              onClick={(e) => { if (modeRef.current !== 'pan' || pannedRef.current) { pannedRef.current = false; return; } const el = e.target; if (el && el.dataset && el.dataset.i != null) setNotePt(+el.dataset.i); }}>
+              <g transform={`translate(${vw.x} ${vw.y}) scale(${vw.s})`}>
+                {bg && bgOn && <image href={bg.url} x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} opacity={bg.opacity != null ? bg.opacity : 0.85} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
+                {bg && bgOn && mode === 'bg' && <rect x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} fill="none" stroke={ORANGE} strokeWidth={1.5 / vw.s} strokeDasharray={`${6 / vw.s} ${4 / vw.s}`} style={{ pointerEvents: 'none' }} />}
+                {dotEls}
+              </g>
+            </svg>
+          )}
+          {geo && geo.lonLat && geo.lonLat.length ? (
+            <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600 }}>
+              <button onClick={() => setMapMode((v) => !v)} style={{ ...ghostBtn, padding: '8px 14px', fontSize: 12, background: 'rgba(10,14,26,.85)' }}>
+                {mapMode ? 'Plan View' : 'Satellite View'}
+              </button>
+            </div>
+          ) : null}
+          {!mapMode && (
+            <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+              <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
+              <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
+              <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
+              <button onClick={resetView} style={{ ...zbtn, fontSize: 12, fontFamily: NBF }} title="Fit">FIT</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1301,31 +1341,43 @@ function ImportModal({ mob, onClose, onCreate }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState('');
-  const run = async (f, sens) => { if (!f) return; setBusy(true); setErr(''); try { const r = await processImport(f, sens); setResult(r); if (!r.count) setErr('No dots detected — try adjusting the sensitivity.'); } catch (e) { setErr('Import failed: ' + (e && e.message ? e.message : 'unknown')); setResult(null); } setBusy(false); };
+  const isGeo = (f) => f && /\.(kmz|kml)$/i.test(f.name);
+  const run = async (f, sens) => {
+    if (!f) return; setBusy(true); setErr('');
+    try {
+      const r = isGeo(f) ? await processKmzImport(f) : await processImport(f, sens);
+      setResult(r);
+      if (!r.count) setErr(isGeo(f) ? 'No Placemark points found in the KMZ / KML.' : 'No dots detected — try adjusting the sensitivity.');
+    } catch (e) { setErr('Import failed: ' + (e && e.message ? e.message : 'unknown')); setResult(null); }
+    setBusy(false);
+  };
   const onFile = (f) => { if (!f) return; setFile(f); if (!name) setName(f.name.replace(/\.[^.]+$/, '')); run(f, sensitivity); };
   const previewVB = result && result.w ? `0 0 ${result.w} ${result.h}` : '0 0 100 100';
+  const geoImport = !!(result && result.geo);
   return (
     <div style={overlay(mob)} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard(mob, 560), gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center' }}><div style={headTitle}>New Project — Import Plan</div><button onClick={onClose} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
-        <label style={{ ...ghostBtn, textAlign: 'center', padding: '12px 0', display: 'block' }}>{file ? 'Choose a different file' : 'Upload PDF or Image'}<input type="file" accept=".pdf,image/*" hidden onChange={(e) => onFile(e.target.files[0])} /></label>
+        <label style={{ ...ghostBtn, textAlign: 'center', padding: '12px 0', display: 'block' }}>{file ? 'Choose a different file' : 'Upload PDF · Image · KMZ · KML'}<input type="file" accept=".pdf,.kmz,.kml,image/*" hidden onChange={(e) => onFile(e.target.files[0])} /></label>
         {file && (<>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontFamily: NBF, fontSize: 13, color: MUTE, width: 90 }}>Sensitivity</span>
-            <input type="range" min="1" max="10" value={sensitivity} onChange={(e) => setSensitivity(+e.target.value)} onMouseUp={() => run(file, sensitivity)} onTouchEnd={() => run(file, sensitivity)} style={{ flex: 1 }} />
-            <button onClick={() => run(file, sensitivity)} style={{ ...ghostBtn, padding: '6px 10px', fontSize: 12 }}>Re-detect</button>
-          </div>
+          {!isGeo(file) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: NBF, fontSize: 13, color: MUTE, width: 90 }}>Sensitivity</span>
+              <input type="range" min="1" max="10" value={sensitivity} onChange={(e) => setSensitivity(+e.target.value)} onMouseUp={() => run(file, sensitivity)} onTouchEnd={() => run(file, sensitivity)} style={{ flex: 1 }} />
+              <button onClick={() => run(file, sensitivity)} style={{ ...ghostBtn, padding: '6px 10px', fontSize: 12 }}>Re-detect</button>
+            </div>
+          )}
           <div style={{ background: '#fff', border: '1px solid ' + LINE, height: mob ? 220 : 300, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
             {busy ? <span style={{ fontFamily: NBF, color: '#666' }}>Detecting…</span> : result && result.count ? (
               <svg viewBox={previewVB} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%' }}>{result.points.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={4} fill={result.sectionCount > 1 ? `hsl(${(result.sections[i] * 67) % 360} 70% 50%)` : '#16a34a'} />)}</svg>
             ) : <span style={{ fontFamily: NBF, color: '#999' }}>No preview</span>}
           </div>
-          {result && result.count > 0 && <div style={{ fontFamily: NBF, fontSize: 14, color: CREAM }}>Detected <strong style={{ color: ORANGE }}>{result.count.toLocaleString()}</strong> points{result.sectionCount > 1 ? <> · <strong style={{ color: ORANGE }}>{result.sectionCount}</strong> sections</> : ' · no separate sections'}</div>}
+          {result && result.count > 0 && <div style={{ fontFamily: NBF, fontSize: 14, color: CREAM }}>Detected <strong style={{ color: ORANGE }}>{result.count.toLocaleString()}</strong> points{result.sectionCount > 1 ? <> · <strong style={{ color: ORANGE }}>{result.sectionCount}</strong> sections</> : ' · no separate sections'}{geoImport ? <> · <span style={{ color: GOLD }}>geo-referenced (satellite view)</span></> : null}</div>}
           {err && <div style={{ fontFamily: NBF, fontSize: 14, color: GOLD }}>{err}</div>}
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name" style={{ background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 17, padding: '10px 12px', outline: 'none' }} />
           <button disabled={!result || !result.count || busy} onClick={() => onCreate(name || (file ? file.name.replace(/\.[^.]+$/, '') : 'New Project'), result)} style={{ ...ctaBtn, padding: '13px 0', opacity: (!result || !result.count || busy) ? .5 : 1 }}>Create Project</button>
         </>)}
-        <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>Dots are auto-detected and split into sections by gaps. All points start at "No Progress".</div>
+        <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>PDFs / images: dots are auto-detected and split into sections by gaps. KMZ / KML: Placemark points are pulled from the file and pinned on a satellite map. All points start at "No Progress".</div>
       </div>
     </div>
   );
