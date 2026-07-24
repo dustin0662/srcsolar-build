@@ -93,7 +93,7 @@ function detectBlobs(canvas, opts = {}) {
   return blobs;
 }
 
-function medianSpacing(pts) {
+export function medianSpacing(pts) {
   if (pts.length < 2) return 1;
   const ds = [];
   const step = Math.max(1, Math.floor(pts.length / 400)); // sample for speed
@@ -111,7 +111,7 @@ function medianSpacing(pts) {
 }
 
 /* connected components by gap → sections. If one component, no division. */
-function autoSection(points, spacing) {
+export function autoSection(points, spacing) {
   const n = points.length;
   const sec = new Int32Array(n).fill(-1);
   const th = spacing * 1.9, th2 = th * th;
@@ -137,7 +137,7 @@ function autoSection(points, spacing) {
   return { sec: Array.from(sec), count: cur };
 }
 
-const TARGET_SPACING = 13; // normalize so dot radius ~4 looks right
+export const TARGET_SPACING = 13; // normalize so dot radius ~4 looks right
 
 export async function processImport(file, sensitivity = 5) {
   const canvas = await fileToCanvas(file);
