@@ -24,7 +24,7 @@ function colorFor(stage, qc) {
 
 export default function TTMapView({
   geo, stage, qc, sections, sectionCount,
-  onPickPoint, active, layerMode, onLayerMode,
+  onPickPoint, active, layerMode, onLayerMode, mode,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -75,6 +75,15 @@ export default function TTMapView({
     });
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
   }, [geo]);
+
+  useEffect(() => {
+    const map = mapRef.current; if (!map) return;
+    const painting = mode === 'brush' || mode === 'fill';
+    if (painting) { map.dragging.disable(); map.doubleClickZoom.disable(); }
+    else { map.dragging.enable(); map.doubleClickZoom.enable(); }
+    const el = map.getContainer();
+    if (el) el.style.cursor = painting ? 'crosshair' : '';
+  }, [mode]);
 
   useEffect(() => {
     markersRef.current.forEach((m, i) => {
