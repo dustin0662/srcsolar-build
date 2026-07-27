@@ -1,8 +1,11 @@
 import { getStore } from '@netlify/blobs';
 
 const MAX_LOG = 200;
-const EMPTY = { name: '', points: null, w: 0, h: 0, sections: null, sectionCount: 0, stage: null, qc: null, by: null, at: null, notes: null, bg: null, bgT: 0, log: [], lastModified: 0, rev: 0 };
-const META = ['name', 'points', 'w', 'h', 'sections', 'sectionCount', 'notes'];
+const EMPTY = { name: '', points: null, w: 0, h: 0, sections: null, sectionCount: 0, sectionNames: null, stage: null, qc: null, by: null, at: null, notes: null, bg: null, bgT: 0, overlay3d: null, geo: null, subtasks: null, sub: null, log: [], lastModified: 0, rev: 0 };
+/* last-write-wins fields. `geo` (KMZ lon/lat) and `overlay3d` live here so a
+   satellite-view project opens the same way for every user, not just the
+   one who imported it. */
+const META = ['name', 'points', 'w', 'h', 'sections', 'sectionCount', 'sectionNames', 'notes', 'overlay3d', 'geo', 'subtasks', 'sub'];
 
 function mergeLogs(a, b) {
   const seen = new Set(); const out = [];

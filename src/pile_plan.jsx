@@ -4,7 +4,9 @@ import { DOTS, PLAN_W, PLAN_H } from './pile_data.js';
 import { processImport } from './tt_import.js';
 import { processKmzImport } from './kmz_import.js';
 import TTMapView from './tt_mapview.jsx';
+import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
+import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -63,6 +65,51 @@ function allowedPaintSet(scope) {
   if (hasStage) set.add('s0');
   return set;
 }
+/* Paint tokens: 's0'…'s4' stages, 'q0'…'q2' quality flags, 'k:<id>' marks a
+   custom subtask done, 'n:<id>' clears it. */
+function parsePaint(tok, subtasks) {
+  const t = String(tok || '');
+  if (t[0] === 'k' && t[1] === ':') return { kind: 'sub', id: t.slice(2), done: true, def: (subtasks || []).find((s) => s.id === t.slice(2)) || null };
+  if (t[0] === 'n' && t[1] === ':') return { kind: 'sub', id: t.slice(2), done: false, def: (subtasks || []).find((s) => s.id === t.slice(2)) || null };
+  if (t[0] === 'q') return { kind: 'qc', v: +t[1] || 0 };
+  return { kind: 'stage', v: +t[1] || 0 };
+}
+/* Subtasks inherit the permission of the parent stage they hang off. */
+function paintAllowed(allowed, tok, subtasks) {
+  if (!allowed) return true;
+  const p = parsePaint(tok, subtasks);
+  if (p.kind === 'sub') return p.def ? allowed.has(p.def.parent) : false;
+  return allowed.has(tok);
+}
+function paintTokenLabel(tok, subtasks) {
+  const p = parsePaint(tok, subtasks);
+  if (p.kind === 'sub') return (p.def ? p.def.label : 'Subtask') + (p.done ? '' : ' — clear');
+  if (p.kind === 'qc') return QC[p.v].name;
+  return STAGES[p.v].name;
+}
+function paintTokenColor(tok, subtasks) {
+  const p = parsePaint(tok, subtasks);
+  if (p.kind === 'sub') return p.def ? STAGES[+String(p.def.parent)[1] || 0].color : ORANGE;
+  if (p.kind === 'qc') return QC[p.v].color;
+  return STAGES[p.v].color;
+}
+const newSubId = () => 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+/* per-point completion bitstrings, one per subtask id */
+function normSub(raw, N) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const k of Object.keys(raw)) {
+      const v = String(raw[k] || '');
+      out[k] = v.length === N ? v : (v + '0'.repeat(N)).slice(0, N);
+    }
+  }
+  return out;
+}
+function setSubBit(bits, i, N, on) {
+  const s = (bits && bits.length === N) ? bits : '0'.repeat(N);
+  if ((s[i] === '1') === !!on) return s;
+  return s.slice(0, i) + (on ? '1' : '0') + s.slice(i + 1);
+}
 /* background photo display dimensions in plan coordinates */
 function bgDims(bg, planW) { const w = planW * (bg.scale || 1); return { w, h: w * (bg.ar || 0.66) }; }
 /* load + downscale an uploaded image to a JPEG data URL; returns { url, ar } */
@@ -100,12 +147,15 @@ function mergeLogs(a, b) {
   return out.slice(0, MAX_LOG);
 }
 /* cumulative counts: stageCounts[s] = # points with stage >= s */
-function computeStats(stage, qc) {
+function computeStats(stage, qc, subtasks, sub) {
   const N = stage.length;
   const cum = [0, 0, 0, 0, 0];
+  const hasSubs = Array.isArray(subtasks) && subtasks.length > 0 && sub;
   let sum = 0, yellow = 0, orange = 0, none = 0;
   for (let i = 0; i < N; i++) {
     const s = stage[i] || 0; sum += s;
+    /* partial credit toward the next stage from completed subtask weights */
+    if (hasSubs && s < 4) sum += subFraction(subtasks, sub, s + 1, i);
     for (let k = 1; k <= s; k++) cum[k]++;
     if (s === 0) none++;
     const q = qc ? (qc[i] || 0) : 0;
@@ -120,7 +170,7 @@ const decNums = (s, n) => { const out = new Array(n).fill(0); if (typeof s === '
 const DWYER_POINTS = DOTS.map((d) => [d[0], d[1]]);
 function defaultProject(name) {
   const N = DWYER_POINTS.length;
-  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, overlay3d: null, geo: null, log: [], lastModified: Date.now() };
+  return { name: name || 'Project Alpha', w: PLAN_W, h: PLAN_H, points: DWYER_POINTS, sections: null, sectionCount: 0, sectionNames: {}, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, overlay3d: null, geo: null, subtasks: [], sub: {}, log: [], lastModified: Date.now() };
 }
 function normalizeDoc(d) {
   if (!d) return defaultProject();
@@ -134,7 +184,10 @@ function normalizeDoc(d) {
   const bg = (d.bg && typeof d.bg === 'object' && d.bg.url) ? d.bg : null;
   const overlay3d = (d.overlay3d && typeof d.overlay3d === 'object') ? d.overlay3d : null;
   const geo = (d.geo && typeof d.geo === 'object' && Array.isArray(d.geo.lonLat)) ? d.geo : null;
-  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, overlay3d, geo, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
+  const sectionNames = (d.sectionNames && typeof d.sectionNames === 'object') ? d.sectionNames : {};
+  const subtasks = Array.isArray(d.subtasks) ? d.subtasks.filter((s) => s && s.id && s.parent) : [];
+  const sub = normSub(d.sub, N);
+  return { name: d.name || 'Project', w: d.w || PLAN_W, h: d.h || PLAN_H, points: pts, sections: d.sections || null, sectionCount: d.sectionCount || 0, sectionNames, stage, qc, by, at, notes, bg, bgT: d.bgT || 0, overlay3d, geo, subtasks, sub, log: Array.isArray(d.log) ? d.log : [], lastModified: d.lastModified || Date.now() };
 }
 function ensureMigrated() {
   let reg = storage.get(REG_KEY);
@@ -155,7 +208,7 @@ export function getTaskTrackerKPI() {
   let reg = storage.get(REG_KEY); let raw = null;
   if (Array.isArray(reg) && reg.length) { const aid = storage.get(ACTIVE_KEY) || reg[0].id; raw = storage.get(projKey(aid)) || storage.get(projKey(reg[0].id)); }
   const d = normalizeDoc(raw);
-  const st = computeStats(d.stage, d.qc);
+  const st = computeStats(d.stage, d.qc, d.subtasks, d.sub);
   const total = st.N;
   return {
     name: d.name || 'Project', total, overall: st.overall, lastModified: d.lastModified || 0,
@@ -186,8 +239,8 @@ function drawWatermark(doc, logo) {
   for (let y = -10; y < ph; y += step) for (let x = -10; x < pw; x += step) doc.addImage(logo.url, 'PNG', x, y, size, size * ratio);
   doc.restoreGraphicsState();
 }
-function exportPDF(projName, points, w, h, stage, qc, notes, stampTs, byUser, logo, overheadPNG) {
-  const st = computeStats(stage, qc); const total = st.N;
+function exportPDF(projName, points, w, h, stage, qc, notes, stampTs, byUser, logo, overheadPNG, subtasks, sub) {
+  const st = computeStats(stage, qc, subtasks, sub); const total = st.N;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const M = 40;
   drawWatermark(doc, logo);
@@ -280,7 +333,7 @@ export function TaskTrackerPreview() {
   }, []);
   const d = doc || normalizeDoc(null);
   const dispName = (d.name && !/dwyer/i.test(d.name)) ? d.name : 'Project Alpha';
-  const st = computeStats(d.stage, d.qc); const total = st.N;
+  const st = computeStats(d.stage, d.qc, d.subtasks, d.sub); const total = st.N;
   const PAD = 16, VW = d.w + PAD * 2, VH = d.h + PAD * 2;
   return (
     <div style={{ border: '1px solid ' + LINE, background: 'rgba(8,8,18,.7)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: mob ? 'column' : 'row', overflow: 'hidden' }}>
@@ -434,7 +487,7 @@ export function ClientPortal({ user, onExit }) {
     setExporting(false);
   };
 
-  const st = doc ? computeStats(doc.stage, doc.qc) : null;
+  const st = doc ? computeStats(doc.stage, doc.qc, doc.subtasks, doc.sub) : null;
   const total = st ? st.N : 0;
   const dispName = projects.find((p) => p.id === activeId)?.name || (doc && doc.name) || 'Project';
   const frameSnap = snaps[frame];
@@ -599,7 +652,12 @@ export default function PilePlan({ onExit, portalUser }) {
   const [bgOn, setBgOn] = useState(!!(init.current.bg && init.current.bg.on)); // local view toggle
   const [overlay3d, setOverlay3d] = useState(init.current.overlay3d || null);
   const [geo, setGeo] = useState(init.current.geo || null);
-  const [mapMode, setMapMode] = useState(!!(init.current.geo && init.current.geo.lonLat && init.current.geo.lonLat.length));
+  const [sectionNames, setSectionNames] = useState(init.current.sectionNames || {});
+  const [subtasks, setSubtasks] = useState(init.current.subtasks || []);
+  const [sub, setSub] = useState(init.current.sub || {});
+  const [selSection, setSelSection] = useState(null);
+  /* 'plan' = imported dot layout, 'sat' = Google-Earth style map, 'model' = GLB */
+  const [viewMode, setViewMode] = useState(() => ((init.current.geo && init.current.geo.lonLat && init.current.geo.lonLat.length) ? 'sat' : 'plan'));
   const [tileLayer, setTileLayer] = useState('satellite');
   const [log, setLog] = useState(init.current.log);
   const [lastModified, setLastModified] = useState(init.current.lastModified);
@@ -620,14 +678,14 @@ export default function PilePlan({ onExit, portalUser }) {
   const modelBufRef = useRef(null); // latest viewed GLB ArrayBuffer (for PDF overhead)
 
   const TOTAL = points.length;
-  const stats = useMemo(() => computeStats(stage, qc), [stage, qc]);
+  const stats = useMemo(() => computeStats(stage, qc, subtasks, sub), [stage, qc, subtasks, sub]);
 
   /* persist */
   const skipPersist = useRef(false);
   useEffect(() => {
     if (skipPersist.current) { skipPersist.current = false; return; }
-    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, log, lastModified });
-  }, [activeId, projName, planW, planH, points, sections, sectionCount, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, log, lastModified]);
+    storage.set(projKey(activeId), { name: projName, w: planW, h: planH, points, sections, sectionCount, sectionNames, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, subtasks, sub, log, lastModified });
+  }, [activeId, projName, planW, planH, points, sections, sectionCount, sectionNames, stage, qc, by, at, notes, bg, bgT, overlay3d, geo, subtasks, sub, log, lastModified]);
   useEffect(() => { storage.set(REG_KEY, projects); }, [projects]);
   useEffect(() => { storage.set(ACTIVE_KEY, activeId); }, [activeId]);
   // pull the shared project registry so assigned projects appear on any device
@@ -652,6 +710,9 @@ export default function PilePlan({ onExit, portalUser }) {
   const bgTRef = useRef(bgT); useEffect(() => { bgTRef.current = bgT; }, [bgT]);
   const overlay3dRef = useRef(overlay3d); useEffect(() => { overlay3dRef.current = overlay3d; }, [overlay3d]);
   const geoRef = useRef(geo); useEffect(() => { geoRef.current = geo; }, [geo]);
+  const sectionNamesRef = useRef(sectionNames); useEffect(() => { sectionNamesRef.current = sectionNames; }, [sectionNames]);
+  const subtasksRef = useRef(subtasks); useEffect(() => { subtasksRef.current = subtasks; }, [subtasks]);
+  const subRef = useRef(sub); useEffect(() => { subRef.current = sub; }, [sub]);
   const notesRef = useRef(notes); useEffect(() => { notesRef.current = notes; }, [notes]);
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const lastModifiedRef = useRef(lastModified); useEffect(() => { lastModifiedRef.current = lastModified; }, [lastModified]);
@@ -680,43 +741,104 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- painting ---- */
   const allowedRef = useRef(allowed); useEffect(() => { allowedRef.current = allowed; }, [allowed]);
+  /* blocks are "Block N" until someone names them */
+  const sectionLabelFor = useCallback((idx) => {
+    if (idx == null) return 'all points';
+    const nm = (sectionNamesRef.current || {})[idx];
+    return (nm && String(nm).trim()) ? String(nm).trim() : 'Block ' + (idx + 1);
+  }, []);
   const stampIndex = (i) => { const t = Date.now(); setAt((prev) => { const n = prev.slice(); n[i] = t; return n; }); setBy((prev) => { if (prev[i] === userName) return prev; const n = prev.slice(); n[i] = userName; return n; }); };
   const applyPaintToIndex = (i) => {
     const pv = paintRef.current;
-    if (allowedRef.current && !allowedRef.current.has(pv)) return;
-    if (pv[0] === 's') {
-      const sv = +pv[1]; if (stageRef.current[i] === sv) return;
+    if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
+    const p = parsePaint(pv, subtasksRef.current);
+    if (p.kind === 'sub') {
+      if (!p.def) return;
+      const N = pointsRef.current.length;
+      const cur = subRef.current[p.id] || '';
+      if ((cur[i] === '1') === !!p.done) return;
       if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; }
-      setStage((prev) => { const n = prev.slice(); n[i] = sv; return n; });
+      setSub((prev) => Object.assign({}, prev, { [p.id]: setSubBit(prev[p.id], i, N, p.done) }));
+      /* once completed subtask weights cover the whole stage, advance the point */
+      const parentStage = +String(p.def.parent)[1] || 0;
+      if (p.done && parentStage === (stageRef.current[i] || 0) + 1) {
+        const probe = Object.assign({}, subRef.current, { [p.id]: setSubBit(subRef.current[p.id], i, N, true) });
+        if (subComplete(subtasksRef.current, probe, parentStage, i)) setStage((prev) => { const n = prev.slice(); n[i] = parentStage; return n; });
+      }
+    } else if (p.kind === 'stage') {
+      if (stageRef.current[i] === p.v) return;
+      if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; }
+      setStage((prev) => { const n = prev.slice(); n[i] = p.v; return n; });
+      /* dropping a point back to "No Progress" clears its subtask credit too */
+      if (p.v === 0) {
+        const N = pointsRef.current.length;
+        setSub((prev) => { const out = {}; let hit = false; for (const k of Object.keys(prev)) { const nv = setSubBit(prev[k], i, N, false); if (nv !== prev[k]) hit = true; out[k] = nv; } return hit ? out : prev; });
+      }
     } else {
-      const qv = +pv[1]; if (qcRef.current[i] === qv) return;
+      if (qcRef.current[i] === p.v) return;
       if (burstRef.current) { burstRef.current.count++; burstRef.current.last = i; }
-      setQc((prev) => { const n = prev.slice(); n[i] = qv; return n; });
+      setQc((prev) => { const n = prev.slice(); n[i] = p.v; return n; });
     }
     stampIndex(i);
   };
   const paintAt = useCallback((cx, cy) => { const el = document.elementFromPoint(cx, cy); if (el && el.dataset && el.dataset.i != null) applyPaintToIndex(+el.dataset.i); }, []);
-  const fillAt = (i) => {
-    const pv = paintRef.current; if (allowedRef.current && !allowedRef.current.has(pv)) return;
+
+  /* Apply the active paint to every index in `list` in one pass — used by the
+     section fill and by the click-and-drag marquee. */
+  const applyPaintToList = (list, describe) => {
+    const pv = paintRef.current;
+    if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
+    if (!list || !list.length) return;
     snapshotUndo();
-    const secs = sectionsRef.current; const sec = secs ? secs[i] : null;
-    const isStage = pv[0] === 's'; const v = +pv[1]; const t = Date.now();
-    const inSec = (j) => (secs ? secs[j] === sec : true);
-    if (isStage) setStage((prev) => prev.map((x, j) => (inSec(j) ? v : x)));
-    else setQc((prev) => prev.map((x, j) => (inSec(j) ? v : x)));
-    setAt((prev) => prev.map((x, j) => (inSec(j) ? t : x)));
-    setBy((prev) => prev.map((x, j) => (inSec(j) ? userName : x)));
-    const label = isStage ? STAGES[v].name : QC[v].name;
-    pushLog(`filled ${secs ? 'section ' + (sec + 1) : 'all points'} → "${label}"`);
+    const p = parsePaint(pv, subtasksRef.current);
+    const hit = new Set(list); const t = Date.now(); const N = pointsRef.current.length;
+    if (p.kind === 'sub') {
+      if (!p.def) return;
+      setSub((prev) => { let bits = prev[p.id]; for (const j of hit) bits = setSubBit(bits, j, N, p.done); return Object.assign({}, prev, { [p.id]: bits }); });
+      const parentStage = +String(p.def.parent)[1] || 0;
+      if (p.done) {
+        const probe = Object.assign({}, subRef.current);
+        let bits = probe[p.id]; for (const j of hit) bits = setSubBit(bits, j, N, true); probe[p.id] = bits;
+        setStage((prev) => prev.map((x, j) => (hit.has(j) && parentStage === x + 1 && subComplete(subtasksRef.current, probe, parentStage, j) ? parentStage : x)));
+      }
+    } else if (p.kind === 'stage') {
+      setStage((prev) => prev.map((x, j) => (hit.has(j) ? p.v : x)));
+      if (p.v === 0) setSub((prev) => { const out = {}; for (const k of Object.keys(prev)) { let bits = prev[k]; for (const j of hit) bits = setSubBit(bits, j, N, false); out[k] = bits; } return out; });
+    } else {
+      setQc((prev) => prev.map((x, j) => (hit.has(j) ? p.v : x)));
+    }
+    setAt((prev) => prev.map((x, j) => (hit.has(j) ? t : x)));
+    setBy((prev) => prev.map((x, j) => (hit.has(j) ? userName : x)));
+    pushLog(`${describe} → "${paintTokenLabel(pv, subtasksRef.current)}"`);
   };
+  const fillAt = (i) => {
+    const secs = sectionsRef.current; const sec = secs ? secs[i] : null;
+    const list = []; for (let j = 0; j < pointsRef.current.length; j++) if (!secs || secs[j] === sec) list.push(j);
+    applyPaintToList(list, 'filled ' + (secs ? sectionLabelFor(sec) : 'all points'));
+  };
+  /* click-and-drag marquee fill: paint every point inside the dragged box */
+  const fillRegion = (list) => applyPaintToList(list, `filled ${list.length} selected point${list.length === 1 ? '' : 's'}`);
   const burstFlush = () => {
     const b = burstRef.current; burstRef.current = null;
     if (!b || b.count === 0) return;
-    const pv = b.paint; const isStage = pv[0] === 's'; const v = +pv[1];
-    const label = isStage ? STAGES[v].name : QC[v].name;
+    const label = paintTokenLabel(b.paint, subtasksRef.current);
     pushLog(`set ${b.count} point${b.count !== 1 ? 's' : ''} → "${label}"`);
-    if (pv === 'q2' && b.count === 1 && b.last != null) setNotePt(b.last); // single flag → add note
+    if (b.paint === 'q2' && b.count === 1 && b.last != null) setNotePt(b.last); // single flag → add note
   };
+
+  /* Shared paint plumbing for the satellite + 3D overlays, so those views
+     behave exactly like the plan SVG (brush drags, marquee fill, tap-to-note). */
+  const overlayPick = (i) => {
+    if (modeRef.current === 'pan') { setNotePt(i); return; }
+    if (modeRef.current === 'fill') { fillAt(i); return; }
+    if (!paintAllowed(allowedRef.current, paintRef.current, subtasksRef.current)) { setNotePt(i); return; }
+    snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null };
+    applyPaintToIndex(i); burstFlush();
+  };
+  const overlayBrushStart = () => { snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; };
+  const overlayBrushPoint = (i) => applyPaintToIndex(i);
+  const overlayBrushEnd = () => burstFlush();
+  const saveOverlay3d = (ov) => { setOverlay3d(ov); setLastModified(Date.now()); pushLog(ov.on === false ? 'hid 3D overlay' : (ov.locked ? 'locked 3D overlay alignment' : 'updated 3D overlay alignment')); };
 
   /* ---- cloud sync ---- */
   const [cloudStatus, setCloudStatus] = useState('local');
@@ -750,6 +872,9 @@ export default function PilePlan({ onExit, portalUser }) {
     if ((d.bgT || 0) > (bgTRef.current || 0)) { setBg(nd.bg); setBgT(d.bgT || 0); setBgOn(!!(nd.bg && nd.bg.on)); }
     if (d.overlay3d !== undefined) setOverlay3d(d.overlay3d || null);
     if (d.geo !== undefined) setGeo(nd.geo || null);
+    if (d.sectionNames !== undefined) setSectionNames(nd.sectionNames || {});
+    if (d.subtasks !== undefined) setSubtasks(nd.subtasks || []);
+    if (d.sub !== undefined) setSub(nd.sub || {});
     if (Array.isArray(d.log)) { setLog((local) => mergeLogs(local, d.log)); d.log.forEach((e) => syncedIdsRef.current.add(e.id)); }
     lastRevRef.current = d.rev;
     setTimeout(() => { applyingRemoteRef.current = false; }, 0);
@@ -759,7 +884,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const entries = logRef.current.filter((e) => !syncedIdsRef.current.has(e.id));
     try {
       setCloudStatus('syncing');
-      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, overlay3d: overlay3dRef.current, geo: geoRef.current, lastModified: lastModifiedRef.current, entries };
+      const body = { name: projNameRef.current, points: pointsRef.current, w: planWRef.current, h: planHRef.current, sections: sectionsRef.current, sectionCount: sectionCountRef.current, stage: stageRef.current, qc: qcRef.current, by: byRef.current, at: atRef.current, notes: notesRef.current, bg: bgRef.current, bgT: bgTRef.current, overlay3d: overlay3dRef.current, geo: geoRef.current, sectionNames: sectionNamesRef.current, subtasks: subtasksRef.current, sub: subRef.current, lastModified: lastModifiedRef.current, entries };
       const r = await fetch(ENDPOINT + '?project=' + encodeURIComponent(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) throw new Error('http ' + r.status);
       const d = await r.json();
@@ -787,7 +912,7 @@ export default function PilePlan({ onExit, portalUser }) {
   useEffect(() => {
     if (!readyRef.current || applyingRemoteRef.current) return;
     clearTimeout(pushTimerRef.current); pushTimerRef.current = setTimeout(() => { pushCloud(); }, 1000);
-  }, [stage, qc, at, notes, bg, bgT, overlay3d, geo, log, projName, points, pushCloud]);
+  }, [stage, qc, at, notes, bg, bgT, overlay3d, geo, sectionNames, subtasks, sub, log, projName, points, pushCloud]);
   // redact legacy name
   useEffect(() => { if (/dwyer/i.test(projName || '')) { setProjName('Project Alpha'); setProjects((ps) => ps.map((p) => p.id === activeId ? { ...p, name: 'Project Alpha' } : p)); setLastModified(Date.now()); } }, [projName, activeId]);
 
@@ -806,28 +931,48 @@ export default function PilePlan({ onExit, portalUser }) {
   const onWheel = useCallback((e) => { e.preventDefault(); const p = toView(e.clientX, e.clientY); zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, [toView, zoomAt]);
   useEffect(() => { const svg = svgRef.current; if (!svg) return; svg.addEventListener('wheel', onWheel, { passive: false }); return () => svg.removeEventListener('wheel', onWheel); }, [onWheel, view]);
   const pointersRef = useRef(new Map()); const panRef = useRef(null); const pinchRef = useRef(null); const pannedRef = useRef(false); const bgDragRef = useRef(null);
+  /* click-and-drag selection box for Fill mode */
+  const marqRef = useRef(null); const [marq, setMarq] = useState(null);
+  const commitMarquee = useCallback(() => {
+    const m = marqRef.current; marqRef.current = null; setMarq(null);
+    if (!m) return;
+    const v = vwRef.current;
+    const toWorld = (p) => ({ x: (p.x - v.x) / v.s, y: (p.y - v.y) / v.s });
+    const r = normRect(toWorld(m.a), toWorld(m.b));
+    if (!m.moved) {
+      /* a plain click still fills the whole block under the cursor */
+      const el = document.elementFromPoint(m.cx, m.cy);
+      if (el && el.dataset && el.dataset.i != null) fillAt(+el.dataset.i);
+      return;
+    }
+    const list = [];
+    const arr = pointsRef.current;
+    for (let i = 0; i < arr.length; i++) if (rectContains(r, arr[i][0] + PAD, arr[i][1] + PAD)) list.push(i);
+    if (list.length) fillRegion(list);
+  }, [PAD]); // eslint-disable-line react-hooks/exhaustive-deps
   const onPointerDown = (e) => {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointersRef.current.size === 2) { paintingRef.current = false; panRef.current = null; bgDragRef.current = null; const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const midC = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }; pinchRef.current = { dist, mid: toView(midC.x, midC.y), s0: vwRef.current.s, x0: vwRef.current.x, y0: vwRef.current.y }; return; }
     const m = modeRef.current;
     if (m === 'bg') { if (bgRef.current) { const p = toView(e.clientX, e.clientY); bgDragRef.current = { sx: p.x, sy: p.y, x0: bgRef.current.x, y0: bgRef.current.y }; } }
     else if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
-    else if (m === 'fill') { const el = document.elementFromPoint(e.clientX, e.clientY); if (el && el.dataset && el.dataset.i != null) fillAt(+el.dataset.i); }
+    else if (m === 'fill') { const p = toView(e.clientX, e.clientY); marqRef.current = { cx: e.clientX, cy: e.clientY, a: p, b: p, moved: false }; setMarq({ a: p, b: p }); }
     else { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: vwRef.current.x, vy: vwRef.current.y }; pannedRef.current = false; }
   };
   const onPointerMove = (e) => {
     if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchRef.current && pointersRef.current.size >= 2) { const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const ratio = dist / (pinchRef.current.dist || 1); const ns = Math.min(28, Math.max(1, pinchRef.current.s0 * ratio)); const { mid, s0, x0, y0 } = pinchRef.current; const wx = (mid.x - x0) / s0, wy = (mid.y - y0) / s0; setVw(clampView({ s: ns, x: mid.x - wx * ns, y: mid.y - wy * ns })); return; }
+    if (marqRef.current && pointersRef.current.size < 2) { const m = marqRef.current; const p = toView(e.clientX, e.clientY); m.b = p; if (Math.hypot(e.clientX - m.cx, e.clientY - m.cy) > DRAG_SLOP) m.moved = true; setMarq({ a: m.a, b: p }); return; }
     if (bgDragRef.current && pointersRef.current.size < 2) { const bd = bgDragRef.current; const b = bgRef.current; if (b) { const p = toView(e.clientX, e.clientY); setBg({ ...b, x: bd.x0 + (p.x - bd.sx), y: bd.y0 + (p.y - bd.sy) }); } return; }
     if (panRef.current) { const pr = panRef.current; pannedRef.current = true; const p = toView(e.clientX, e.clientY); setVw((v) => clampView({ ...v, x: pr.vx + (p.x - pr.sx), y: pr.vy + (p.y - pr.sy) })); }
   };
-  const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
+  const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
   useEffect(() => {
     const mv = (e) => { if (paintingRef.current && modeRef.current === 'brush' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
-    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
+    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
-  }, [paintAt]);
+  }, [paintAt, commitMarquee]);
   const resetView = () => setVw({ s: 1, x: 0, y: 0 });
   const zoomB = (f) => zoomAt(VW / 2, VH / 2, f);
 
@@ -835,7 +980,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const openProject = (id) => {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
-    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setGeo(d.geo || null); setMapMode(!!(d.geo && d.geo.lonLat && d.geo.lonLat.length)); setLog(d.log); setLastModified(d.lastModified);
+    setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setGeo(d.geo || null); setViewMode((d.geo && d.geo.lonLat && d.geo.lonLat.length) ? 'sat' : 'plan'); setSectionNames(d.sectionNames || {}); setSubtasks(d.subtasks || []); setSub(d.sub || {}); setSelSection(null); setLog(d.log); setLastModified(d.lastModified);
     undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
@@ -850,7 +995,7 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const createProject = (name, imp) => {
     const id = newProjId(); const N = imp.points.length;
-    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, geo: imp.geo || null, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''}${imp.geo ? ', geo-referenced' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
+    const doc = { name: name || 'New Project', w: imp.w, h: imp.h, points: imp.points, sections: imp.sectionCount > 1 ? imp.sections : null, sectionCount: imp.sectionCount > 1 ? imp.sectionCount : 0, stage: new Array(N).fill(0), qc: new Array(N).fill(0), by: new Array(N).fill(''), at: new Array(N).fill(0), notes: {}, bg: null, bgT: 0, geo: imp.geo || null, sectionNames: {}, subtasks: [], sub: {}, log: [{ id: 'h' + Date.now(), ts: Date.now(), user: userName, summary: `created project from import (${imp.count} points${imp.sectionCount > 1 ? ', ' + imp.sectionCount + ' sections' : ''}${imp.geo ? ', geo-referenced' : ''})`, stage: encNums(new Array(N).fill(0)), qc: encNums(new Array(N).fill(0)), notes: {} }], lastModified: Date.now() };
     storage.set(projKey(id), doc);
     const next = [...projects, { id, name: doc.name, createdAt: Date.now() }]; setProjects(next);
     fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {});
@@ -862,7 +1007,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const handleExport = async () => {
     let overhead = null;
     if (modelBufRef.current) { setExporting(true); try { overhead = await renderOverheadPNG(modelBufRef.current); } catch (e) {} setExporting(false); }
-    exportPDF(projName, points, planW, planH, stage, qc, notes, lastModified, userName, logoRef.current, overhead);
+    exportPDF(projName, points, planW, planH, stage, qc, notes, lastModified, userName, logoRef.current, overhead, subtasks, sub);
     pushLog('exported PDF' + (overhead ? ' (with model overhead)' : ''));
   };
   const restoreEntry = (entry) => {
@@ -874,6 +1019,41 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- save note ---- */
   const saveNote = (i, text) => { snapshotUndo(); setNotes((n) => { const x = { ...n }; if (text && text.trim()) x[i] = text.trim(); else delete x[i]; return x; }); pushLog(`note on point #${i + 1}`); };
+
+  /* ---- named blocks ---- */
+  const renameSection = (idx, name) => {
+    setSectionNames((prev) => {
+      const next = Object.assign({}, prev);
+      if (name && name.trim()) next[idx] = name.trim(); else delete next[idx];
+      return next;
+    });
+    setLastModified(Date.now());
+    pushLog(`renamed Block ${idx + 1} → "${(name || '').trim() || 'Block ' + (idx + 1)}"`);
+  };
+
+  /* ---- custom subtasks (weighted portions of a parent install stage) ---- */
+  const [subOpen, setSubOpen] = useState(false);
+  const addSubtask = (parent, label, weight) => {
+    const lbl = (label || '').trim(); if (!lbl) return;
+    const w = Math.max(1, Math.min(100, Math.round(+weight || 0))); if (!w) return;
+    const t = { id: newSubId(), parent, label: lbl, weight: w };
+    setSubtasks((prev) => [...prev, t]);
+    setSub((prev) => Object.assign({}, prev, { [t.id]: '0'.repeat(points.length) }));
+    setLastModified(Date.now());
+    pushLog(`added subtask "${lbl}" (${w}% of ${STAGES[+parent[1]].name})`);
+  };
+  const updateSubtask = (id, patch) => {
+    setSubtasks((prev) => prev.map((s) => (s.id === id ? Object.assign({}, s, patch) : s)));
+    setLastModified(Date.now());
+  };
+  const removeSubtask = (t) => {
+    if (!window.confirm(`Delete subtask "${t.label}"? Points already credited for it lose that credit.`)) return;
+    setSubtasks((prev) => prev.filter((s) => s.id !== t.id));
+    setSub((prev) => { const n = Object.assign({}, prev); delete n[t.id]; return n; });
+    setLastModified(Date.now());
+    pushLog(`deleted subtask "${t.label}"`);
+    if (paint === 'k:' + t.id || paint === 'n:' + t.id) setPaint('s1');
+  };
 
   /* ---- background photo ---- */
   const [bgBusy, setBgBusy] = useState(false);
@@ -895,22 +1075,36 @@ export default function PilePlan({ onExit, portalUser }) {
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- dots ---- */
-  const dotEls = useMemo(() => points.map((d, i) => (
-    <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} />
-  )), [points, stage, qc]);
+  const dotEls = useMemo(() => points.map((d, i) => {
+    const dim = selSection != null && sections && sections[i] !== selSection;
+    return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} opacity={dim ? 0.16 : 1} />;
+  }), [points, stage, qc, selSection, sections]);
+
+  /* outline around the selected block, so you can see which one you picked */
+  const selHull = useMemo(() => {
+    if (selSection == null || !sections) return null;
+    const h = sectionHull(points, sections, selSection, 9);
+    return h.length >= 3 ? h.map((p) => (p[0] + PAD) + ',' + (p[1] + PAD)).join(' ') : null;
+  }, [selSection, sections, points, PAD]);
 
   const cloudLabel = cloudStatus === 'synced' ? 'Synced to cloud (shared)' : cloudStatus === 'syncing' ? 'Syncing…' : cloudStatus === 'offline' ? 'Offline — saved on device' : 'Connecting…';
   const cloudColor = cloudStatus === 'synced' ? '#22c55e' : cloudStatus === 'offline' ? GOLD : MUTE;
-  const paintLabel = paint[0] === 's' ? STAGES[+paint[1]].name : QC[+paint[1]].name;
-  const paintColor = paint[0] === 's' ? STAGES[+paint[1]].color : QC[+paint[1]].color;
+  const hasGeo = !!(geo && geo.lonLat && geo.lonLat.length);
+  const paintLabel = paintTokenLabel(paint, subtasks);
+  const paintColor = paintTokenColor(paint, subtasks);
 
   /* per-section completion */
   const sectionStats = useMemo(() => {
     if (!sections || sectionCount < 2) return null;
     const arr = Array.from({ length: sectionCount }, () => ({ total: 0, sum: 0 }));
-    for (let i = 0; i < points.length; i++) { const s = sections[i]; if (s == null || !arr[s]) continue; arr[s].total++; arr[s].sum += stage[i] || 0; }
+    const hasSubs = subtasks.length > 0;
+    for (let i = 0; i < points.length; i++) {
+      const s = sections[i]; if (s == null || !arr[s]) continue;
+      const v = stage[i] || 0;
+      arr[s].total++; arr[s].sum += v + (hasSubs && v < 4 ? subFraction(subtasks, sub, v + 1, i) : 0);
+    }
     return arr.map((a, i) => ({ i, total: a.total, pct: a.total ? a.sum / (a.total * 4) * 100 : 0 }));
-  }, [sections, sectionCount, stage, points]);
+  }, [sections, sectionCount, stage, points, subtasks, sub]);
 
   const isAllowed = (tok) => !allowed || allowed.has(tok);
   const canEditQC = isAllowed('q2');
@@ -935,6 +1129,17 @@ export default function PilePlan({ onExit, portalUser }) {
               {STAGES.map((s, i) => (isAllowed('s' + i) ? <option key={i} value={'s' + i}>{s.name}</option> : null))}
             </optgroup>
           )}
+          {STAGES.map((s, i) => {
+            if (i === 0 || !isAllowed('s' + i)) return null;
+            const list = subsForParent(subtasks, 's' + i);
+            if (!list.length) return null;
+            return (
+              <optgroup key={'sub' + i} label={s.name + ' — subtasks'}>
+                {list.map((t) => <option key={t.id} value={'k:' + t.id}>{t.label} ({t.weight}%)</option>)}
+                {list.map((t) => <option key={t.id + '-c'} value={'n:' + t.id}>— clear {t.label}</option>)}
+              </optgroup>
+            );
+          })}
           {(isAllowed('q1') || isAllowed('q2') || isAllowed('q0')) && (
             <optgroup label="Quality Check">
               {isAllowed('q1') && <option value="q1">Requires Attention (yellow)</option>}
@@ -947,8 +1152,13 @@ export default function PilePlan({ onExit, portalUser }) {
 
       <div style={{ display: 'flex', gap: 7 }}>
         <button onClick={() => setMode('brush')} style={segBtn(mode === 'brush')}>Brush</button>
-        <button onClick={() => setMode('fill')} style={segBtn(mode === 'fill')}>Fill {sectionCount > 1 ? 'Section' : 'All'}</button>
+        <button onClick={() => setMode('fill')} style={segBtn(mode === 'fill')}>Fill</button>
         <button onClick={() => setMode('pan')} style={segBtn(mode === 'pan')}>Pan</button>
+      </div>
+      <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: -3 }}>
+        {mode === 'brush' ? 'Click and drag across points to paint them.'
+          : mode === 'fill' ? `Drag a box to fill everything inside it — a single click fills the whole ${sectionCount > 1 ? 'block' : 'plan'}.`
+            : 'Drag to move the view. Tap a point for its status, history and notes.'}
       </div>
       <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, opacity: canUndo ? 1 : .4 }}>&#8634; Undo</button>
 
@@ -994,12 +1204,91 @@ export default function PilePlan({ onExit, portalUser }) {
         <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Tap any point in Pan mode to see its status, who updated it, and notes.</div>
       </div>
 
+      <div style={card()}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <span style={kicker}>Subtasks</span>
+          <button onClick={() => setSubOpen((v) => !v)} style={{ ...miniBtn, marginLeft: 'auto', color: ORANGE, borderColor: ORANGE }}>{subOpen ? 'Done' : 'Manage'}</button>
+        </div>
+        {subtasks.length === 0 && !subOpen && <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>None yet. Add weighted subtasks under any install stage — each one credits its share of that stage.</div>}
+        {subtasks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: subOpen ? 10 : 0 }}>
+            {STAGES.map((st, si) => {
+              if (si === 0) return null;
+              const list = subsForParent(subtasks, 's' + si);
+              if (!list.length) return null;
+              const total = list.reduce((a, b) => a + (+b.weight || 0), 0);
+              return (
+                <div key={si}>
+                  <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: total === 100 ? MUTE : GOLD, display: 'flex', gap: 6 }}>
+                    <span style={{ width: 9, height: 9, background: st.color, clipPath: CLIP, alignSelf: 'center' }} />{st.name}<span style={{ marginLeft: 'auto' }}>{total}%</span>
+                  </div>
+                  {list.map((t) => {
+                    const done = (() => { const b = sub[t.id] || ''; let c = 0; for (let i = 0; i < b.length; i++) if (b[i] === '1') c++; return c; })();
+                    return (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0 3px 15px' }}>
+                        {subOpen ? (
+                          <>
+                            <input defaultValue={t.label} onBlur={(e) => { if (e.target.value.trim() && e.target.value.trim() !== t.label) updateSubtask(t.id, { label: e.target.value.trim() }); }} style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.25)', color: CREAM, fontFamily: NBF, fontSize: 13, padding: '2px 0', outline: 'none' }} />
+                            <input type="number" min="1" max="100" defaultValue={t.weight} onBlur={(e) => { const w = Math.max(1, Math.min(100, Math.round(+e.target.value || 0))); if (w && w !== t.weight) updateSubtask(t.id, { weight: w }); e.target.value = w || t.weight; }} style={{ width: 46, background: 'transparent', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 12, padding: '2px 4px', outline: 'none' }} />
+                            <button onClick={() => removeSubtask(t)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 17, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
+                          </>
+                        ) : (
+                          <div onClick={() => setPaint('k:' + t.id)} style={{ ...statusRow(paint === 'k:' + t.id), flex: 1, padding: '4px 7px' }}>
+                            <span style={{ fontFamily: NBF, fontSize: 13, color: CREAM, flex: 1 }}>{t.label}</span>
+                            <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>{done.toLocaleString()}</span>
+                            <span style={{ fontFamily: BBF, fontSize: 14, color: st.color, width: 36, textAlign: 'right' }}>{t.weight}%</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {subOpen && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid ' + LINE, paddingTop: 9 }}>
+            <select id="tt-sub-parent" defaultValue="s1" style={{ ...selectStyle, padding: '7px' }}>
+              {STAGES.map((s, i) => (i === 0 ? null : <option key={i} value={'s' + i}>{s.name}</option>))}
+            </select>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input id="tt-sub-label" placeholder="Subtask name" style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '7px 9px', outline: 'none' }} />
+              <input id="tt-sub-weight" type="number" min="1" max="100" defaultValue="50" style={{ width: 62, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '7px 6px', outline: 'none' }} />
+            </div>
+            <button onClick={() => {
+              const p = document.getElementById('tt-sub-parent'), l = document.getElementById('tt-sub-label'), w = document.getElementById('tt-sub-weight');
+              if (!p || !l || !w) return;
+              addSubtask(p.value, l.value, w.value); l.value = '';
+            }} style={{ ...ctaBtn, padding: '9px 0', fontSize: 12 }}>+ Add Subtask</button>
+            <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Weights are a percentage of the parent stage. When a point's completed subtasks reach 100%, it advances to that stage automatically.</div>
+          </div>
+        )}
+      </div>
+
       {sectionStats && (
         <div style={card()}>
-          <div style={{ ...kicker, marginBottom: 8 }}>Sections ({sectionCount})</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 150, overflowY: 'auto' }}>
-            {sectionStats.map((s) => (<div key={s.i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontFamily: NBF, fontSize: 13, color: MUTE, width: 64, flexShrink: 0 }}>Block {s.i + 1}</span><div style={{ ...bar, flex: 1, marginTop: 0 }}><div style={{ height: '100%', width: s.pct + '%', background: GOLD }} /></div><span style={{ fontFamily: BBF, fontSize: 15, color: CREAM, width: 40, textAlign: 'right' }}>{s.pct.toFixed(0)}%</span></div>))}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <span style={kicker}>Blocks ({sectionCount})</span>
+            {selSection != null && <button onClick={() => setSelSection(null)} style={{ ...miniBtn, marginLeft: 'auto', color: ORANGE, borderColor: ORANGE }}>Clear</button>}
           </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 210, overflowY: 'auto' }}>
+            {sectionStats.map((s) => {
+              const on = selSection === s.i;
+              return (
+                <div key={s.i} onClick={() => setSelSection(on ? null : s.i)} title="Click to highlight this block on the map"
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 7px', cursor: 'pointer', border: '1px solid ' + (on ? ORANGE : 'transparent'), background: on ? 'rgba(249,115,22,.12)' : 'transparent' }}>
+                  <input value={sectionNames[s.i] || ''} placeholder={'Block ' + (s.i + 1)} onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setSectionNames((prev) => Object.assign({}, prev, { [s.i]: e.target.value }))}
+                    onBlur={(e) => renameSection(s.i, e.target.value)}
+                    style={{ width: 82, flexShrink: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.22)', color: on ? ORANGE : CREAM, fontFamily: NBF, fontSize: 13, fontWeight: 600, padding: '1px 0', outline: 'none' }} />
+                  <div style={{ ...bar, flex: 1, marginTop: 0 }}><div style={{ height: '100%', width: s.pct + '%', background: on ? ORANGE : GOLD }} /></div>
+                  <span style={{ fontFamily: BBF, fontSize: 15, color: CREAM, width: 40, textAlign: 'right' }}>{s.pct.toFixed(0)}%</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 7 }}>Type to name a block. Click a row to outline it on the map.</div>
         </div>
       )}
 
@@ -1027,7 +1316,7 @@ export default function PilePlan({ onExit, portalUser }) {
           {visibleProjects.length === 0 && <div style={{ fontFamily: NBF, fontSize: 15, color: MUTE, marginTop: 16 }}>No projects have been assigned to you yet. Contact your administrator.</div>}
           <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 16, marginTop: 16 }}>
             {visibleProjects.map((pr) => {
-              const d = normalizeDoc(storage.get(projKey(pr.id))); const s = computeStats(d.stage, d.qc);
+              const d = normalizeDoc(storage.get(projKey(pr.id))); const s = computeStats(d.stage, d.qc, d.subtasks, d.sub);
               return (
                 <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', background: 'rgba(255,255,255,.03)', border: '1px solid ' + LINE, padding: 16, transition: 'all .15s' }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = ORANGE; e.currentTarget.style.transform = 'translateY(-3px)'; }}
@@ -1077,27 +1366,45 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         )}
         <div style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
-          {mapMode && geo && geo.lonLat && geo.lonLat.length ? (
+          {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
               stage={stage}
               qc={qc}
               sections={sections}
-              sectionCount={sectionCount}
+              sectionNames={sectionNames}
+              selSection={selSection}
               layerMode={tileLayer}
               onLayerMode={setTileLayer}
               active={notePt}
               mode={mode}
-              onPickPoint={(i) => {
-                const pv = paintRef.current;
-                if (mode === 'pan') { setNotePt(i); return; }
-                if (mode === 'fill') { fillAt(i); return; }
-                if (allowedRef.current && !allowedRef.current.has(pv)) { setNotePt(i); return; }
-                snapshotUndo();
-                burstRef.current = { count: 0, paint: pv, last: null };
-                applyPaintToIndex(i);
-                burstFlush();
-              }}
+              onPickPoint={overlayPick}
+              onBrushStart={overlayBrushStart}
+              onBrushPoint={overlayBrushPoint}
+              onBrushEnd={overlayBrushEnd}
+              onRegionPoints={fillRegion}
+            />
+          ) : viewMode === 'model' ? (
+            <TTModelView
+              projectId={activeId}
+              points={points}
+              planW={planW}
+              planH={planH}
+              stage={stage}
+              qc={qc}
+              sections={sections}
+              selSection={selSection}
+              overlay3d={overlay3d}
+              onSaveOverlay={saveOverlay3d}
+              mode={mode}
+              canAlign={isAdmin}
+              onModelBuffer={(b) => { modelBufRef.current = b; }}
+              dispColor={dispColor}
+              onPickPoint={overlayPick}
+              onBrushStart={overlayBrushStart}
+              onBrushPoint={overlayBrushPoint}
+              onBrushEnd={overlayBrushEnd}
+              onRegionPoints={fillRegion}
             />
           ) : (
             <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', cursor: mode === 'pan' ? 'grab' : mode === 'bg' ? 'move' : 'crosshair' }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
@@ -1106,17 +1413,26 @@ export default function PilePlan({ onExit, portalUser }) {
                 {bg && bgOn && <image href={bg.url} x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} opacity={bg.opacity != null ? bg.opacity : 0.85} preserveAspectRatio="none" style={{ pointerEvents: 'none' }} />}
                 {bg && bgOn && mode === 'bg' && <rect x={bg.x + PAD} y={bg.y + PAD} width={bgDims(bg, planW).w} height={bgDims(bg, planW).h} fill="none" stroke={ORANGE} strokeWidth={1.5 / vw.s} strokeDasharray={`${6 / vw.s} ${4 / vw.s}`} style={{ pointerEvents: 'none' }} />}
                 {dotEls}
+                {selHull && <polygon points={selHull} fill="rgba(249,115,22,.10)" stroke={ORANGE} strokeWidth={2 / vw.s} strokeLinejoin="round" style={{ pointerEvents: 'none', filter: 'drop-shadow(0 0 6px rgba(249,115,22,.7))' }} />}
               </g>
+              {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.4} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />; })()}
             </svg>
           )}
-          {geo && geo.lonLat && geo.lonLat.length ? (
-            <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600 }}>
-              <button onClick={() => setMapMode((v) => !v)} style={{ ...ghostBtn, padding: '8px 14px', fontSize: 12, background: 'rgba(10,14,26,.85)' }}>
-                {mapMode ? 'Plan View' : 'Satellite View'}
-              </button>
+          <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
+            {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
+              v.need === false ? null : (
+                <button key={v.k} onClick={() => setViewMode(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
+                  style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: '6px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{v.l}</button>
+              )
+            ))}
+          </div>
+          {selSection != null && (
+            <div style={{ position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
+              <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>{sectionLabelFor(selSection)}</span>
+              <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 17, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
             </div>
-          ) : null}
-          {!mapMode && (
+          )}
+          {viewMode === 'plan' && (
             <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
               <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
               <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
@@ -1184,7 +1500,23 @@ export default function PilePlan({ onExit, portalUser }) {
         <div style={overlay(mob)} onClick={() => setNotePt(null)}>
           <div onClick={(e) => e.stopPropagation()} style={modalCard(mob, 420)}>
             <div style={{ display: 'flex', alignItems: 'center' }}><div style={headTitle}>Point #{notePt + 1}</div><button onClick={() => setNotePt(null)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
-            <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Status: {STAGES[stage[notePt]].name}{qc[notePt] ? ' · ' + (qc[notePt] === 2 ? 'Flagged Issue' : 'Requires Attention') : ''}</div>
+            <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Status: {STAGES[stage[notePt]].name}{qc[notePt] ? ' · ' + (qc[notePt] === 2 ? 'Flagged Issue' : 'Requires Attention') : ''}{sections ? ' · ' + sectionLabelFor(sections[notePt]) : ''}</div>
+            {(() => {
+              const next = (stage[notePt] || 0) + 1;
+              const list = next <= 4 ? subsForParent(subtasks, 's' + next) : [];
+              if (!list.length) return null;
+              return (
+                <div style={{ border: '1px solid ' + LINE, padding: '7px 9px' }}>
+                  <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>Toward {STAGES[next].name} · {Math.round(subFraction(subtasks, sub, next, notePt) * 100)}%</div>
+                  {list.map((t) => { const done = (sub[t.id] || '')[notePt] === '1'; return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: NBF, fontSize: 13, color: done ? CREAM : MUTE, padding: '1px 0' }}>
+                      <span style={{ width: 11, height: 11, background: done ? STAGES[next].color : 'transparent', border: '1px solid ' + (done ? STAGES[next].color : 'rgba(255,255,255,.3)'), flexShrink: 0 }} />
+                      <span style={{ flex: 1 }}>{t.label}</span><span>{t.weight}%</span>
+                    </div>
+                  ); })}
+                </div>
+              );
+            })()}
             {at[notePt] ? <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Last updated by <span style={{ color: ORANGE }}>{by[notePt] || 'Unknown'}</span> · {fmtDate(at[notePt])}</div> : <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>No updates recorded yet.</div>}
             {canEditQC ? (<>
               <textarea id="tt-note" defaultValue={notes[notePt] || ''} placeholder="Describe the issue at this point…" style={{ width: '100%', minHeight: 110, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 15, padding: 10, outline: 'none', resize: 'vertical' }} />
