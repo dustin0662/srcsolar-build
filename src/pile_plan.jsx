@@ -870,11 +870,18 @@ export default function PilePlan({ onExit, portalUser }) {
       setLastModified(d.lastModified);
     }
     if ((d.bgT || 0) > (bgTRef.current || 0)) { setBg(nd.bg); setBgT(d.bgT || 0); setBgOn(!!(nd.bg && nd.bg.on)); }
-    if (d.overlay3d !== undefined) setOverlay3d(d.overlay3d || null);
-    if (d.geo !== undefined) setGeo(nd.geo || null);
-    if (d.sectionNames !== undefined) setSectionNames(nd.sectionNames || {});
-    if (d.subtasks !== undefined) setSubtasks(nd.subtasks || []);
-    if (d.sub !== undefined) setSub(nd.sub || {});
+    /* An empty value from the server must never wipe a populated local one —
+       the cloud copy starts out blank for every one of these fields, so a
+       plain "remote wins" would erase the importer's map data on first pull.
+       Take remote only when it actually carries something, or when we have
+       nothing and remote is authoritative. */
+    const remoteNewer = (d.lastModified || 0) > (lastModifiedRef.current || 0);
+    const take = (remoteEmpty, localEmpty) => !remoteEmpty && (localEmpty || remoteNewer);
+    if (take(!nd.overlay3d, !overlay3dRef.current)) setOverlay3d(nd.overlay3d);
+    if (take(!(nd.geo && nd.geo.lonLat && nd.geo.lonLat.length), !geoRef.current)) setGeo(nd.geo);
+    if (take(!Object.keys(nd.sectionNames || {}).length, !Object.keys(sectionNamesRef.current || {}).length)) setSectionNames(nd.sectionNames);
+    if (take(!(nd.subtasks || []).length, !(subtasksRef.current || []).length)) setSubtasks(nd.subtasks);
+    if (take(!Object.keys(nd.sub || {}).length, !Object.keys(subRef.current || {}).length)) setSub(nd.sub);
     if (Array.isArray(d.log)) { setLog((local) => mergeLogs(local, d.log)); d.log.forEach((e) => syncedIdsRef.current.add(e.id)); }
     lastRevRef.current = d.rev;
     setTimeout(() => { applyingRemoteRef.current = false; }, 0);
@@ -904,6 +911,15 @@ export default function PilePlan({ onExit, portalUser }) {
         if (initial && (!d || !Array.isArray(d.points) || !d.points.length)) { readyRef.current = true; await pushCloud(); return; }
         if (d.rev !== lastRevRef.current) applyRemote(d);
         setCloudStatus('synced'); readyRef.current = true;
+        /* Projects imported before these fields existed (or before they were
+           persisted) hold map data only on the machine that imported them.
+           Push ours up so everyone else gets the satellite view too. */
+        if (initial) {
+          const missingGeo = geoRef.current && !(d.geo && d.geo.lonLat && d.geo.lonLat.length);
+          const missingNames = Object.keys(sectionNamesRef.current || {}).length && !Object.keys(d.sectionNames || {}).length;
+          const missingSubs = (subtasksRef.current || []).length && !(d.subtasks || []).length;
+          if (missingGeo || missingNames || missingSubs) await pushCloud();
+        }
       } catch (e) { if (alive && initial) { setCloudStatus('offline'); readyRef.current = true; } }
     };
     pull(true); const t = setInterval(() => pull(false), 6000);
@@ -1090,6 +1106,13 @@ export default function PilePlan({ onExit, portalUser }) {
   const cloudLabel = cloudStatus === 'synced' ? 'Synced to cloud (shared)' : cloudStatus === 'syncing' ? 'Syncing…' : cloudStatus === 'offline' ? 'Offline — saved on device' : 'Connecting…';
   const cloudColor = cloudStatus === 'synced' ? '#22c55e' : cloudStatus === 'offline' ? GOLD : MUTE;
   const hasGeo = !!(geo && geo.lonLat && geo.lonLat.length);
+  /* On a device that didn't do the import, the coordinates arrive from the
+     cloud a moment after mount — drop into satellite view once they land,
+     unless the user has already picked a view themselves. */
+  const viewPickedRef = useRef(false);
+  const chooseView = (v) => { viewPickedRef.current = true; setViewMode(v); };
+  useEffect(() => { if (hasGeo && !viewPickedRef.current && viewMode === 'plan') setViewMode('sat'); }, [hasGeo]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { viewPickedRef.current = false; }, [activeId]);
   const paintLabel = paintTokenLabel(paint, subtasks);
   const paintColor = paintTokenColor(paint, subtasks);
 
@@ -1421,7 +1444,7 @@ export default function PilePlan({ onExit, portalUser }) {
           <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
               v.need === false ? null : (
-                <button key={v.k} onClick={() => setViewMode(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
+                <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
                   style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: '6px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{v.l}</button>
               )
             ))}
