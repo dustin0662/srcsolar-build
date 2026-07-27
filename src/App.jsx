@@ -5152,6 +5152,7 @@ export default function App(){
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
   const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker'],assignedProjects:[],taskScope:{}})
+  const[invMsg,setInvMsg]=useState(null)
   const[assignUser,setAssignUser]=useState(null)
   const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
   const[actEvents,setActEvents]=useState([])
@@ -5253,23 +5254,45 @@ export default function App(){
   }
 
   function sendInvite(){
-    if(!invForm.email){return}
-    var isClient=invForm.role==='client'
+    setInvMsg(null)
     var iem=nEmail(invForm.email)
-    if(!isClient&&iem.indexOf('@sunriseconstructionco.com')<0){return}
-    if(portalUsers.find(function(x){return nEmail(x.email)===iem})){return}
+    // Every bail-out below used to be a silent `return`, so the button just
+    // looked dead. Say what went wrong instead.
+    if(!iem){setInvMsg({k:'err',t:'Enter an email address first.'});return}
+    if(iem.indexOf('@')<1){setInvMsg({k:'err',t:'"'+iem+'" is not a valid email address.'});return}
+    var isClient=invForm.role==='client'
+    if(!isClient&&iem.indexOf('@sunriseconstructionco.com')<0){setInvMsg({k:'err',t:'Staff invites must use an @sunriseconstructionco.com address. Choose the Client role to invite an outside email.'});return}
     var isMember=invForm.role==='member'
     var tools=isClient?[]:invForm.tools
     var assignedProjects=(isClient||isMember)?(invForm.assignedProjects||[]):[]
     var taskScope=isMember?(invForm.taskScope||{}):{}
+    // Already has an account: an invite can't be accepted twice, so offer to
+    // apply the role and access on this form to the existing account.
+    var existing=portalUsers.find(function(x){return nEmail(x.email)===iem})
+    if(existing){
+      if(!window.confirm(iem+' already has a portal account.\n\nApply the role and tool access set here to their existing account instead?')){
+        setInvMsg({k:'err',t:iem+' already has an account — nothing was sent.'});return
+      }
+      var upd=portalUsers.map(function(x){return nEmail(x.email)===iem?touchUser(Object.assign({},x,{role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope})):x})
+      svPU(upd)
+      if(user&&nEmail(user.email)===iem)setUser(Object.assign({},user,{role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope}))
+      logAudit({type:'action',tool:'admin',detail:'Updated access for existing account '+iem})
+      setInvMsg({k:'ok',t:'Updated '+(existing.name||iem)+' — role '+invForm.role+', '+tools.length+' tool'+(tools.length===1?'':'s')+'. They keep their current password.'})
+      return
+    }
     var inv={id:uid(),name:invForm.name,email:iem,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
-    svInv(invites.concat([inv]))
+    svInv(invites.filter(function(x){return nEmail(x.email)!==iem}).concat([inv]))
     logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+iem})
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
-    var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
-    var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC%26D Employee Portal.\n\nClick to join:\n'+link)
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC&D Employee Portal Invitation'
+    var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC&D Employee Portal.\n\nClick to join:\n'+link)
+    var w=null
+    try{w=window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')}catch(e){}
+    // Popup blockers are common here — always hand back the link so the invite
+    // can be sent by other means.
+    if(!w)setInvMsg({k:'err',t:'Invite saved, but the Gmail window was blocked by your browser. Copy the link below and send it yourself.',link:link})
+    else setInvMsg({k:'ok',t:'Invite created for '+iem+' — a Gmail compose window has opened.',link:link})
     setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker'],assignedProjects:[],taskScope:{}})
   }
 
@@ -5673,6 +5696,13 @@ export default function App(){
                 </div>}
                 </>)}
                 <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
+                {invMsg&&<div style={{marginTop:12,padding:'10px 12px',border:'1px solid '+(invMsg.k==='ok'?'rgba(22,163,74,.45)':'rgba(239,68,68,.45)'),background:invMsg.k==='ok'?'rgba(22,163,74,.08)':'rgba(239,68,68,.07)'}}>
+                  <div style={{...NB,fontSize:13,color:invMsg.k==='ok'?'#15803d':'#b91c1c',lineHeight:1.5}}>{invMsg.t}</div>
+                  {invMsg.link&&<div style={{marginTop:8,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    <input readOnly value={invMsg.link} onFocus={function(e){e.target.select()}} style={{flex:1,minWidth:200,...NB,fontSize:12,padding:'7px 9px',border:'1px solid rgba(0,0,0,.15)',background:'#fff',color:'#333'}}/>
+                    <div onClick={function(){try{navigator.clipboard.writeText(invMsg.link);setInvMsg(Object.assign({},invMsg,{t:'Invite link copied to your clipboard.'}))}catch(e){}}} style={{cursor:'pointer',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'7px 14px',background:A,color:'#1a1206'}}>Copy Link</div>
+                  </div>}
+                </div>}
               </div>}
               {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
                 <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>USERS ({portalUsers.length})</div>

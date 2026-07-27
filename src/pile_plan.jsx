@@ -1071,6 +1071,35 @@ export default function PilePlan({ onExit, portalUser }) {
     if (paint === 'k:' + t.id || paint === 'n:' + t.id) setPaint('s1');
   };
 
+  /* ---- attach map coordinates to an existing project ----
+     Lets a project that was imported from a PDF (or one whose coordinates were
+     lost) gain satellite view without being recreated and losing its progress. */
+  const [geoBusy, setGeoBusy] = useState(false);
+  const onGeoUpload = async (file) => {
+    if (!file) return;
+    setGeoBusy(true);
+    try {
+      const r = await processKmzImport(file);
+      if (!r || !r.geo || !r.count) { window.alert('No Placemark points found in that KMZ / KML.'); setGeoBusy(false); return; }
+      if (r.count !== points.length) {
+        window.alert(
+          `That file has ${r.count.toLocaleString()} points but this project has ${points.length.toLocaleString()}.\n\n` +
+          'Coordinates can only be attached when the counts match, so each point lines up with the right location. ' +
+          'Use "New Project (Import)" if this is a different layout.'
+        );
+        setGeoBusy(false); return;
+      }
+      setGeo(r.geo); setLastModified(Date.now());
+      if (!viewPickedRef.current) setViewMode('sat');
+      pushLog(`attached map coordinates from ${file.name}`);
+    } catch (e) { window.alert('Could not read that file: ' + (e && e.message ? e.message : 'unknown')); }
+    setGeoBusy(false);
+  };
+  const removeGeo = () => {
+    if (!window.confirm('Remove the map coordinates from this project? Satellite view will be unavailable until you attach a KMZ again.')) return;
+    setGeo(null); setViewMode('plan'); setLastModified(Date.now()); pushLog('removed map coordinates');
+  };
+
   /* ---- background photo ---- */
   const [bgBusy, setBgBusy] = useState(false);
   const onBgUpload = async (file) => {
@@ -1200,6 +1229,22 @@ export default function PilePlan({ onExit, portalUser }) {
             <label style={{ ...ghostBtn, flex: 1, textAlign: 'center', padding: '8px 0', fontSize: 12, cursor: 'pointer' }}>Replace<input type="file" accept="image/*" hidden onChange={(e) => onBgUpload(e.target.files[0])} /></label>
             <button onClick={removeBg} style={{ ...ghostBtn, flex: 1, padding: '8px 0', fontSize: 12, color: '#f87171', borderColor: 'rgba(248,113,113,.5)' }}>Remove</button>
           </div>
+        </>)}
+      </div>
+
+      <div style={card()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span style={kicker}>Site Map</span>
+          {hasGeo && <button onClick={removeGeo} style={{ ...miniBtn, color: MUTE }}>Remove</button>}
+        </div>
+        {hasGeo ? (
+          <div style={{ fontFamily: NBF, fontSize: 12, color: '#22c55e' }}>Coordinates attached — satellite view available.</div>
+        ) : (<>
+          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '10px 0', cursor: geoBusy ? 'default' : 'pointer', opacity: geoBusy ? .6 : 1 }}>
+            {geoBusy ? 'Reading…' : 'Add Map Coordinates (KMZ)'}
+            <input type="file" accept=".kmz,.kml" hidden disabled={geoBusy} onChange={(e) => onGeoUpload(e.target.files[0])} />
+          </label>
+          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 6 }}>Upload the KMZ this layout came from to turn on satellite view. It must have the same number of points ({points.length.toLocaleString()}); your progress is kept.</div>
         </>)}
       </div>
 
