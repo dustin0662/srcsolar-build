@@ -667,8 +667,34 @@ const now=()=>new Date().toISOString()
 const fmt=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
 const fmtTime=(d)=>{if(!d)return'';const dt=new Date(d);return dt.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
 
-async function sGet(key){try{const r=await storage.get(key);return r?JSON.parse(r.value):null}catch(e){return null}}
-async function sSet(key,val){try{await storage.set(key,JSON.stringify(val))}catch(e){console.error('storage set error',e)}auditChange(key)}
+// ═══ SHARED PORTAL STORAGE ═══
+// Persists to a Netlify blob so accounts, invites and settings survive a
+// reload and are visible on every device. localStorage is only a mirror for
+// offline reads — it is never the source of truth.
+const PORTAL_ENDPOINT='/.netlify/functions/portal'
+function lsGet(key){try{const r=localStorage.getItem('sv_'+key);return r?JSON.parse(r):null}catch(e){return null}}
+function lsSet(key,val){try{localStorage.setItem('sv_'+key,JSON.stringify(val))}catch(e){}}
+async function sGet(key){
+  try{
+    const r=await fetch(PORTAL_ENDPOINT+'?key='+encodeURIComponent(key),{cache:'no-store'})
+    if(r.ok){const j=await r.json();if(j&&j.value!=null){lsSet(key,j.value);return j.value}
+      // nothing in the cloud yet — hand back anything cached locally
+      return lsGet(key)}
+  }catch(e){}
+  if(window.storage){try{const r=await window.storage.get(key);if(r&&r.value)return JSON.parse(r.value)}catch(e){}}
+  return lsGet(key)
+}
+async function sSet(key,val,opts){
+  lsSet(key,val)
+  try{
+    const body={value:val};if(opts&&opts.deleted)body.deleted=opts.deleted
+    const r=await fetch(PORTAL_ENDPOINT+'?key='+encodeURIComponent(key),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+    if(r.ok){const j=await r.json();if(j&&j.value!=null){lsSet(key,j.value);auditChange(key);return j.value}}
+  }catch(e){console.error('storage set error',e)}
+  if(window.storage){try{await window.storage.set(key,JSON.stringify(val))}catch(e){}}
+  auditChange(key)
+  return val
+}
 
 // ═══ ACTIVITY / AUDIT LOG ═══
 const ACTIVITY_ENDPOINT='/.netlify/functions/activity'
@@ -5143,10 +5169,13 @@ export default function App(){
   const[pwMsg,setPwMsg]=useState('')
 
   function pHash(s){var h=5381;for(var i=0;i<s.length;i++){h=((h<<5)+h)+s.charCodeAt(i);h=h&h}return Math.abs(h).toString(36)}
+  // Emails are matched case-insensitively — an invite addressed to
+  // "Jenna@..." has to accept a sign-in typed as "jenna@...".
+  function nEmail(e){return String(e||'').trim().toLowerCase()}
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
@@ -5155,7 +5184,16 @@ export default function App(){
     try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
   },[])
 
-  function svPU(u){setPortalUsers(u);sSet('portal_users',u)}
+  // Stamp every write so the server can pick the newest copy of each account
+  // rather than letting a stale tab overwrite the whole list.
+  function svPU(u,removedIds){
+    var stamped=(u||[]).map(function(x){return x.updatedAt?x:Object.assign({},x,{updatedAt:Date.now()})})
+    setPortalUsers(stamped)
+    sSet('portal_users',stamped,removedIds&&removedIds.length?{deleted:removedIds}:null).then(function(saved){
+      if(Array.isArray(saved)&&saved.length)setPortalUsers(saved)
+    }).catch(function(){})
+  }
+  function touchUser(x){return Object.assign({},x,{updatedAt:Date.now()})}
   function svInv(i){setInvites(i);sSet('portal_invites',i)}
   function svReqs(r){setAccessReqs(r);sSet('portal_requests',r)}
   function svSite(s){setSiteSettings(s);sSet('portal_site',s)}
@@ -5163,8 +5201,20 @@ export default function App(){
   function doPortalLogin(){
     setLoginErr('')
     if(!loginEmail.trim()||!loginPass.trim()){setLoginErr('Enter email and password');return}
-    var u=portalUsers.find(function(x){return x.email===loginEmail&&x.passwordHash===pHash(loginPass)})
-    if(!u){setLoginErr('Invalid credentials or no account. Contact admin for invite.');return}
+    var em=nEmail(loginEmail),ph=pHash(loginPass)
+    var match=function(list){return (list||[]).find(function(x){return nEmail(x.email)===em&&x.passwordHash===ph})}
+    var u=match(portalUsers)
+    if(u){finishLogin(u);return}
+    // The local list can be stale or still loading — check the server before
+    // telling someone their account doesn't exist.
+    sGet('portal_users').then(function(fresh){
+      if(Array.isArray(fresh)&&fresh.length)setPortalUsers(fresh)
+      var u2=match(fresh)
+      if(u2)finishLogin(u2)
+      else setLoginErr('Invalid credentials or no account. Contact admin for invite.')
+    }).catch(function(){setLoginErr('Invalid credentials or no account. Contact admin for invite.')})
+  }
+  function finishLogin(u){
     window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
     setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
   }
@@ -5178,7 +5228,7 @@ export default function App(){
     if(pwNew!==pwConf){setPwMsg('New passwords do not match');return}
     if(pwNew===pwOld){setPwMsg('New password must be different from the current one');return}
     var nh=pHash(pwNew)
-    var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{passwordHash:nh}):x})
+    var nu=portalUsers.map(function(x){return x.id===user.id?touchUser(Object.assign({},x,{passwordHash:nh})):x})
     svPU(nu)
     setUser(Object.assign({},user,{passwordHash:nh}))
     logAudit({type:'action',tool:'admin',detail:'Changed account password'})
@@ -5191,9 +5241,10 @@ export default function App(){
     try{
       var inv=JSON.parse(atob(token))
       if(!inv||!inv.email){setLoginErr('Invalid invite');return}
-      if(portalUsers.find(function(x){return x.email===inv.email})){setLoginErr('Account already exists. Sign in.');return}
+      var iem=nEmail(inv.email)
+      if(portalUsers.find(function(x){return nEmail(x.email)===iem})){setLoginErr('Account already exists. Sign in.');return}
       if(!loginPass.trim()){setLoginErr('Set a password');return}
-      var u={id:uid(),name:inv.name||'',email:inv.email,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},onboardingRequired:!!inv.onboardingRequired,onboardingComplete:false,passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),invitedBy:inv.invitedBy||''}
+      var u={id:uid(),name:inv.name||'',email:iem,role:inv.role||'member',tools:inv.tools||[],assignedProjects:inv.assignedProjects||[],taskScope:inv.taskScope||{},onboardingRequired:!!inv.onboardingRequired,onboardingComplete:false,passwordHash:pHash(loginPass),createdAt:new Date().toISOString(),updatedAt:Date.now(),invitedBy:inv.invitedBy||''}
       svPU(portalUsers.concat([u]))
       svInv(invites.map(function(x){return x.email===inv.email?Object.assign({},x,{used:true}):x}))
       window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'action',tool:'admin',detail:'Accepted invite & created account'})
@@ -5204,15 +5255,16 @@ export default function App(){
   function sendInvite(){
     if(!invForm.email){return}
     var isClient=invForm.role==='client'
-    if(!isClient&&invForm.email.indexOf('@sunriseconstructionco.com')<0){return}
-    if(portalUsers.find(function(x){return x.email===invForm.email})){return}
+    var iem=nEmail(invForm.email)
+    if(!isClient&&iem.indexOf('@sunriseconstructionco.com')<0){return}
+    if(portalUsers.find(function(x){return nEmail(x.email)===iem})){return}
     var isMember=invForm.role==='member'
     var tools=isClient?[]:invForm.tools
     var assignedProjects=(isClient||isMember)?(invForm.assignedProjects||[]):[]
     var taskScope=isMember?(invForm.taskScope||{}):{}
-    var inv={id:uid(),name:invForm.name,email:invForm.email,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
+    var inv={id:uid(),name:invForm.name,email:iem,role:invForm.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
-    logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+invForm.email})
+    logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+iem})
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
     var link=window.location.origin+window.location.pathname+'?invite='+token
     var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC%26D Employee Portal Invitation'
@@ -5222,10 +5274,10 @@ export default function App(){
   }
 
   function sendOnboardingInvite(applicant){
-    var email=(applicant&&applicant.email||'').trim()
+    var email=nEmail(applicant&&applicant.email)
     if(!email){window.alert('This applicant has no email — cannot send an onboarding invite.');return false}
-    if(portalUsers.find(function(x){return x.email===email})){window.alert(email+' already has a portal account.');return false}
-    if(invites.find(function(x){return x.email===email&&!x.used})){if(!window.confirm('An unused invite already exists for '+email+'. Send another?'))return false}
+    if(portalUsers.find(function(x){return nEmail(x.email)===email})){window.alert(email+' already has a portal account.');return false}
+    if(invites.find(function(x){return nEmail(x.email)===email&&!x.used})){if(!window.confirm('An unused invite already exists for '+email+'. Send another?'))return false}
     var inv={id:uid(),name:applicant.name||'',email:email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,invitedBy:inv.invitedBy}))
@@ -5240,7 +5292,7 @@ export default function App(){
   function openAssign(u){setAssignUser(u);setAssignForm({assignedProjects:(u.assignedProjects||[]).slice(),taskScope:Object.assign({},u.taskScope||{})})}
   function saveAssign(){
     if(!assignUser){return}
-    var nu=portalUsers.map(function(x){return x.id===assignUser.id?Object.assign({},x,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}):x})
+    var nu=portalUsers.map(function(x){return x.id===assignUser.id?touchUser(Object.assign({},x,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope})):x})
     svPU(nu)
     logAudit({type:'action',tool:'admin',detail:'Updated project/task assignments for '+assignUser.name})
     if(user&&user.id===assignUser.id){setUser(Object.assign({},user,{assignedProjects:assignForm.assignedProjects,taskScope:assignForm.taskScope}))}
@@ -5291,7 +5343,7 @@ export default function App(){
     var req=accessReqs.find(function(r){return r.id===reqId})
     if(!req)return
     svReqs(accessReqs.map(function(r){return r.id===reqId?Object.assign({},r,{status:'approved'}):r}))
-    var pu=portalUsers.map(function(u){if(u.id===req.userId){var t=u.tools?u.tools.concat([req.tool]):[req.tool];return Object.assign({},u,{tools:t})}return u})
+    var pu=portalUsers.map(function(u){if(u.id===req.userId){var t=u.tools?u.tools.concat([req.tool]):[req.tool];return touchUser(Object.assign({},u,{tools:t}))}return u})
     svPU(pu)
     logAudit({type:'action',tool:'admin',detail:'Approved '+(TOOL_LABELS[req.tool]||req.tool)+' access for '+req.userName})
     if(user&&user.id===req.userId){setUser(Object.assign({},user,{tools:(user.tools||[]).concat([req.tool])}))}
@@ -5634,8 +5686,8 @@ export default function App(){
                     </div>
                     <div style={{display:'flex',gap:6}}>
                       {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
-                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?Object.assign({},x,{role:nr}):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
-                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}));logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
+                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?touchUser(Object.assign({},x,{role:nr})):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
+                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}),[u2.id,u2.email]);logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
                     </div>
                   </div>
                 )})}
@@ -5803,7 +5855,7 @@ export default function App(){
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
         {page==='documents'&&user&&<DocumentPortal user={user} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
         {page==='projecttracker'&&<ProjectTracker portalUser={user||null} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
-        {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?Object.assign({},x,{onboardingComplete:true}):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?touchUser(Object.assign({},x,{onboardingComplete:true})):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
