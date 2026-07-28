@@ -41,6 +41,7 @@ export default function TTMapView({
   const cb = useRef({}); cb.current = { onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints };
   const paintingRef = useRef(false);
   const marqRef = useRef(null);
+  const rpanRef = useRef(null);
   const [ready, setReady] = useState(0);
 
   useEffect(() => {
@@ -78,7 +79,16 @@ export default function TTMapView({
       m.addTo(map);
       markersRef.current.push(m);
     });
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
+    if (!bounds.isValid()) return;
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
+    /* Keep the view over the site: pad the KMZ extent by a margin so the
+       outermost points can still be centred and worked on, but the map can't
+       be dragged off into empty imagery. */
+    const pad = Math.max(bounds.getNorth() - bounds.getSouth(), bounds.getEast() - bounds.getWest()) * 0.25 || 0.0015;
+    map.setMaxBounds(bounds.pad(0).extend([bounds.getNorth() + pad, bounds.getEast() + pad]).extend([bounds.getSouth() - pad, bounds.getWest() - pad]));
+    map.options.maxBoundsViscosity = 1.0;
+    /* don't let them zoom out past the whole site either */
+    map.setMinZoom(Math.max(1, map.getBoundsZoom(bounds, false) - 2));
   }, [geo, ready]);
 
   useEffect(() => {
@@ -161,6 +171,9 @@ export default function TTMapView({
     const map = mapRef.current; if (!map) return;
     const el = map.getContainer();
     const down = (e) => {
+      /* right button pans regardless of tool — Leaflet's own dragging is
+         left-button only, so drive the centre by hand */
+      if (e.button === 2) { rpanRef.current = { x: e.clientX, y: e.clientY }; e.preventDefault(); return; }
       const m = modeRef.current;
       if (m === 'brush') {
         paintingRef.current = true;
@@ -175,6 +188,11 @@ export default function TTMapView({
       }
     };
     const move = (e) => {
+      if (rpanRef.current) {
+        const r = rpanRef.current; const dx = e.clientX - r.x, dy = e.clientY - r.y;
+        if (dx || dy) { map.panBy([-dx, -dy], { animate: false }); rpanRef.current = { x: e.clientX, y: e.clientY }; }
+        return;
+      }
       if (paintingRef.current) {
         const i = nearestPoint(e.clientX, e.clientY);
         if (i >= 0 && cb.current.onBrushPoint) cb.current.onBrushPoint(i);
@@ -189,6 +207,7 @@ export default function TTMapView({
       }
     };
     const up = () => {
+      if (rpanRef.current) { rpanRef.current = null; return; }
       if (paintingRef.current) { paintingRef.current = false; if (cb.current.onBrushEnd) cb.current.onBrushEnd(); return; }
       const mq = marqRef.current; marqRef.current = null; clearBox();
       if (!mq) return;
@@ -199,11 +218,14 @@ export default function TTMapView({
       for (let i = 0; i < ll.length; i++) if (rectContains(r, ll[i][0], ll[i][1])) list.push(i);
       if (list.length && cb.current.onRegionPoints) cb.current.onRegionPoints(list);
     };
+    const noMenu = (e) => e.preventDefault();
+    el.addEventListener('contextmenu', noMenu);
     el.addEventListener('pointerdown', down);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
     return () => {
+      el.removeEventListener('contextmenu', noMenu);
       el.removeEventListener('pointerdown', down);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);

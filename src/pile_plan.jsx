@@ -969,6 +969,8 @@ export default function PilePlan({ onExit, portalUser }) {
   const onPointerDown = (e) => {
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointersRef.current.size === 2) { paintingRef.current = false; panRef.current = null; bgDragRef.current = null; const pts = [...pointersRef.current.values()]; const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y); const midC = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }; pinchRef.current = { dist, mid: toView(midC.x, midC.y), s0: vwRef.current.s, x0: vwRef.current.x, y0: vwRef.current.y }; return; }
+    /* right button always pans, whatever tool is selected */
+    if (e.button === 2) { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: vwRef.current.x, vy: vwRef.current.y }; pannedRef.current = false; return; }
     const m = modeRef.current;
     if (m === 'bg') { if (bgRef.current) { const p = toView(e.clientX, e.clientY); bgDragRef.current = { sx: p.x, sy: p.y, x0: bgRef.current.x, y0: bgRef.current.y }; } }
     else if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
@@ -985,7 +987,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
   useEffect(() => {
     const mv = (e) => { if (paintingRef.current && modeRef.current === 'brush' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
-    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
+    const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (marqRef.current) commitMarquee(); panRef.current = null; if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
   }, [paintAt, commitMarquee]);
@@ -1036,6 +1038,76 @@ export default function PilePlan({ onExit, portalUser }) {
   /* ---- save note ---- */
   const saveNote = (i, text) => { snapshotUndo(); setNotes((n) => { const x = { ...n }; if (text && text.trim()) x[i] = text.trim(); else delete x[i]; return x; }); pushLog(`note on point #${i + 1}`); };
 
+  /* ---- reset a task ----
+     Scoped to the selected block when there is one, otherwise the whole
+     project. Stages are cumulative, so clearing stage k drops every point at
+     or above it back to k-1 and takes its subtask credit with it. */
+  const scopedIndices = () => {
+    const out = []; const secs = sections;
+    for (let i = 0; i < points.length; i++) if (selSection == null || !secs || secs[i] === selSection) out.push(i);
+    return out;
+  };
+  const scopeLabel = () => (selSection != null ? sectionLabelFor(selSection) : 'the whole project');
+  const clearSubBitsFor = (hit, fromStage) => {
+    const ids = (subtasks || []).filter((t) => (+String(t.parent)[1] || 0) >= fromStage).map((t) => t.id);
+    if (!ids.length) return;
+    const N = points.length;
+    setSub((prev) => { const n = Object.assign({}, prev); for (const id of ids) { let bits = n[id]; if (!bits) continue; for (const j of hit) bits = setSubBit(bits, j, N, false); n[id] = bits; } return n; });
+  };
+  const stampList = (hit) => {
+    const t = Date.now();
+    setAt((prev) => prev.map((x, j) => (hit.has(j) ? t : x)));
+    setBy((prev) => prev.map((x, j) => (hit.has(j) ? userName : x)));
+  };
+  const resetStage = (k) => {
+    const list = scopedIndices().filter((i) => (stage[i] || 0) >= k);
+    if (!list.length) { window.alert(`Nothing to clear — no points in ${scopeLabel()} have reached "${STAGES[k].name}".`); return; }
+    if (!window.confirm(`Clear "${STAGES[k].name}" on ${list.length.toLocaleString()} point${list.length === 1 ? '' : 's'} in ${scopeLabel()}?\n\nThey drop back to "${STAGES[k - 1].name}".`)) return;
+    snapshotUndo();
+    const hit = new Set(list);
+    setStage((prev) => prev.map((x, j) => (hit.has(j) ? k - 1 : x)));
+    clearSubBitsFor(hit, k);
+    stampList(hit);
+    pushLog(`cleared "${STAGES[k].name}" on ${list.length} point${list.length === 1 ? '' : 's'} (${scopeLabel()})`);
+  };
+  const resetQc = (v) => {
+    const list = scopedIndices().filter((i) => (qc[i] || 0) === v);
+    if (!list.length) { window.alert(`No "${QC[v].name}" flags in ${scopeLabel()}.`); return; }
+    if (!window.confirm(`Clear ${list.length.toLocaleString()} "${QC[v].name}" flag${list.length === 1 ? '' : 's'} in ${scopeLabel()}?`)) return;
+    snapshotUndo();
+    const hit = new Set(list);
+    setQc((prev) => prev.map((x, j) => (hit.has(j) ? 0 : x)));
+    stampList(hit);
+    pushLog(`cleared ${list.length} "${QC[v].name}" flag${list.length === 1 ? '' : 's'} (${scopeLabel()})`);
+  };
+  const resetSubtask = (t) => {
+    const bits = sub[t.id] || '';
+    const list = scopedIndices().filter((i) => bits[i] === '1');
+    if (!list.length) { window.alert(`No points are marked "${t.label}" in ${scopeLabel()}.`); return; }
+    const k = +String(t.parent)[1] || 0;
+    if (!window.confirm(`Clear "${t.label}" on ${list.length.toLocaleString()} point${list.length === 1 ? '' : 's'} in ${scopeLabel()}?`)) return;
+    snapshotUndo();
+    const hit = new Set(list); const N = points.length;
+    const next = Object.assign({}, subRef.current);
+    let b = next[t.id] || ''; for (const j of hit) b = setSubBit(b, j, N, false); next[t.id] = b;
+    setSub(next);
+    /* a point that only reached its stage on this subtask's credit steps back */
+    setStage((prev) => prev.map((x, j) => (hit.has(j) && x === k && !subComplete(subtasksRef.current, next, k, j) ? k - 1 : x)));
+    stampList(hit);
+    pushLog(`cleared subtask "${t.label}" on ${list.length} point${list.length === 1 ? '' : 's'} (${scopeLabel()})`);
+  };
+  const resetAll = () => {
+    const list = scopedIndices();
+    if (!window.confirm(`Reset every task on all ${list.length.toLocaleString()} points in ${scopeLabel()}?\n\nInstall status, quality flags and subtask progress all go back to zero. Notes are kept.`)) return;
+    snapshotUndo();
+    const hit = new Set(list);
+    setStage((prev) => prev.map((x, j) => (hit.has(j) ? 0 : x)));
+    setQc((prev) => prev.map((x, j) => (hit.has(j) ? 0 : x)));
+    clearSubBitsFor(hit, 0);
+    stampList(hit);
+    pushLog(`reset all tasks on ${list.length} point${list.length === 1 ? '' : 's'} (${scopeLabel()})`);
+  };
+
   /* ---- named blocks ---- */
   const renameSection = (idx, name) => {
     setSectionNames((prev) => {
@@ -1049,6 +1121,53 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- custom subtasks (weighted portions of a parent install stage) ---- */
   const [subOpen, setSubOpen] = useState(false);
+  const [qtyOpen, setQtyOpen] = useState(false);
+
+  /* Blocks as index lists, for per-block quantity entry. */
+  const blocks = useMemo(() => {
+    if (!sections || sectionCount < 2) return [{ i: null, label: 'All points', idxs: points.map((_, j) => j) }];
+    const out = Array.from({ length: sectionCount }, (_, j) => ({ i: j, label: sectionLabelFor(j), idxs: [] }));
+    for (let j = 0; j < points.length; j++) { const s = sections[j]; if (out[s]) out[s].idxs.push(j); }
+    return out;
+  }, [sections, sectionCount, points, sectionNames, sectionLabelFor]);
+
+  /* Count completed points for a subtask within a set of indices. */
+  const subCountIn = (subId, idxs) => { const b = sub[subId] || ''; let c = 0; for (const i of idxs) if (b[i] === '1') c++; return c; };
+
+  /* Type "45" against a block and 45 of its points get credited for that
+     subtask — already-completed points are kept, so a number only ever moves
+     the difference. */
+  const applySubQuantities = (changes) => {
+    const real = (changes || []).filter((c) => c.q !== c.cur);
+    if (!real.length) return false;
+    snapshotUndo();
+    const N = points.length;
+    const next = Object.assign({}, subRef.current);
+    const touched = new Set();
+    for (const c of real) {
+      let bits = next[c.subId];
+      if (!bits || bits.length !== N) bits = ((bits || '') + '0'.repeat(N)).slice(0, N);
+      const arr = bits.split('');
+      const done = [], todo = [];
+      for (const i of c.idxs) (arr[i] === '1' ? done : todo).push(i);
+      if (c.q >= done.length) { for (const i of todo.slice(0, c.q - done.length)) { arr[i] = '1'; touched.add(i); } }
+      else { for (const i of done.slice(c.q)) { arr[i] = '0'; touched.add(i); } }
+      next[c.subId] = arr.join('');
+    }
+    setSub(next);
+    /* keep the parent stage honest in both directions: a point whose subtasks
+       now add up to the full stage advances, one that no longer does drops back */
+    setStage((prev) => prev.map((x, j) => {
+      if (!touched.has(j)) return x;
+      if (x < 4 && subComplete(subtasksRef.current, next, x + 1, j)) return x + 1;
+      if (x >= 1 && subsForParent(subtasksRef.current, 's' + x).length && !subComplete(subtasksRef.current, next, x, j)) return x - 1;
+      return x;
+    }));
+    stampList(touched);
+    const total = real.reduce((a, c) => a + Math.abs(c.q - c.cur), 0);
+    pushLog(`entered quantities — ${total} point${total === 1 ? '' : 's'} changed across ${real.length} entr${real.length === 1 ? 'y' : 'ies'}`);
+    return true;
+  };
   const addSubtask = (parent, label, weight) => {
     const lbl = (label || '').trim(); if (!lbl) return;
     const w = Math.max(1, Math.min(100, Math.round(+weight || 0))); if (!w) return;
@@ -1249,13 +1368,17 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <span style={kicker}>Install Status (cumulative)</span>
-        {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const cnt = stats.cum[i + 1]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); return (
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span style={kicker}>Install Status (cumulative)</span>
+          {!allowed && <button onClick={resetAll} title={'Reset every task in ' + scopeLabel()} style={{ ...miniBtn, marginLeft: 'auto', color: '#f87171', borderColor: 'rgba(248,113,113,.45)' }}>Reset All</button>}
+        </div>
+        {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); return (
           <div key={i} style={{ ...statusRow(paint === tok && !lock), cursor: lock ? 'default' : 'pointer', opacity: lock ? .5 : 1 }} onClick={() => { if (!lock) setPaint(tok); }}>
             <span style={{ width: 16, height: 16, background: s.color, border: '1px solid rgba(255,255,255,.3)', flexShrink: 0, clipPath: CLIP }} />
             <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{s.name}</span>
             <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>{cnt.toLocaleString()}</span>
-            <span style={{ fontFamily: BBF, fontSize: 18, color: s.color, width: 48, textAlign: 'right' }}>{p.toFixed(0)}%</span>
+            <span style={{ fontFamily: BBF, fontSize: 18, color: s.color, width: 44, textAlign: 'right' }}>{p.toFixed(0)}%</span>
+            {!lock && <button title={'Clear "' + s.name + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetStage(k); }} style={resetX(cnt > 0)}>&#8634;</button>}
           </div>
         ); })}
         <span style={{ ...kicker, marginTop: 4 }}>Quality Checks</span>
@@ -1263,19 +1386,26 @@ export default function PilePlan({ onExit, portalUser }) {
           <span style={{ width: 16, height: 16, background: QC_YELLOW, flexShrink: 0, clipPath: CLIP }} />
           <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Requires Attention</span>
           <span style={{ fontFamily: BBF, fontSize: 18, color: QC_YELLOW }}>{stats.yellow}</span>
+          {isAllowed('q1') && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(1); }} style={resetX(stats.yellow > 0)}>&#8634;</button>}
         </div>
         <div style={{ ...statusRow(paint === 'q2' && isAllowed('q2')), cursor: isAllowed('q2') ? 'pointer' : 'default', opacity: isAllowed('q2') ? 1 : .5 }} onClick={() => { if (isAllowed('q2')) setPaint('q2'); }}>
           <span style={{ width: 16, height: 16, background: QC_ORANGE, flexShrink: 0, clipPath: CLIP }} />
           <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Flagged Issue</span>
           <span style={{ fontFamily: BBF, fontSize: 18, color: QC_ORANGE }}>{stats.orange}</span>
+          {isAllowed('q2') && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(2); }} style={resetX(stats.orange > 0)}>&#8634;</button>}
         </div>
-        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Tap any point in Pan mode to see its status, who updated it, and notes.</div>
+        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>
+          {selSection != null
+            ? <>Resets apply to <span style={{ color: ORANGE }}>{sectionLabelFor(selSection)}</span> only — clear the block selection to reset everything.</>
+            : 'Tap ↺ to clear a task. Select a block first to reset just that block.'}
+        </div>
       </div>
 
       <div style={card()}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
           <span style={kicker}>Subtasks</span>
-          <button onClick={() => setSubOpen((v) => !v)} style={{ ...miniBtn, marginLeft: 'auto', color: ORANGE, borderColor: ORANGE }}>{subOpen ? 'Done' : 'Manage'}</button>
+          {subtasks.length > 0 && !subOpen && <button onClick={() => setQtyOpen(true)} style={{ ...miniBtn, marginLeft: 'auto', color: GOLD, borderColor: GOLD }}>Quantities</button>}
+          <button onClick={() => setSubOpen((v) => !v)} style={{ ...miniBtn, marginLeft: (subtasks.length > 0 && !subOpen) ? 6 : 'auto', color: ORANGE, borderColor: ORANGE }}>{subOpen ? 'Done' : 'Manage'}</button>
         </div>
         {subtasks.length === 0 && !subOpen && <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>None yet. Add weighted subtasks under any install stage — each one credits its share of that stage.</div>}
         {subtasks.length > 0 && (
@@ -1304,7 +1434,8 @@ export default function PilePlan({ onExit, portalUser }) {
                           <div onClick={() => setPaint('k:' + t.id)} style={{ ...statusRow(paint === 'k:' + t.id), flex: 1, padding: '4px 7px' }}>
                             <span style={{ fontFamily: NBF, fontSize: 13, color: CREAM, flex: 1 }}>{t.label}</span>
                             <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>{done.toLocaleString()}</span>
-                            <span style={{ fontFamily: BBF, fontSize: 14, color: st.color, width: 36, textAlign: 'right' }}>{t.weight}%</span>
+                            <span style={{ fontFamily: BBF, fontSize: 14, color: st.color, width: 34, textAlign: 'right' }}>{t.weight}%</span>
+                            <button title={'Clear "' + t.label + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetSubtask(t); }} style={resetX(done > 0)}>&#8634;</button>
                           </div>
                         )}
                       </div>
@@ -1433,7 +1564,7 @@ export default function PilePlan({ onExit, portalUser }) {
             {legendBody}
           </div>
         )}
-        <div style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
+        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
           {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
@@ -1596,6 +1727,7 @@ export default function PilePlan({ onExit, portalUser }) {
         </div>
       )}
 
+      {qtyOpen && <QuantitiesModal mob={mob} blocks={blocks} subtasks={subtasks} countIn={subCountIn} onClose={() => setQtyOpen(false)} onApply={applySubQuantities} />}
       {importOpen && <ImportModal mob={mob} onClose={() => setImportOpen(false)} onCreate={createProject} />}
       {modelsOpen && <ModelsModal mob={mob} projectId={activeId} projName={projName} onClose={() => setModelsOpen(false)} onActiveModel={(buf) => { modelBufRef.current = buf; }} points={points} planW={planW} planH={planH} stage={stage} qc={qc} overlay3d={overlay3d} onApplyPaint={(i) => { snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; applyPaintToIndex(i); burstFlush(); }} onSaveOverlay={(ov) => { setOverlay3d(ov); setLastModified(Date.now()); pushLog(ov.on ? (ov.locked ? 'locked 3D overlay alignment' : 'updated 3D overlay alignment') : 'hid 3D overlay'); }} paintLabel={paintLabel} paintColor={paintColor} />}
     </div>
@@ -1733,6 +1865,83 @@ function ModelsModal({ mob, projectId, projName, onClose, onActiveModel, points,
 }
 
 /* ------------------------------------------------------------------ */
+/*  Quantities modal — type how many points are done per block          */
+/* ------------------------------------------------------------------ */
+function QuantitiesModal({ mob, blocks, subtasks, countIn, onClose, onApply }) {
+  /* current counts, keyed block:subtask — the draft starts from reality */
+  const base = useMemo(() => {
+    const o = {};
+    blocks.forEach((b, bi) => subtasks.forEach((t) => { o[bi + ':' + t.id] = countIn(t.id, b.idxs); }));
+    return o;
+  }, [blocks, subtasks, countIn]);
+  const [draft, setDraft] = useState(base);
+  useEffect(() => { setDraft(base); }, [base]);
+
+  const parents = useMemo(() => {
+    const seen = [];
+    STAGES.forEach((s, i) => { if (i && subsForParent(subtasks, 's' + i).length) seen.push({ i, s, list: subsForParent(subtasks, 's' + i) }); });
+    return seen;
+  }, [subtasks]);
+
+  const dirty = Object.keys(draft).some((k) => (+draft[k] || 0) !== (base[k] || 0));
+  const apply = () => {
+    const changes = [];
+    blocks.forEach((b, bi) => subtasks.forEach((t) => {
+      const k = bi + ':' + t.id;
+      const q = Math.max(0, Math.min(b.idxs.length, Math.round(+draft[k] || 0)));
+      changes.push({ subId: t.id, idxs: b.idxs, q, cur: base[k] || 0 });
+    }));
+    onApply(changes); onClose();
+  };
+  const setVal = (k, v, max) => setDraft((p) => Object.assign({}, p, { [k]: v === '' ? '' : Math.max(0, Math.min(max, Math.round(+v || 0))) }));
+
+  return (
+    <div style={overlay(mob)} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard(mob, 640), gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={headTitle}>Enter Quantities</div>
+          <button onClick={onClose} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button>
+        </div>
+        <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>Type how many points are complete for each subtask, per block. Points already marked stay marked — only the difference moves.</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '52vh', overflowY: 'auto' }}>
+          {blocks.map((b, bi) => (
+            <div key={bi} style={{ border: '1px solid ' + LINE, padding: 11 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontFamily: BBF, fontSize: 18, letterSpacing: 1, color: ORANGE }}>{b.label}</span>
+                <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>{b.idxs.length.toLocaleString()} points</span>
+              </div>
+              {parents.map((p) => (
+                <div key={p.i} style={{ marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: MUTE, marginBottom: 4 }}>
+                    <span style={{ width: 9, height: 9, background: p.s.color, clipPath: CLIP }} />{p.s.name}
+                  </div>
+                  {p.list.map((t) => {
+                    const k = bi + ':' + t.id; const cur = base[k] || 0; const val = draft[k];
+                    const changed = (+val || 0) !== cur && val !== '';
+                    return (
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0 3px 15px' }}>
+                        <span style={{ fontFamily: NBF, fontSize: 14, color: CREAM, flex: 1, minWidth: 0 }}>{t.label} <span style={{ color: MUTE, fontSize: 12 }}>({t.weight}%)</span></span>
+                        <input type="number" min="0" max={b.idxs.length} value={val} onFocus={(e) => e.target.select()}
+                          onChange={(e) => setVal(k, e.target.value, b.idxs.length)}
+                          style={{ width: 78, background: 'rgba(255,255,255,.05)', border: '1px solid ' + (changed ? ORANGE : LINE), color: changed ? ORANGE : CREAM, fontFamily: NBF, fontSize: 15, padding: '5px 7px', outline: 'none', textAlign: 'right' }} />
+                        <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 62 }}>of {b.idxs.length.toLocaleString()}</span>
+                        <button onClick={() => setVal(k, b.idxs.length, b.idxs.length)} style={{ ...miniBtn, padding: '3px 8px', color: MUTE }}>All</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>When a point's subtasks add up to 100% of a stage it advances to that stage; drop it back below 100% and it returns.</div>
+        <button disabled={!dirty} onClick={apply} style={{ ...ctaBtn, padding: '13px 0', opacity: dirty ? 1 : .5 }}>Apply Quantities</button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Import modal                                                       */
 /* ------------------------------------------------------------------ */
 function ImportModal({ mob, onClose, onCreate }) {
@@ -1795,6 +2004,8 @@ function segBtn(active) { return { flex: 1, background: active ? ORANGE : 'trans
 const ctaBtn = { background: ORANGE, color: '#1a1206', border: 'none', padding: '12px 18px', fontFamily: NBF, fontWeight: 700, fontSize: 14, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap', boxShadow: '0 0 20px rgba(249,115,22,.30)' };
 const ghostBtn = { background: 'transparent', color: ORANGE, border: '1px solid ' + ORANGE, padding: '10px 16px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' };
 const backBtn = { background: 'transparent', color: CREAM, border: '1px solid rgba(255,255,255,.2)', width: 38, height: 34, fontSize: 17, cursor: 'pointer', clipPath: CLIP, flexShrink: 0 };
+/* small ↺ that clears a task straight from its legend row */
+function resetX(active) { return { background: 'transparent', border: '1px solid ' + (active ? 'rgba(248,113,113,.45)' : 'rgba(255,255,255,.12)'), color: active ? '#f87171' : 'rgba(255,255,255,.25)', width: 24, height: 22, fontSize: 13, lineHeight: 1, cursor: 'pointer', flexShrink: 0, clipPath: CLIP, padding: 0 }; }
 const miniBtn = { background: 'transparent', border: '1px solid', borderColor: 'rgba(255,255,255,.25)', padding: '3px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
 const zbtn = { width: 44, height: 44, background: 'rgba(4,4,12,.8)', color: CREAM, border: '1px solid ' + LINE, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', clipPath: CLIP, backdropFilter: 'blur(6px)' };
 const xBtn = { background: 'transparent', border: 'none', color: MUTE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
