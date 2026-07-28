@@ -29,6 +29,53 @@ async function ensurePdfJs() {
 
 /* ── helpers ───────────────────────────────────────────────────────── */
 const uid = (p) => (p || 'd') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+/* unguessable, so a signing link can stand in for an account */
+function makeToken() {
+  const a = new Uint8Array(24);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* ── the field palette ──────────────────────────────────────────────
+   `auto` fields fill themselves in from the signer's identity at signing
+   time; `entry` fields are typed by the signer; the rest are stamped. */
+const FIELD_KINDS = [
+  { k: 'signature', label: 'Signature', hint: 'Sign here', w: 220, h: 58, glyph: '✍' },
+  { k: 'initials', label: 'Initials', hint: 'Initial', w: 96, h: 52, glyph: 'AB' },
+  { k: 'date', label: 'Date Signed', hint: 'Date', w: 150, h: 32, glyph: '📅', auto: true },
+  { k: 'name', label: 'Full Name', hint: 'Name', w: 210, h: 32, glyph: '👤', auto: true },
+  { k: 'email', label: 'Email', hint: 'Email', w: 230, h: 32, glyph: '✉', auto: true },
+  { k: 'title', label: 'Job Title', hint: 'Title', w: 200, h: 32, glyph: 'T', entry: true },
+  { k: 'company', label: 'Company', hint: 'Company', w: 210, h: 32, glyph: '🏢', entry: true },
+  { k: 'text', label: 'Text Field', hint: 'Text', w: 200, h: 32, glyph: 'Ab', entry: true },
+  { k: 'checkbox', label: 'Checkbox', hint: '', w: 26, h: 26, glyph: '☑', check: true },
+];
+const kindDef = (k) => FIELD_KINDS.find((x) => x.k === k) || FIELD_KINDS[0];
+/* what a field resolves to at signing time */
+function autoValue(kind, signer) {
+  if (kind === 'date') return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (kind === 'name') return signer.name || '';
+  if (kind === 'email') return signer.email || '';
+  return '';
+}
+const isImageField = (k) => k === 'signature' || k === 'initials';
+
+/* Render text to a PNG so typed signatures and initials travel with the
+   document the same way a drawn one does. */
+function textToPng(text, font, height) {
+  const h = height || 160;
+  const c = document.createElement('canvas');
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = Math.round(h * 0.42) + 'px ' + font;
+  const w = Math.max(120, Math.ceil(probe.measureText(text).width) + 40);
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#0a0a14'; ctx.font = Math.round(h * 0.42) + 'px ' + font; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 20, h / 2);
+  return c.toDataURL('image/png');
+}
+const initialsOf = (name) => String(name || '').trim().split(/\s+/).map((p) => p[0] || '').join('').slice(0, 4).toUpperCase();
 const fmtDT = (ts) => ts ? new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const fmtSize = (b) => { if (!b) return ''; if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'; return (b / 1048576).toFixed(1) + ' MB'; };
 const safeName = (s) => (s || 'doc').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -217,16 +264,33 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
     return () => { alive = false; };
   }, [doc.id]);
 
-  function addSigner() {
-    const choices = (allUsers || []).filter((u) => !signers.some((s) => s.email === u.email));
-    if (!choices.length) { window.alert('No more portal members to add.'); return; }
-    const list = choices.map((u, i) => (i + 1) + '. ' + u.name + ' <' + u.email + '>').join('\n');
-    const pick = window.prompt('Add signer — enter the number:\n\n' + list);
-    if (!pick) return; const idx = parseInt(pick, 10) - 1;
-    if (idx < 0 || idx >= choices.length) { window.alert('Invalid selection.'); return; }
-    const u = choices[idx];
-    setSigners(signers.concat([{ id: uid('s'), name: u.name, email: u.email, color: SIG_COLORS[signers.length % SIG_COLORS.length] }]));
+  const [tool, setTool] = useState('signature');
+
+  function pushSigner(name, email) {
+    const em = String(email || '').trim().toLowerCase();
+    if (!em || em.indexOf('@') < 1) { window.alert('That does not look like an email address.'); return; }
+    if (signers.some((s) => (s.email || '').toLowerCase() === em)) { window.alert(em + ' is already a signer.'); return; }
+    setSigners(signers.concat([{ id: uid('s'), name: (name || '').trim() || em, email: em, color: SIG_COLORS[signers.length % SIG_COLORS.length], token: makeToken() }]));
     setActiveSignerIdx(signers.length);
+  }
+  function addSigner() {
+    const choices = (allUsers || []).filter((u) => !signers.some((s) => (s.email || '').toLowerCase() === (u.email || '').toLowerCase()));
+    const list = choices.map((u, i) => (i + 1) + '. ' + u.name + ' <' + u.email + '>').join('\n');
+    const pick = window.prompt(
+      'Add a signer.\n\n' + (list ? 'Enter a number to pick a portal member:\n' + list + '\n\n' : '') +
+      'Or type any email address to invite someone without an account — they will get a signing link.',
+      ''
+    );
+    if (!pick) return;
+    const trimmed = pick.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const idx = parseInt(trimmed, 10) - 1;
+      if (idx < 0 || idx >= choices.length) { window.alert('Invalid selection.'); return; }
+      pushSigner(choices[idx].name, choices[idx].email);
+      return;
+    }
+    const nm = window.prompt('Name for ' + trimmed + ':', '') || '';
+    pushSigner(nm, trimmed);
   }
   function removeSigner(i) {
     if (!window.confirm('Remove this signer and any fields assigned to them?')) return;
@@ -237,20 +301,51 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
   }
 
   function placeField(pageIdx, e) {
+    if (dragRef.current) return; // finishing a move, not placing
     if (!signers.length) { window.alert('Add at least one signer first.'); return; }
     const s = signers[activeSignerIdx]; if (!s) return;
+    const def = kindDef(tool);
     const rect = e.currentTarget.getBoundingClientRect();
-    const xN = (e.clientX - rect.left) / rect.width;
-    const yN = (e.clientY - rect.top) / rect.height;
-    const wN = 220 / rect.width; const hN = 60 / rect.height;
-    setFields(fields.concat([{ id: uid('f'), page: pageIdx, x: xN, y: yN, w: wN, h: hN, signerEmail: s.email, kind: 'signature' }]));
+    const wN = def.w / rect.width, hN = def.h / rect.height;
+    // drop centred on the cursor, then keep it on the page
+    let xN = (e.clientX - rect.left) / rect.width - wN / 2;
+    let yN = (e.clientY - rect.top) / rect.height - hN / 2;
+    xN = Math.max(0, Math.min(1 - wN, xN)); yN = Math.max(0, Math.min(1 - hN, yN));
+    setFields(fields.concat([{ id: uid('f'), page: pageIdx, x: xN, y: yN, w: wN, h: hN, signerEmail: s.email, kind: tool, required: true }]));
   }
   function removeField(id) { setFields(fields.filter((f) => f.id !== id)); }
+  function updateField(id, patch) { setFields((prev) => prev.map((f) => (f.id === id ? Object.assign({}, f, patch) : f))); }
+
+  /* drag to move, corner handle to resize */
+  const dragRef = useRef(null);
+  function startDrag(e, f, mode) {
+    e.stopPropagation(); e.preventDefault();
+    const host = e.currentTarget.closest('[data-page]');
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    dragRef.current = { id: f.id, mode, rect, sx: e.clientX, sy: e.clientY, x0: f.x, y0: f.y, w0: f.w, h0: f.h, moved: false };
+  }
+  useEffect(() => {
+    const mv = (e) => {
+      const d = dragRef.current; if (!d) return;
+      const dx = (e.clientX - d.sx) / d.rect.width, dy = (e.clientY - d.sy) / d.rect.height;
+      if (Math.abs(e.clientX - d.sx) > 2 || Math.abs(e.clientY - d.sy) > 2) d.moved = true;
+      if (d.mode === 'move') {
+        updateField(d.id, { x: Math.max(0, Math.min(1 - d.w0, d.x0 + dx)), y: Math.max(0, Math.min(1 - d.h0, d.y0 + dy)) });
+      } else {
+        updateField(d.id, { w: Math.max(18 / d.rect.width, Math.min(1 - d.x0, d.w0 + dx)), h: Math.max(14 / d.rect.height, Math.min(1 - d.y0, d.h0 + dy)) });
+      }
+    };
+    const up = () => { if (dragRef.current) { const moved = dragRef.current.moved; dragRef.current = null; if (moved) setTimeout(() => {}, 0); } };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+  }, []);
 
   async function send() {
     if (!signers.length) { window.alert('Add at least one signer.'); return; }
-    if (!fields.length) { window.alert('Place at least one signature field on the document.'); return; }
-    for (const s of signers) if (!fields.some((f) => f.signerEmail === s.email)) { window.alert('Each signer needs at least one signature field — missing for ' + s.name); return; }
+    if (!fields.length) { window.alert('Place at least one field on the document.'); return; }
+    for (const s of signers) if (!fields.some((f) => f.signerEmail === s.email)) { window.alert('Every signer needs at least one field — none placed for ' + s.name); return; }
+    for (const s of signers) if (!s.token) s.token = makeToken();
     setBusy(true);
     const sentAt = Date.now();
     const nextDoc = Object.assign({}, doc, {
@@ -296,14 +391,31 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
               </div>
             ))}
             <button onClick={addSigner} style={Object.assign({}, ghost, { width: '100%', padding: '8px 0', marginTop: 4 })}>+ Add Signer</button>
-            <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 14, lineHeight: 1.5 }}>Click on a page to place a signature box for the highlighted signer. Each signer must have at least one field.</div>
-            <div style={{ ...kicker, marginTop: 16, marginBottom: 6 }}>Fields placed</div>
+            <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 8, lineHeight: 1.5 }}>Anyone without a portal account gets a signing link — no sign-up needed.</div>
+
+            <div style={{ ...kicker, marginTop: 16, marginBottom: 6 }}>Fields</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {FIELD_KINDS.map((k) => (
+                <button key={k.k} onClick={() => setTool(k.k)} title={k.label}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+                    border: '1px solid ' + (tool === k.k ? ORANGE : BORDER), background: tool === k.k ? 'rgba(249,115,22,.10)' : '#fff',
+                    ...NB, fontSize: 11, color: tool === k.k ? ORANGE : TEXT, fontWeight: tool === k.k ? 700 : 400 }}>
+                  <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{k.glyph}</span>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.label}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 8, lineHeight: 1.5 }}>Click the page to drop a <strong style={{ color: ORANGE }}>{kindDef(tool).label}</strong> for <strong>{signers[activeSignerIdx] ? signers[activeSignerIdx].name : 'the highlighted signer'}</strong>. Drag to move, pull the corner to resize.</div>
+
+            <div style={{ ...kicker, marginTop: 16, marginBottom: 6 }}>Placed ({fields.length})</div>
             {fields.length === 0 && <div style={{ ...NB, fontSize: 12, color: DIM }}>None yet.</div>}
             {fields.map((f) => { const s = signers.find((x) => x.email === f.signerEmail); return (
-              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, ...NB, padding: '4px 0', borderBottom: '1px solid ' + BORDER, color: MID }}>
-                <span style={{ width: 8, height: 8, background: (s && s.color) || DIM }} />
-                <span>Page {f.page + 1} · {s ? s.name.split(' ')[0] : '—'}</span>
-                <button onClick={() => removeField(f.id)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: MID, cursor: 'pointer' }}>×</button>
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, ...NB, padding: '5px 0', borderBottom: '1px solid ' + BORDER, color: MID }}>
+                <span style={{ width: 8, height: 8, background: (s && s.color) || DIM, flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{kindDef(f.kind).label} · p{f.page + 1} · {s ? s.name.split(' ')[0] : '—'}</span>
+                {!kindDef(f.kind).auto && <button title={f.required === false ? 'Optional — click to require' : 'Required — click to make optional'} onClick={() => updateField(f.id, { required: f.required === false })}
+                  style={{ background: 'transparent', border: '1px solid ' + (f.required === false ? BORDER : ORANGE), color: f.required === false ? DIM : ORANGE, cursor: 'pointer', ...NB, fontSize: 9, letterSpacing: '.5px', padding: '1px 5px' }}>{f.required === false ? 'OPT' : 'REQ'}</button>}
+                <button onClick={() => removeField(f.id)} style={{ background: 'transparent', border: 'none', color: MID, cursor: 'pointer', fontSize: 14 }}>×</button>
               </div>
             ); })}
           </div>
@@ -311,11 +423,18 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 16, background: '#eee' }}>
             {loading && <div style={{ textAlign: 'center', color: MID, ...NB, padding: 40 }}>Loading PDF…</div>}
             {pages.map((p) => (
-              <div key={p.index} style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', marginBottom: 14, boxShadow: '0 1px 8px rgba(0,0,0,.2)', background: '#fff' }}>
+              <div key={p.index} data-page={p.index} style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', marginBottom: 14, boxShadow: '0 1px 8px rgba(0,0,0,.2)', background: '#fff' }}>
                 <img src={p.dataUrl} style={{ display: 'block', maxWidth: '100%', height: 'auto', cursor: signers.length ? 'crosshair' : 'not-allowed' }} draggable={false} onClick={(e) => placeField(p.index, e)} />
-                {fields.filter((f) => f.page === p.index).map((f) => { const s = signers.find((x) => x.email === f.signerEmail); return (
-                  <div key={f.id} title={'Signature box for ' + (s ? s.name : '?')} style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%', border: '2px solid ' + ((s && s.color) || ORANGE), background: ((s && s.color) || ORANGE) + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', ...NB, fontSize: 10, letterSpacing: '1px', textTransform: 'uppercase', color: (s && s.color) || ORANGE, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); if (window.confirm('Remove this signature field?')) removeField(f.id); }}>
-                    Sign · {s ? s.name.split(' ')[0] : '?'}
+                {fields.filter((f) => f.page === p.index).map((f) => { const s = signers.find((x) => x.email === f.signerEmail); const col = (s && s.color) || ORANGE; const def = kindDef(f.kind); return (
+                  <div key={f.id} title={def.label + ' — ' + (s ? s.name : '?') + ' (drag to move)'}
+                    onPointerDown={(e) => startDrag(e, f, 'move')}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%', border: '2px solid ' + col, background: col + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', ...NB, fontSize: 10, letterSpacing: '.5px', textTransform: 'uppercase', color: col, cursor: 'move', overflow: 'hidden', touchAction: 'none' }}>
+                    <span style={{ padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.kind === 'checkbox' ? '☑' : def.label + (s ? ' · ' + s.name.split(' ')[0] : '')}</span>
+                    <button onClick={(e) => { e.stopPropagation(); removeField(f.id); }} onPointerDown={(e) => e.stopPropagation()}
+                      style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', padding: 0, background: col, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>×</button>
+                    <span onPointerDown={(e) => startDrag(e, f, 'resize')} title="Resize"
+                      style={{ position: 'absolute', right: -3, bottom: -3, width: 11, height: 11, background: '#fff', border: '2px solid ' + col, cursor: 'nwse-resize', touchAction: 'none' }} />
                   </div>
                 ); })}
               </div>
@@ -327,16 +446,16 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
   );
 }
 
-/* ── signer experience modal ────────────────────────────────────────── */
-function SignModal({ doc, currentUser, savedSigs, onClose, onSigned, onSaveSig }) {
+/* ── the signing surface, shared by the portal modal and the public link ── */
+function SignerSurface({ doc, signer, savedSigs, onSubmit, onClose, busy, banner }) {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adopted, setAdopted] = useState(null);
   const [showAdopt, setShowAdopt] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const myEmail = (currentUser.email || '').toLowerCase();
-  const myFields = (doc.workflow && doc.workflow.fields || []).filter((f) => (f.signerEmail || '').toLowerCase() === myEmail);
-  const [signedMap, setSignedMap] = useState({}); // fieldId → {sig, signedAt}
+  const [values, setValues] = useState({});           // fieldId → value
+  const myEmail = (signer.email || '').toLowerCase();
+  const wf = doc.workflow || {};
+  const myFields = (wf.fields || []).filter((f) => (f.signerEmail || '').toLowerCase() === myEmail && !f.value);
 
   useEffect(() => {
     let alive = true;
@@ -346,27 +465,122 @@ function SignModal({ doc, currentUser, savedSigs, onClose, onSigned, onSaveSig }
         const ab = await blob.arrayBuffer();
         const ps = await renderPdfPages(ab, 1.3);
         if (alive) { setPages(ps); setLoading(false); }
-      } catch (e) { if (alive) { setLoading(false); window.alert('Could not load PDF: ' + e.message); } }
+      } catch (e) { if (alive) { setLoading(false); window.alert('Could not load the document: ' + e.message); } }
     })();
     return () => { alive = false; };
   }, [doc.id]);
 
-  function clickField(f) {
-    if (signedMap[f.id]) return;
-    if (!adopted) { setShowAdopt(true); return; }
-    setSignedMap(Object.assign({}, signedMap, { [f.id]: { sig: adopted, signedAt: Date.now() } }));
-  }
-  const allSigned = myFields.length > 0 && myFields.every((f) => signedMap[f.id]);
+  /* auto fields fill themselves the moment a signature is adopted */
+  useEffect(() => {
+    if (!adopted) return;
+    setValues((prev) => {
+      const next = Object.assign({}, prev);
+      for (const f of myFields) {
+        const def = kindDef(f.kind);
+        if (def.auto && !next[f.id]) next[f.id] = autoValue(f.kind, signer);
+        if (f.kind === 'initials' && !next[f.id]) next[f.id] = adopted.initials || adopted.data;
+      }
+      return next;
+    });
+  }, [adopted]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function submit() {
-    if (!allSigned) { window.alert('Please sign every field assigned to you.'); return; }
+  function clickField(f) {
+    const def = kindDef(f.kind);
+    if (def.check) { setValues((v) => Object.assign({}, v, { [f.id]: v[f.id] ? '' : 'X' })); return; }
+    if (isImageField(f.kind)) {
+      if (!adopted) { setShowAdopt(true); return; }
+      setValues((v) => Object.assign({}, v, { [f.id]: f.kind === 'initials' ? (adopted.initials || adopted.data) : adopted.data }));
+    }
+  }
+
+  const missing = myFields.filter((f) => f.required !== false && !values[f.id]);
+  const ready = myFields.length > 0 && missing.length === 0;
+
+  function submit() {
+    if (!ready) { window.alert('Please complete every required field — ' + missing.length + ' left.'); return; }
+    onSubmit({ values, signatureLabel: adopted ? adopted.label : '', signatureKind: adopted ? adopted.kind : '' });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: CARD }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid ' + BORDER, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ ...BB, fontSize: 22, color: TEXT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SIGN: {doc.name}</div>
+          <div style={{ ...NB, fontSize: 12, color: MID }}>{signer.name} · {myFields.length} field{myFields.length !== 1 ? 's' : ''} for you · {missing.length} left</div>
+        </div>
+        {adopted
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', border: '1px solid ' + GREEN, background: 'rgba(22,163,74,.08)' }}>
+              <img src={adopted.data} alt="adopted" style={{ height: 24, maxWidth: 100, objectFit: 'contain' }} />
+              <span style={{ ...NB, fontSize: 11, color: GREEN, letterSpacing: '1px', textTransform: 'uppercase' }}>Adopted</span>
+              <button onClick={() => setShowAdopt(true)} style={{ background: 'transparent', border: 'none', color: MID, ...NB, fontSize: 10, textDecoration: 'underline', cursor: 'pointer' }}>change</button>
+            </div>
+          : <button onClick={() => setShowAdopt(true)} style={cta}>Adopt Signature</button>}
+        <button onClick={submit} disabled={!ready || busy} style={Object.assign({}, cta, { background: ready ? GREEN : 'rgba(22,163,74,.3)', color: '#fff', cursor: ready ? 'pointer' : 'default' })}>{busy ? 'Submitting…' : 'Finish & Submit →'}</button>
+        {onClose && <button onClick={onClose} style={lineBtn}>Close</button>}
+      </div>
+      {banner}
+      <div style={{ overflowY: 'auto', padding: 16, background: '#eee', flex: 1, minHeight: 0 }}>
+        {loading && <div style={{ textAlign: 'center', color: MID, ...NB, padding: 40 }}>Loading document…</div>}
+        {pages.map((p) => (
+          <div key={p.index} style={{ position: 'relative', display: 'block', maxWidth: 900, margin: '0 auto 14px', boxShadow: '0 1px 8px rgba(0,0,0,.2)', background: '#fff' }}>
+            <img src={p.dataUrl} style={{ display: 'block', width: '100%', height: 'auto' }} draggable={false} />
+            {(wf.fields || []).filter((f) => f.page === p.index).map((f) => {
+              const isMine = (f.signerEmail || '').toLowerCase() === myEmail;
+              const def = kindDef(f.kind);
+              const locked = !!f.value;                       // already signed by someone
+              const val = locked ? f.value : values[f.id];
+              const done = !!val;
+              const col = done ? GREEN : isMine ? ORANGE : DIM;
+              const entry = def.entry && isMine && !locked;
+              return (
+                <div key={f.id}
+                  onClick={() => { if (isMine && !locked && !def.entry && !def.check) clickField(f); }}
+                  style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%',
+                    border: '2px solid ' + col, background: done ? 'rgba(22,163,74,.06)' : isMine ? 'rgba(249,115,22,.08)' : 'rgba(0,0,0,.04)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: isMine && !locked && !def.entry ? 'pointer' : 'default', overflow: 'hidden' }}>
+                  {def.check ? (
+                    isMine && !locked
+                      ? <input type="checkbox" checked={!!val} onChange={() => clickField(f)} style={{ width: '80%', height: '80%', cursor: 'pointer', accentColor: ORANGE }} />
+                      : <span style={{ ...NB, fontSize: 13, color: val ? TEXT : col }}>{val ? '✓' : '☐'}</span>
+                  ) : entry ? (
+                    <input value={values[f.id] || ''} placeholder={def.hint} onChange={(e) => setValues((v) => Object.assign({}, v, { [f.id]: e.target.value }))}
+                      style={{ width: '100%', height: '100%', border: 'none', outline: 'none', background: 'transparent', ...NB, fontSize: 13, color: TEXT, padding: '0 5px', boxSizing: 'border-box' }} />
+                  ) : isImageField(f.kind) && val ? (
+                    <img src={val} alt="signature" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  ) : val ? (
+                    <span style={{ ...NB, fontSize: 13, color: TEXT, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{val}</span>
+                  ) : (
+                    <span style={{ ...NB, fontSize: 10, letterSpacing: '.5px', textTransform: 'uppercase', color: col, padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      {isMine ? def.label : 'Other signer'}{isMine && f.required === false ? ' (opt)' : ''}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {showAdopt && <AdoptSignatureModal user={signer} savedSigs={savedSigs} onClose={() => setShowAdopt(false)} onAdopted={(sg) => setAdopted(Object.assign({}, sg, { initials: textToPng(initialsOf(signer.name), sg.font || 'Brush Script MT, cursive', 120) }))} onSaveForFuture={null} />}
+    </div>
+  );
+}
+
+/* ── signer experience modal (inside the portal) ─────────────────────── */
+function SignModal({ doc, currentUser, savedSigs, onClose, onSigned }) {
+  const [busy, setBusy] = useState(false);
+  async function submit(payload) {
     setBusy(true);
     const now = Date.now();
+    const myEmail = (currentUser.email || '').toLowerCase();
     const wf = Object.assign({}, doc.workflow);
-    wf.fields = wf.fields.map((f) => signedMap[f.id] ? Object.assign({}, f, { value: signedMap[f.id].sig.data, signedAt: signedMap[f.id].signedAt, signedBy: currentUser.name, signedByEmail: currentUser.email }) : f);
-    wf.signers = wf.signers.map((s) => (s.email || '').toLowerCase() === myEmail ? Object.assign({}, s, { signedAt: now, signatureLabel: adopted.label, signatureKind: adopted.kind }) : s);
-    const allDone = wf.signers.every((s) => s.signedAt);
-    if (allDone) wf.status = 'completed', wf.completedAt = now;
+    wf.fields = (wf.fields || []).map((f) => (payload.values[f.id] != null && payload.values[f.id] !== '')
+      ? Object.assign({}, f, { value: payload.values[f.id], signedAt: now, signedBy: currentUser.name, signedByEmail: currentUser.email })
+      : f);
+    wf.signers = (wf.signers || []).map((s) => (s.email || '').toLowerCase() === myEmail
+      ? Object.assign({}, s, { signedAt: now, signatureLabel: payload.signatureLabel, signatureKind: payload.signatureKind, via: 'portal' })
+      : s);
+    if (wf.signers.every((s) => s.signedAt)) { wf.status = 'completed'; wf.completedAt = now; }
     const nextDoc = Object.assign({}, doc, { workflow: wf });
     try {
       const r = await fetch(ENDPOINT + '?upsert=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ doc: nextDoc }) });
@@ -375,47 +589,78 @@ function SignModal({ doc, currentUser, savedSigs, onClose, onSigned, onSaveSig }
     } catch (e) { window.alert('Could not save: ' + e.message); }
     setBusy(false);
   }
-
   return (
     <div style={overlay} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={Object.assign({}, modal(1100), { padding: 0 })}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid ' + BORDER, gap: 14 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ ...BB, fontSize: 22, color: TEXT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SIGN: {doc.name}</div>
-            <div style={{ ...NB, fontSize: 12, color: MID }}>{myFields.length} field{myFields.length !== 1 ? 's' : ''} for you · {Object.keys(signedMap).length} signed</div>
-          </div>
-          {adopted && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', border: '1px solid ' + GREEN, background: 'rgba(22,163,74,.08)' }}>
-            <img src={adopted.data} alt="adopted" style={{ height: 24, maxWidth: 100, objectFit: 'contain' }} />
-            <span style={{ ...NB, fontSize: 11, color: GREEN, letterSpacing: '1px', textTransform: 'uppercase' }}>Adopted</span>
-          </div>}
-          {!adopted && <button onClick={() => setShowAdopt(true)} style={cta}>Adopt Signature</button>}
-          <button onClick={submit} disabled={!allSigned || busy} style={Object.assign({}, cta, { background: allSigned ? GREEN : 'rgba(22,163,74,.3)', color: '#fff', cursor: allSigned ? 'pointer' : 'default' })}>{busy ? 'Submitting…' : 'Submit Signature →'}</button>
-          <button onClick={onClose} style={lineBtn}>Close</button>
-        </div>
-        <div style={{ overflowY: 'auto', padding: 16, background: '#eee', maxHeight: 'calc(92vh - 60px)' }}>
-          {loading && <div style={{ textAlign: 'center', color: MID, ...NB, padding: 40 }}>Loading PDF…</div>}
-          {pages.map((p) => (
-            <div key={p.index} style={{ position: 'relative', display: 'block', maxWidth: 900, margin: '0 auto 14px', boxShadow: '0 1px 8px rgba(0,0,0,.2)', background: '#fff' }}>
-              <img src={p.dataUrl} style={{ display: 'block', width: '100%', height: 'auto' }} draggable={false} />
-              {(doc.workflow.fields || []).filter((f) => f.page === p.index).map((f) => {
-                const isMine = (f.signerEmail || '').toLowerCase() === myEmail;
-                const signed = signedMap[f.id];
-                const previouslySigned = !!f.value;
-                const sig = signed ? signed.sig : null;
-                return (
-                  <div key={f.id} onClick={() => isMine && !previouslySigned && clickField(f)} style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%', border: '2px solid ' + (signed || previouslySigned ? GREEN : isMine ? ORANGE : DIM), background: (signed || previouslySigned ? 'rgba(22,163,74,.08)' : isMine ? 'rgba(249,115,22,.08)' : 'rgba(0,0,0,.04)'), display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMine && !previouslySigned ? 'pointer' : 'default', overflow: 'hidden' }}>
-                    {sig ? <img src={sig.data} alt="sig" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                      : previouslySigned ? <img src={f.value} alt="sig" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                      : <span style={{ ...NB, fontSize: 11, letterSpacing: '1px', textTransform: 'uppercase', color: isMine ? ORANGE : DIM }}>{isMine ? 'Click to sign' : 'For other signer'}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+      <div onClick={(e) => e.stopPropagation()} style={Object.assign({}, modal(1100), { padding: 0, height: '92vh', display: 'flex', flexDirection: 'column' })}>
+        <SignerSurface doc={doc} signer={currentUser} savedSigs={savedSigs} onSubmit={submit} onClose={onClose} busy={busy} />
+      </div>
+    </div>
+  );
+}
+
+/* ── public signing page: reached by link, no account required ───────── */
+export function PublicSignPage({ token, onExit }) {
+  const [state, setState] = useState({ loading: true });
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(ENDPOINT + '?token=' + encodeURIComponent(token), { cache: 'no-store' });
+        const j = await r.json();
+        if (!alive) return;
+        if (!r.ok) { setState({ loading: false, error: j.error || 'This signing link is not valid.' }); return; }
+        const signer = (j.doc.workflow.signers || []).find((s) => s.id === j.signerId);
+        if (signer && signer.signedAt) { setState({ loading: false, doc: j.doc, signer }); setDone(true); return; }
+        setState({ loading: false, doc: j.doc, signer });
+      } catch (e) { if (alive) setState({ loading: false, error: 'Could not reach the server. Check your connection and try again.' }); }
+    })();
+    return () => { alive = false; };
+  }, [token]);
+
+  async function submit(payload) {
+    setBusy(true);
+    try {
+      const r = await fetch(ENDPOINT + '?token=' + encodeURIComponent(token), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Could not submit');
+      setDone(true);
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  }
+
+  const shell = (inner) => (
+    <div style={{ position: 'fixed', inset: 0, background: BG, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', background: '#fff', borderBottom: '1px solid ' + BORDER, flexShrink: 0 }}>
+        <img src="/logo.webp" alt="SRC&D" style={{ height: 34, objectFit: 'contain' }} />
+        <div>
+          <div style={{ ...BB, fontSize: 18, color: TEXT, letterSpacing: 1 }}>SUN RISE CONSTRUCTION &amp; DEVELOPMENT</div>
+          <div style={{ ...NB, fontSize: 11, color: MID, letterSpacing: '2px', textTransform: 'uppercase' }}>Secure document signing</div>
         </div>
       </div>
-      {showAdopt && <AdoptSignatureModal user={currentUser} savedSigs={savedSigs} onClose={() => setShowAdopt(false)} onAdopted={(s) => setAdopted(s)} onSaveForFuture={onSaveSig} />}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>{inner}</div>
     </div>
+  );
+  const centred = (title, body, tone) => shell(
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: 32, maxWidth: 460, textAlign: 'center' }}>
+        <div style={{ ...BB, fontSize: 26, color: tone || TEXT, marginBottom: 10 }}>{title}</div>
+        <div style={{ ...NB, fontSize: 15, color: MID, lineHeight: 1.6 }}>{body}</div>
+        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to sunriseconstructionco.com</button>}
+      </div>
+    </div>
+  );
+
+  if (state.loading) return centred('Opening your document…', 'One moment.');
+  if (state.error) return centred('Link not valid', state.error, '#b91c1c');
+  if (done) return centred('Thank you — you\u2019re done', 'Your signature has been recorded for "' + state.doc.name + '". Sun Rise Construction & Development has been notified, and you can close this page.', GREEN);
+  return shell(
+    <SignerSurface doc={state.doc} signer={state.signer} savedSigs={[]} onSubmit={submit} onClose={null} busy={busy}
+      banner={<div style={{ background: 'rgba(249,115,22,.08)', borderBottom: '1px solid ' + BORDER, padding: '8px 18px', ...NB, fontSize: 12, color: MID }}>
+        You were invited to sign as <strong style={{ color: TEXT }}>{state.signer.name}</strong> ({state.signer.email}). No account needed — complete the highlighted fields and submit.
+      </div>} />
   );
 }
 
@@ -437,7 +682,16 @@ async function buildSignedPDF(doc, origAB) {
     const fields = (doc.workflow.fields || []).filter((f) => f.page === i && f.value);
     fields.forEach((f) => {
       const sx = ox + f.x * iw, sy = oy + f.y * ih, sw = f.w * iw, sh = f.h * ih;
-      try { pdf.addImage(f.value, 'PNG', sx, sy, sw, sh); } catch (e) {}
+      /* signatures and initials are images; every other field is text */
+      if (isImageField(f.kind)) {
+        try { pdf.addImage(f.value, 'PNG', sx, sy, sw, sh); } catch (e) {}
+      } else if (f.kind === 'checkbox') {
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(Math.min(14, sh * 0.9)); pdf.setTextColor(20, 20, 28);
+        pdf.text('X', sx + sw / 2, sy + sh / 2 + sh * 0.28, { align: 'center' });
+      } else {
+        pdf.setFont('helvetica', 'normal'); pdf.setFontSize(Math.max(7, Math.min(11, sh * 0.55))); pdf.setTextColor(20, 20, 28);
+        pdf.text(String(f.value), sx + 2, sy + sh / 2 + 3, { maxWidth: Math.max(10, sw - 4) });
+      }
       // outline + tiny signed-by label
       pdf.setDrawColor(22, 163, 74); pdf.setLineWidth(0.6); pdf.rect(sx, sy, sw, sh);
       pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6); pdf.setTextColor(22, 163, 74);
@@ -493,6 +747,22 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   const [markupDoc, setMarkupDoc] = useState(null);
   const [signingDoc, setSigningDoc] = useState(null);
   const [auditDoc, setAuditDoc] = useState(null);
+  const [copiedTok, setCopiedTok] = useState('');
+  /* the signing link is all a recipient needs — no account, no password */
+  const signLink = (s) => window.location.origin + window.location.pathname + '?sign=' + s.token;
+  function copySignLink(s) {
+    const url = signLink(s);
+    try { navigator.clipboard.writeText(url); setCopiedTok(s.token); setTimeout(() => setCopiedTok(''), 2000); }
+    catch (e) { window.prompt('Copy this signing link:', url); }
+  }
+  function emailSignLink(s, d) {
+    const url = signLink(s);
+    const subj = 'Please sign: ' + d.name;
+    const body = (s.name ? s.name.split(' ')[0] + ',\n\n' : '') +
+      'Please review and sign "' + d.name + '" for Sun Rise Construction and Development LLC.\n\n' +
+      'Open this link to sign — no account or sign-up is needed:\n' + url + '\n\n— SRC&D';
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s.email) + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body), '_blank');
+  }
   const [savedSigs, setSavedSigs] = useState([]);
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [filter, setFilter] = useState(''); // '' | 'forme'
@@ -691,6 +961,22 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
                             {isAdmin && <button onClick={() => deleteDoc(d.id, d.name)} style={Object.assign({}, lineBtn, { color: RED, borderColor: 'rgba(220,38,38,.3)' })}>Delete</button>}
                           </div>
                         </div>
+                        {status === 'sent' && numSigners > 0 && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid ' + BORDER, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {(wf.signers || []).map((s) => (
+                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...NB, fontSize: 12, color: MID }}>
+                                <span style={{ width: 9, height: 9, background: s.color || DIM, flexShrink: 0 }} />
+                                <span style={{ color: TEXT, fontWeight: 600 }}>{s.name}</span>
+                                <span style={{ color: DIM }}>{s.email}</span>
+                                <span style={{ ...NB, fontSize: 10, letterSpacing: '1px', padding: '2px 7px', fontWeight: 700, background: (s.signedAt ? GREEN : s.openedAt ? ORANGE : DIM) + '1f', color: s.signedAt ? GREEN : s.openedAt ? ORANGE : MID }}>
+                                  {s.signedAt ? 'SIGNED ' + fmtDT(s.signedAt) : s.openedAt ? 'OPENED ' + fmtDT(s.openedAt) : 'NOT OPENED'}
+                                </span>
+                                {isAdmin && !s.signedAt && s.token && <button onClick={() => copySignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 10 })}>{copiedTok === s.token ? '✓ Copied' : 'Copy signing link'}</button>}
+                                {isAdmin && !s.signedAt && s.token && <button onClick={() => emailSignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 10 })}>Email link</button>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -722,7 +1008,7 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
       {/* Modals */}
       {newFolderOpen && <NewFolderModal onClose={() => setNewFolderOpen(false)} onCreate={(n) => { createFolder(n); setNewFolderOpen(false); }} />}
       {markupDoc && <MarkupModal doc={markupDoc} allUsers={allUsers} currentUser={user} onClose={() => setMarkupDoc(null)} onSent={() => refresh()} />}
-      {signingDoc && <SignModal doc={signingDoc} currentUser={user} savedSigs={savedSigs} onClose={() => setSigningDoc(null)} onSigned={(nd) => { refresh(); if (nd.workflow && nd.workflow.status === 'completed') { setTimeout(() => generateSignedAndStore(nd), 300); } }} onSaveSig={saveSignature} />}
+      {signingDoc && <SignModal doc={signingDoc} currentUser={user} savedSigs={savedSigs} onClose={() => setSigningDoc(null)} onSigned={(nd) => { refresh(); if (nd.workflow && nd.workflow.status === 'completed') { setTimeout(() => generateSignedAndStore(nd), 300); } }} />}
       {auditDoc && <AuditModal doc={auditDoc} onClose={() => setAuditDoc(null)} />}
     </div>
   );

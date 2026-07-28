@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
-import DocumentPortal from "./document_portal.jsx"
+import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
 import ProjectTracker from "./project_tracker.jsx"
 import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
@@ -5147,6 +5147,7 @@ export default function App(){
   const[contactSubmitted,setContactSubmitted]=useState(false)
   const[loginEmail,setLoginEmail]=useState('')
   const[portalUsers,setPortalUsers]=useState([])
+  const[signToken,setSignToken]=useState(function(){try{return new URLSearchParams(window.location.search).get('sign')||''}catch(e){return ''}})
   const[invites,setInvites]=useState([])
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
@@ -5181,7 +5182,9 @@ export default function App(){
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
     // Check for invite token in URL
-    try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
+    try{var params=new URLSearchParams(window.location.search);var invToken=params.get('invite');if(invToken){setPage('login');setLoginErr('You have an invitation! Set a password below to create your account.');window._pendingInvite=invToken}
+      // a signing link stands on its own — no account, no landing page
+      var signTok=params.get('sign');if(signTok){setSignToken(signTok)}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
     try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
   },[])
 
@@ -5450,6 +5453,9 @@ export default function App(){
   const IST={width:'100%',background:'#f9f7f5',border:'1px solid rgba(0,0,0,.12)',color:'#1a1a2e',padding:'12px 16px',fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',borderRadius:0,WebkitAppearance:'none'}
   const fIn=e=>{e.target.style.borderColor='rgba(249,115,22,.5)';e.target.style.boxShadow='0 0 0 3px rgba(249,115,22,.08)'}
   const fOut=e=>{e.target.style.borderColor='rgba(0,0,0,.12)';e.target.style.boxShadow=''}
+
+  // A signing link is self-contained: no login, no language gate, nothing else.
+  if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
 
   if(!lang) return <LangPicker onPick={setLang}/>;
 

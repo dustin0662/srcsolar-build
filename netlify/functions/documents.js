@@ -26,6 +26,56 @@ export default async (req) => {
     return Response.json({ error: 'method not allowed' }, { status: 405 });
   }
 
+  // ── signing links: a token stands in for an account ───────────────────
+  // The token is the only thing a recipient has, so everything it can reach is
+  // scoped to it here rather than trusted from the client.
+  const token = url.searchParams.get('token');
+  if (token) {
+    const idx = (await store.get(INDEX_KEY, { type: 'json' })) || { folders: [], docs: [], rev: 0 };
+    let doc = null, signer = null;
+    for (const d of idx.docs || []) {
+      const s = ((d && d.workflow && d.workflow.signers) || []).find((x) => x && x.token === token);
+      if (s) { doc = d; signer = s; break; }
+    }
+    if (!doc || !signer) return Response.json({ error: 'This signing link is not valid.' }, { status: 404 });
+    if (doc.workflow.status === 'void') return Response.json({ error: 'This document has been voided.' }, { status: 410 });
+
+    if (req.method === 'GET') {
+      if (!signer.openedAt) {
+        signer.openedAt = Date.now();
+        idx.rev = (idx.rev || 0) + 1;
+        await store.setJSON(INDEX_KEY, idx);
+      }
+      // only what the signer needs — no folder tree, no other documents
+      return Response.json({
+        doc: { id: doc.id, name: doc.name, chunks: doc.chunks, mime: doc.mime, workflow: doc.workflow },
+        signerId: signer.id,
+      }, { headers: { 'cache-control': 'no-store' } });
+    }
+    if (req.method === 'POST') {
+      let body; try { body = await req.json(); } catch { return Response.json({ error: 'bad json' }, { status: 400 }); }
+      if (signer.signedAt) return Response.json({ error: 'You have already signed this document.' }, { status: 409 });
+      const values = body.values || {};
+      const now = Date.now();
+      const wf = doc.workflow;
+      const mine = new Set((wf.fields || []).filter((f) => f.signerEmail === signer.email).map((f) => f.id));
+      // a field id that is not this signer's is ignored, not trusted
+      wf.fields = (wf.fields || []).map((f) => (mine.has(f.id) && values[f.id] != null && values[f.id] !== '')
+        ? Object.assign({}, f, { value: values[f.id], signedAt: now, signedBy: signer.name, signedByEmail: signer.email })
+        : f);
+      for (const s of wf.signers) if (s.id === signer.id) {
+        s.signedAt = now; s.via = 'link';
+        if (body.signatureLabel) s.signatureLabel = body.signatureLabel;
+        if (body.signatureKind) s.signatureKind = body.signatureKind;
+      }
+      if (wf.signers.every((s) => s.signedAt)) { wf.status = 'completed'; wf.completedAt = now; }
+      idx.rev = (idx.rev || 0) + 1;
+      await store.setJSON(INDEX_KEY, idx);
+      return Response.json({ ok: true, completed: wf.status === 'completed' });
+    }
+    return Response.json({ error: 'method not allowed' }, { status: 405 });
+  }
+
   // ── metadata index (folders + docs) ───────────────────────────────────
   if (req.method === 'GET') {
     const idx = (await store.get(INDEX_KEY, { type: 'json' })) || { folders: [], docs: [], rev: 0 };
