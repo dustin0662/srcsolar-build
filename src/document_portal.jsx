@@ -648,7 +648,9 @@ export function PublicSignPage({ token, onExit }) {
       <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: 32, maxWidth: 460, textAlign: 'center' }}>
         <div style={{ ...BB, fontSize: 26, color: tone || TEXT, marginBottom: 10 }}>{title}</div>
         <div style={{ ...NB, fontSize: 15, color: MID, lineHeight: 1.6 }}>{body}</div>
-        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to sunriseconstructionco.com</button>}
+        {/* label follows whatever host is serving the page, so it stays right
+            if the site moves between the custom domain and netlify.app */}
+        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to {window.location.hostname.replace(/^www\./, '')}</button>}
       </div>
     </div>
   );
