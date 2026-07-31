@@ -1,6 +1,7 @@
 /* pg_dense.js — everything after the sparse reconstruction:
      • multi-view plane-sweep depth maps (ZNCC over an affine-warped patch)
-     • depth fusion + voxel downsampling into a coloured point cloud
+     • compact (quantised) depth storage so hundreds of views fit in memory
+     • streaming fusion into a voxel grid with a fixed point budget
      • dominant-plane fit → 2.5D surface grid (DSM) → mesh + orthophoto raster
      • PLY / GLB / OBJ writers
    Pure typed-array code so it runs inside the worker (and in node tests). */
@@ -115,8 +116,11 @@ export function computeDepthMap(ref, nbs, opts) {
   const nbPatch = new Float64Array(P * P);
   const scores = new Float64Array(nbs.length);
 
-  for (let y = 3; y < h - 3; y += stride) {
-    for (let x = 3; x < w - 3; x += stride) {
+  // start on a multiple of the stride so the sample grid lines up with the
+  // packed representation and with the median filter
+  const y0 = Math.ceil(4 / stride) * stride, x0 = y0;
+  for (let y = y0; y < h - 3; y += stride) {
+    for (let x = x0; x < w - 3; x += stride) {
       // reference patch statistics
       let sum = 0, sum2 = 0, k = 0;
       for (let a = 0; a < P; a++) for (let b = 0; b < P; b++) {
@@ -216,148 +220,205 @@ export function medianFilterDepth(depth, w, h, stride) {
   return out;
 }
 
-/* Fuse depth maps into a coloured point cloud in world space.
-   views: [{ depth, w, h, R, t, f, cx, cy, rgb (Uint8ClampedArray RGBA) }]
-   Cross-checks each point against the other views' depth maps. */
-export function fuseDepthMaps(views, opts) {
-  const o = opts || {};
-  // how many other views must independently see the same surface; 2 removes
-  // the "curtain" of flyers that forms along occlusion boundaries
-  const needAgree = o.consistency === false ? 0 : Math.max(1, o.consistency === true ? 1 : (o.consistency || 1));
-  const radius = Math.max(1, o.searchRadius || 2);
-  const maxPoints = o.maxPoints || 4000000;
-  const pos = [], col = [];
-  for (let vi = 0; vi < views.length; vi++) {
-    const v = views[vi];
-    if (!v.depth) continue;
-    // every pixel: the sweep writes on its own strided grid, offset by the
-    // patch margin, so stepping from the origin would miss most of it
-    for (let y = 0; y < v.h; y++) for (let x = 0; x < v.w; x++) {
-      const i = y * v.w + x, d = v.depth[i];
+/* ── compact depth storage ─────────────────────────────────────────────
+   A full-resolution Float32 depth map is ~1 MB per view; six hundred of them
+   will not fit in a tab. The sweep only writes on a strided grid, so keep
+   just those samples, quantised to 16-bit inverse depth inside the view's own
+   range — under 200 KB per view with sub-millimetre quantisation. */
+export function packDepth(depth, w, h, stride, dmin, dmax, rgba) {
+  const s = Math.max(1, stride || 1);
+  const gw = Math.ceil(w / s), gh = Math.ceil(h / s);
+  const data = new Uint16Array(gw * gh);
+  const color = rgba ? new Uint8Array(gw * gh * 3) : null;
+  const iz0 = 1 / dmax, iz1 = 1 / dmin;
+  const span = (iz1 - iz0) || 1;
+  for (let gy = 0; gy < gh; gy++) {
+    const y = gy * s;
+    if (y >= h) break;
+    for (let gx = 0; gx < gw; gx++) {
+      const x = gx * s;
+      if (x >= w) break;
+      const d = depth[y * w + x];
       if (!d) continue;
-      const Xc = [(x - v.cx) / v.f * d, (y - v.cy) / v.f * d, d];
-      // world = Rᵀ(Xc − t)
-      const q = mat3TVec(v.R, [Xc[0] - v.t[0], Xc[1] - v.t[1], Xc[2] - v.t[2]]);
+      const q = Math.round(((1 / d) - iz0) / span * 65534) + 1;   // 0 stays "empty"
+      const gi = gy * gw + gx;
+      data[gi] = q < 1 ? 1 : q > 65535 ? 65535 : q;
+      if (color) {
+        const o4 = (y * w + x) * 4;
+        color[gi * 3] = rgba[o4]; color[gi * 3 + 1] = rgba[o4 + 1]; color[gi * 3 + 2] = rgba[o4 + 2];
+      }
+    }
+  }
+  return { data: data, color: color, gw: gw, gh: gh, stride: s, w: w, h: h, iz0: iz0, span: span };
+}
+
+/* nearest stored depth to an image pixel, searching a small window because the
+   grid is strided; returns 0 when nothing was reconstructed nearby */
+export function depthNear(packed, x, y, radius) {
+  if (!packed) return 0;
+  const s = packed.stride;
+  const gx0 = Math.round(x / s), gy0 = Math.round(y / s);
+  const r = Math.max(0, Math.ceil((radius || 0) / s));
+  let best = 0, bestD = Infinity;
+  for (let dy = -r; dy <= r; dy++) {
+    const gy = gy0 + dy;
+    if (gy < 0 || gy >= packed.gh) continue;
+    for (let dx = -r; dx <= r; dx++) {
+      const gx = gx0 + dx;
+      if (gx < 0 || gx >= packed.gw) continue;
+      const q = packed.data[gy * packed.gw + gx];
+      if (!q) continue;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestD) { bestD = dist; best = 1 / (packed.iz0 + (q - 1) / 65534 * packed.span); }
+    }
+  }
+  return best;
+}
+
+/* ── streaming voxel accumulator ───────────────────────────────────────
+   Fusing six hundred depth maps produces tens of millions of samples. Rather
+   than collect them and downsample afterwards (which needs the whole set in
+   memory at once), fold every sample straight into a voxel grid held in an
+   open-addressed hash table of typed arrays. When the table fills, the voxel
+   size doubles and the contents are rehashed — so the memory ceiling is set
+   by the point budget, not by the capture size. */
+export function createVoxelGrid(opts) {
+  const o = opts || {};
+  let voxel = o.voxel > 0 ? o.voxel : 0.05;
+  const budget = Math.max(50000, o.budget || 3000000);
+  let cap = 1;
+  while (cap < budget * 2) cap *= 2;
+  const LIMIT = 1 << 17;                    // cells per axis in the packed key
+
+  let keys = new Float64Array(cap).fill(-1);
+  let px = new Float32Array(cap), py = new Float32Array(cap), pz = new Float32Array(cap);
+  let cr = new Float32Array(cap), cg = new Float32Array(cap), cb = new Float32Array(cap);
+  let cnt = new Uint16Array(cap);
+  let used = 0;
+
+  const keyOf = (x, y, z) => {
+    const ix = Math.floor(x / voxel) & (LIMIT - 1);
+    const iy = Math.floor(y / voxel) & (LIMIT - 1);
+    const iz = Math.floor(z / voxel) & (LIMIT - 1);
+    return ix * 17179869184 + iy * 131072 + iz;     // 2^34, 2^17 — exact in a double
+  };
+  const slotOf = (key) => {
+    // mix both halves of the key: it exceeds 32 bits, and a plain multiply
+    // would throw away the low bits that distinguish adjacent voxels
+    const lo = key % 4294967296, hi = (key - lo) / 4294967296;
+    let h = Math.imul(lo ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(hi ^ 0xc2b2ae35, 0x27d4eb2f);
+    h ^= h >>> 15;
+    let i = (h >>> 0) & (cap - 1);
+    while (keys[i] !== -1 && keys[i] !== key) i = (i + 1) & (cap - 1);
+    return i;
+  };
+
+  function insert(key, x, y, z, r, g, b, weight) {
+    const i = slotOf(key);
+    if (keys[i] === -1) {
+      keys[i] = key; px[i] = x; py[i] = y; pz[i] = z; cr[i] = r; cg[i] = g; cb[i] = b;
+      cnt[i] = Math.min(65535, weight || 1);
+      used++;
+      return true;
+    }
+    const n = cnt[i], w = weight || 1, tot = n + w;
+    px[i] += (x - px[i]) * w / tot; py[i] += (y - py[i]) * w / tot; pz[i] += (z - pz[i]) * w / tot;
+    cr[i] += (r - cr[i]) * w / tot; cg[i] += (g - cg[i]) * w / tot; cb[i] += (b - cb[i]) * w / tot;
+    cnt[i] = Math.min(65535, tot);
+    return false;
+  }
+
+  function grow() {
+    // coarser voxels, same table: merge what collapses together
+    voxel *= 2;
+    const ok = keys, ox = px, oy = py, oz = pz, orr = cr, og = cg, ob = cb, on = cnt;
+    keys = new Float64Array(cap).fill(-1);
+    px = new Float32Array(cap); py = new Float32Array(cap); pz = new Float32Array(cap);
+    cr = new Float32Array(cap); cg = new Float32Array(cap); cb = new Float32Array(cap);
+    cnt = new Uint16Array(cap);
+    used = 0;
+    for (let i = 0; i < ok.length; i++) {
+      if (ok[i] === -1) continue;
+      insert(keyOf(ox[i], oy[i], oz[i]), ox[i], oy[i], oz[i], orr[i], og[i], ob[i], on[i]);
+    }
+  }
+
+  return {
+    add(x, y, z, r, g, b) {
+      if (used >= budget) grow();
+      insert(keyOf(x, y, z), x, y, z, r, g, b, 1);
+    },
+    get size() { return used; },
+    get voxel() { return voxel; },
+    /* minCount drops voxels seen only once — the cheap outlier filter that
+       replaces a neighbour search at this scale */
+    finish(minCount) {
+      const need = Math.max(1, minCount || 1);
+      let n = 0;
+      for (let i = 0; i < cap; i++) if (keys[i] !== -1 && cnt[i] >= need) n++;
+      const positions = new Float32Array(n * 3), colors = new Uint8Array(n * 3);
+      let k = 0;
+      for (let i = 0; i < cap; i++) {
+        if (keys[i] === -1 || cnt[i] < need) continue;
+        positions[k * 3] = px[i]; positions[k * 3 + 1] = py[i]; positions[k * 3 + 2] = pz[i];
+        colors[k * 3] = cr[i]; colors[k * 3 + 1] = cg[i]; colors[k * 3 + 2] = cb[i];
+        k++;
+      }
+      return { positions: positions, colors: colors, voxel: voxel, dropped: used - n };
+    },
+  };
+}
+
+/* Fuse one view's depth map into the accumulator, checking it against the
+   neighbour depth maps that are currently in memory.
+   view: { packed, w, h, R, t, f, cx, cy, rgb }
+   nbs:  same shape (only those already computed) */
+export function fuseView(view, nbs, grid, opts) {
+  const o = opts || {};
+  const needAgree = o.consistency === false ? 0 : Math.max(0, o.consistency == null ? 1 : o.consistency);
+  const tol = o.tolerance || 0.02;
+  const radius = o.searchRadius || (view.packed ? view.packed.stride : 2);
+  const p = view.packed;
+  if (!p) return 0;
+  let added = 0;
+  for (let gy = 0; gy < p.gh; gy++) {
+    const y = gy * p.stride;
+    if (y >= view.h) break;
+    for (let gx = 0; gx < p.gw; gx++) {
+      const q = p.data[gy * p.gw + gx];
+      if (!q) continue;
+      const x = gx * p.stride;
+      if (x >= view.w) continue;
+      const d = 1 / (p.iz0 + (q - 1) / 65534 * p.span);
+      const Xc = [(x - view.cx) / view.f * d, (y - view.cy) / view.f * d, d];
+      const q3 = mat3TVec(view.R, [Xc[0] - view.t[0], Xc[1] - view.t[1], Xc[2] - view.t[2]]);
       if (needAgree) {
         let agree = 0, checked = 0;
-        for (let mj = 0; mj < views.length && agree < needAgree; mj++) {
-          if (mj === vi) continue;
-          const n = views[mj];
-          if (!n.depth) continue;
-          const Xn = mat3Vec(n.R, q);
+        for (let m = 0; m < nbs.length && agree < needAgree; m++) {
+          const n = nbs[m];
+          if (!n || !n.packed) continue;
+          const Xn = mat3Vec(n.R, q3);
           const zc = Xn[2] + n.t[2];
           if (zc <= 1e-6) continue;
-          const px = Math.round(n.f * (Xn[0] + n.t[0]) / zc + n.cx);
-          const py = Math.round(n.f * (Xn[1] + n.t[1]) / zc + n.cy);
-          if (px < 0 || py < 0 || px >= n.w || py >= n.h) continue;
-          // depth maps are computed on a strided grid, so the exact projected
-          // pixel is usually a hole — look in a small window for the nearest
-          // sample instead of declaring disagreement
-          let best = 0, bestD = Infinity;
-          for (let dy = -radius; dy <= radius; dy++) {
-            const yy = py + dy; if (yy < 0 || yy >= n.h) continue;
-            for (let dx = -radius; dx <= radius; dx++) {
-              const xx = px + dx; if (xx < 0 || xx >= n.w) continue;
-              const dn = n.depth[yy * n.w + xx];
-              if (!dn) continue;
-              const dist = dx * dx + dy * dy;
-              if (dist < bestD) { bestD = dist; best = dn; }
-            }
-          }
-          if (!best) continue;
+          const nx = n.f * (Xn[0] + n.t[0]) / zc + n.cx;
+          const ny = n.f * (Xn[1] + n.t[1]) / zc + n.cy;
+          if (nx < 0 || ny < 0 || nx >= n.w || ny >= n.h) continue;
+          const dn = depthNear(n.packed, nx, ny, radius);
+          if (!dn) continue;
           checked++;
-          if (Math.abs(best - zc) / zc < (o.tolerance || 0.02)) agree++;
+          if (Math.abs(dn - zc) / zc < tol) agree++;
         }
         if (checked && agree < needAgree) continue;
       }
-      pos.push(q[0], q[1], q[2]);
-      const p4 = i * 4;
-      col.push(v.rgb[p4], v.rgb[p4 + 1], v.rgb[p4 + 2]);
-      if (pos.length / 3 >= maxPoints) break;
+      const gi = gy * p.gw + gx;
+      let r = 190, g = 190, b = 190;
+      if (p.color) { r = p.color[gi * 3]; g = p.color[gi * 3 + 1]; b = p.color[gi * 3 + 2]; }
+      else if (view.rgb) { const o4 = (y * view.w + x) * 4; r = view.rgb[o4]; g = view.rgb[o4 + 1]; b = view.rgb[o4 + 2]; }
+      grid.add(q3[0], q3[1], q3[2], r, g, b);
+      added++;
     }
   }
-  return { positions: Float32Array.from(pos), colors: Uint8Array.from(col) };
-}
-
-/* Typical spacing between neighbouring dense samples, in reconstruction units:
-   one sweep step at the median depth. Everything downstream (voxel size,
-   outlier radius, grid cell) is sized from this so the cleanup does not depend
-   on how big the scene happens to be. */
-export function sampleSpacing(views, stride) {
-  const s = [];
-  for (const v of views) {
-    if (!v || !v.depth || !v.medianDepth) continue;
-    s.push((stride || 2) * v.medianDepth / v.f);
-  }
-  return s.length ? median(s) : 0;
-}
-
-/* voxel-grid downsample with colour averaging */
-export function voxelDownsample(positions, colors, voxel) {
-  const n = positions.length / 3;
-  if (!n || !(voxel > 0)) return { positions: positions, colors: colors };
-  const map = new Map();
-  for (let i = 0; i < n; i++) {
-    const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
-    const key = Math.floor(x / voxel) + ',' + Math.floor(y / voxel) + ',' + Math.floor(z / voxel);
-    let c = map.get(key);
-    if (!c) { c = [0, 0, 0, 0, 0, 0, 0]; map.set(key, c); }
-    c[0] += x; c[1] += y; c[2] += z;
-    c[3] += colors[i * 3]; c[4] += colors[i * 3 + 1]; c[5] += colors[i * 3 + 2]; c[6]++;
-  }
-  const outP = new Float32Array(map.size * 3), outC = new Uint8Array(map.size * 3);
-  let k = 0;
-  for (const c of map.values()) {
-    outP[k * 3] = c[0] / c[6]; outP[k * 3 + 1] = c[1] / c[6]; outP[k * 3 + 2] = c[2] / c[6];
-    outC[k * 3] = c[3] / c[6]; outC[k * 3 + 1] = c[4] / c[6]; outC[k * 3 + 2] = c[5] / c[6];
-    k++;
-  }
-  return { positions: outP, colors: outC };
-}
-
-/* remove points with fewer than k neighbours inside `radius` (statistical
-   outlier removal on a uniform grid) */
-export function removeOutliers(positions, colors, radius, minNeighbours) {
-  const n = positions.length / 3;
-  if (n < 50) return { positions: positions, colors: colors };
-  const cell = radius;
-  const grid = new Map();
-  const key = (x, y, z) => Math.floor(x / cell) + ',' + Math.floor(y / cell) + ',' + Math.floor(z / cell);
-  for (let i = 0; i < n; i++) {
-    const k = key(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
-    let a = grid.get(k); if (!a) { a = []; grid.set(k, a); }
-    a.push(i);
-  }
-  const keep = new Uint8Array(n);
-  const r2 = radius * radius;
-  for (let i = 0; i < n; i++) {
-    const x = positions[i * 3], y = positions[i * 3 + 1], z = positions[i * 3 + 2];
-    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
-    let cnt = 0;
-    for (let dx = -1; dx <= 1 && cnt < minNeighbours; dx++)
-      for (let dy = -1; dy <= 1 && cnt < minNeighbours; dy++)
-        for (let dz = -1; dz <= 1 && cnt < minNeighbours; dz++) {
-          const a = grid.get((cx + dx) + ',' + (cy + dy) + ',' + (cz + dz));
-          if (!a) continue;
-          for (const j of a) {
-            if (j === i) continue;
-            const d = (positions[j * 3] - x) ** 2 + (positions[j * 3 + 1] - y) ** 2 + (positions[j * 3 + 2] - z) ** 2;
-            if (d < r2 && ++cnt >= minNeighbours) break;
-          }
-        }
-    keep[i] = cnt >= minNeighbours ? 1 : 0;
-  }
-  let m = 0;
-  for (let i = 0; i < n; i++) m += keep[i];
-  const p = new Float32Array(m * 3), c = new Uint8Array(m * 3);
-  let k = 0;
-  for (let i = 0; i < n; i++) {
-    if (!keep[i]) continue;
-    p[k * 3] = positions[i * 3]; p[k * 3 + 1] = positions[i * 3 + 1]; p[k * 3 + 2] = positions[i * 3 + 2];
-    c[k * 3] = colors[i * 3]; c[k * 3 + 1] = colors[i * 3 + 1]; c[k * 3 + 2] = colors[i * 3 + 2];
-    k++;
-  }
-  return { positions: p, colors: c };
+  return added;
 }
 
 /* ── surface grid (2.5D DSM) ───────────────────────────────────────── */

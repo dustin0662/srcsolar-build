@@ -128,6 +128,20 @@ export default async (req) => {
     return json(cur);
   }
 
+  if (q('photoMetaBatch') != null) {
+    // one index write per batch instead of per photo: a 600-photo upload
+    // otherwise rewrites the index six hundred times
+    const cur = (await store.get(idx(project), { type: 'json' })) || { photos: [], rev: 0 };
+    const incoming = Array.isArray(body.photos) ? body.photos.filter((p) => p && p.id) : [];
+    if (!incoming.length) return bad('no photos in batch');
+    const dead = new Set(incoming.map((p) => p.id));
+    cur.photos = (cur.photos || []).filter((x) => !dead.has(x.id)).concat(incoming);
+    cur.photos.sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+    cur.rev = (cur.rev || 0) + 1;
+    await store.setJSON(idx(project), cur);
+    return json(cur);
+  }
+
   if (q('deletePhoto') != null) {
     const cur = (await store.get(idx(project), { type: 'json' })) || { photos: [], rev: 0 };
     const ids = body.ids || (body.id ? [body.id] : []);

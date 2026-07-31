@@ -7,7 +7,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PointCloudViewer, { viewerSnapshot } from './pg_viewer.jsx';
 import { exportPLY, exportGLB, exportOBJ } from './pg_dense.js';
 import { parseExif } from './pg_exif.js';
-import { PRESETS, PRESET_ORDER } from './pg_presets.js';
+import { PRESETS, PRESET_ORDER, adaptSettings } from './pg_presets.js';
+import { estimateBuildSeconds } from './pg_progress.js';
 
 const ENDPOINT = '/.netlify/functions/photogrammetry';
 const LOGO_URL = '/logo.webp';
@@ -26,6 +27,7 @@ const PART_BYTES = 3 * 1024 * 1024;      // stays clear of the 6 MB function lim
 const CHUNK_CHARS = 700 * 1024;          // base64 slice when saving a model
 const WORKING_MAX_DIM = 2600;            // stored working copy of each photo
 const THUMB_DIM = 340;
+const SAVED_POINT_CAP = 1500000;         // point cloud size kept in the capture
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function fmtBytes(n) {
@@ -68,7 +70,30 @@ const card = { background: CARD, border: '1px solid ' + LINE, padding: 16 };
    reopened without shipping a glTF parser to the client. */
 const MAGIC = 0x53524350;  // 'SRCP'
 
-function packModel(result) {
+/* Saved models travel back through the function as base64 chunks, so a
+   multi-million point cloud is stored thinned. The full-resolution cloud stays
+   available through the exports. */
+function thinCloud(positions, colors, maxPoints) {
+  const n = positions.length / 3;
+  if (!maxPoints || n <= maxPoints) return { positions: positions, colors: colors, thinned: false };
+  const step = n / maxPoints;
+  const m = Math.floor(n / step);
+  const p = new Float32Array(m * 3), c = new Uint8Array(m * 3);
+  for (let k = 0; k < m; k++) {
+    const i = Math.min(n - 1, Math.floor(k * step));
+    p[k * 3] = positions[i * 3]; p[k * 3 + 1] = positions[i * 3 + 1]; p[k * 3 + 2] = positions[i * 3 + 2];
+    c[k * 3] = colors[i * 3]; c[k * 3 + 1] = colors[i * 3 + 1]; c[k * 3 + 2] = colors[i * 3 + 2];
+  }
+  return { positions: p, colors: c, thinned: true };
+}
+
+function packModel(result, maxPoints) {
+  const cloud = thinCloud(result.positions, result.colors, maxPoints);
+  result = Object.assign({}, result, {
+    positions: cloud.positions, colors: cloud.colors,
+    stats: Object.assign({}, result.stats, cloud.thinned
+      ? { savedPoints: cloud.positions.length / 3, savedThinned: true } : {}),
+  });
   const meta = {
     v: 1, stats: result.stats, cameras: result.cameras,
     counts: {
@@ -229,47 +254,70 @@ export default function Photogrammetry({ onExit, portalUser }) {
     if (!files.length) { setError('Those files are not images.'); return; }
     cancelUploadRef.current = false;
     setError('');
-    setUploads({ active: true, done: 0, total: files.length, name: '', failed: [] });
+    setUploads({ active: true, done: 0, total: files.length, name: '', failed: [], startedAt: Date.now() });
     const failed = [];
     const existing = new Set(photos.map((p) => p.name + ':' + p.originalBytes));
 
-    for (let i = 0; i < files.length; i++) {
-      if (cancelUploadRef.current) break;
-      const file = files[i];
-      setUploads((u) => ({ ...u, done: i, name: file.name }));
-      if (existing.has(file.name + ':' + file.size)) continue;    // already uploaded
+    /* Several photos at once, and one index write per batch — a six-hundred
+       photo card takes long enough without doing it strictly one at a time. */
+    const queue = files.slice();
+    const pending = [];
+    let done = 0;
+    const flush = async () => {
+      if (!pending.length) return;
+      const batch = pending.splice(0, pending.length);
       try {
-        const prep = await prepareImage(file, keepOriginal);
-        const id = uid();
-        const bytes = new Uint8Array(await prep.main.blob.arrayBuffer());
-        const parts = Math.max(1, Math.ceil(bytes.length / PART_BYTES));
-        for (let k = 0; k < parts; k++) {
-          const slice = bytes.subarray(k * PART_BYTES, Math.min(bytes.length, (k + 1) * PART_BYTES));
-          await api('?upload=1&project=' + encodeURIComponent(projectId) + '&photo=' + id + '&part=' + k, {
-            method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: slice,
-          });
-        }
-        await api('?upload=1&thumbFor=1&project=' + encodeURIComponent(projectId) + '&photo=' + id, {
-          method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: await prep.thumb.blob.arrayBuffer(),
-        });
-        const meta = {
-          id: id, name: file.name, parts: parts, bytes: bytes.length, originalBytes: file.size,
-          w: prep.main.w, h: prep.main.h, fullW: prep.fullW, fullH: prep.fullH,
-          uploadedAt: Date.now(), uploadedBy: (portalUser && (portalUser.name || portalUser.email)) || '',
-          // the working copy is re-encoded through a canvas, which drops the
-          // EXIF block — so keep the parsed values here and hand them to the
-          // reconstruction, which needs focal length and GPS
-          exif: prep.exif,
-        };
-        const j = await apiJson('?photoMeta=1&project=' + encodeURIComponent(projectId), {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo: meta }),
+        const j = await apiJson('?photoMetaBatch=1&project=' + encodeURIComponent(projectId), {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photos: batch }),
         });
         setPhotos(j.photos || []);
       } catch (e) {
-        failed.push(file.name + ' — ' + e.message);
+        for (const b of batch) failed.push(b.name + ' — ' + e.message);
       }
-    }
-    setUploads({ active: false, done: files.length, total: files.length, name: '', failed: failed });
+    };
+
+    const worker = async () => {
+      while (queue.length && !cancelUploadRef.current) {
+        const file = queue.shift();
+        if (!file) break;
+        setUploads((u) => ({ ...u, name: file.name }));
+        if (existing.has(file.name + ':' + file.size)) { done++; continue; }
+        try {
+          const prep = await prepareImage(file, keepOriginal);
+          const id = uid();
+          const bytes = new Uint8Array(await prep.main.blob.arrayBuffer());
+          const parts = Math.max(1, Math.ceil(bytes.length / PART_BYTES));
+          for (let k = 0; k < parts; k++) {
+            const slice = bytes.subarray(k * PART_BYTES, Math.min(bytes.length, (k + 1) * PART_BYTES));
+            await api('?upload=1&project=' + encodeURIComponent(projectId) + '&photo=' + id + '&part=' + k, {
+              method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: slice,
+            });
+          }
+          await api('?upload=1&thumbFor=1&project=' + encodeURIComponent(projectId) + '&photo=' + id, {
+            method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: await prep.thumb.blob.arrayBuffer(),
+          });
+          pending.push({
+            id: id, name: file.name, parts: parts, bytes: bytes.length, originalBytes: file.size,
+            w: prep.main.w, h: prep.main.h, fullW: prep.fullW, fullH: prep.fullH,
+            uploadedAt: Date.now(), uploadedBy: (portalUser && (portalUser.name || portalUser.email)) || '',
+            // the working copy is re-encoded through a canvas, which drops the
+            // EXIF block — so keep the parsed values here and hand them to the
+            // reconstruction, which needs focal length and GPS
+            exif: prep.exif,
+          });
+        } catch (e) {
+          failed.push(file.name + ' — ' + e.message);
+        }
+        done++;
+        setUploads((u) => ({ ...u, done: done }));
+        if (pending.length >= 10) await flush();
+      }
+    };
+
+    const lanes = Math.min(3, Math.max(1, files.length));
+    await Promise.all(Array.from({ length: lanes }, worker));
+    await flush();
+    setUploads({ active: false, done: done, total: files.length, name: '', failed: failed });
     if (failed.length) setError(failed.length + ' photo(s) failed to upload. ' + failed[0]);
   }, [projectId, photos, portalUser, prepareImage]);
 
@@ -296,21 +344,17 @@ export default function Photogrammetry({ onExit, portalUser }) {
   const workerRef = useRef(null);
 
   const gpsCount = useMemo(() => photos.filter((p) => p.exif && p.exif.lat != null).length, [photos]);
-  const estimate = useMemo(() => {
-    const n = photos.length || 0;
-    const p = PRESETS[quality];
-    if (!n) return null;
-    // rough: feature extraction + matching grows with n, dense with n × stride²
-    const perPhoto = (p.maxDim / 1000) ** 2 * 1.1;
-    const match = (n * p.candidates) * 0.05 * (p.features / 2000);
-    const denseCost = p.dense ? n * perPhoto * (p.denseSamples / 32) * (9 / (p.denseStride * p.denseStride)) * 1.6 : 0;
-    return (n * perPhoto + match + denseCost) * 1000;
-  }, [photos.length, quality]);
+  // the same cost model the worker measures against, so the pre-build estimate
+  // and the running countdown agree
+  const plan = useMemo(() => adaptSettings(PRESETS[quality], photos.length || 0), [quality, photos.length]);
+  const estimate = useMemo(() => (photos.length ? estimateBuildSeconds(plan.opt, photos.length, wantMesh) * 1000 : null),
+    [plan, photos.length, wantMesh]);
 
   const startBuild = useCallback(() => {
     if (!projectId || photos.length < 3) { setError('Upload at least 3 overlapping photos first.'); return; }
     setError('');
     setResult(null);
+    setSavedAt(null);
     const started = Date.now();
     setRun({ pct: 0, stage: 'starting', msg: 'Starting the reconstruction…', log: [], startedAt: started });
     setTab('model');
@@ -322,9 +366,12 @@ export default function Photogrammetry({ onExit, portalUser }) {
         const m = e.data || {};
         if (m.type === 'progress') {
           setRun((r) => (r ? {
-            ...r, pct: m.pct, stage: m.stage, msg: m.msg,
-            log: r.log.length && r.log[r.log.length - 1] === m.msg ? r.log : r.log.concat([m.msg]).slice(-160),
+            ...r, pct: m.pct, stage: m.stage, stageLabel: m.stageLabel, msg: m.msg,
+            etaMs: m.etaMs, elapsedMs: m.elapsedMs, done: m.done, units: m.units, at: Date.now(),
+            log: r.log.length && r.log[r.log.length - 1] === m.msg ? r.log : r.log.concat([m.msg]).slice(-200),
           } : r));
+        } else if (m.type === 'note') {
+          setRun((r) => (r ? { ...r, note: m.message, log: r.log.concat(['· ' + m.message]) } : r));
         } else if (m.type === 'done') {
           setResult(m.result);
           setRun((r) => (r ? { ...r, pct: 1, stage: 'done', msg: 'Model complete', finishedAt: Date.now() } : r));
@@ -367,11 +414,12 @@ export default function Photogrammetry({ onExit, portalUser }) {
 
   /* ── saving / loading models ── */
   const [saveState, setSaveState] = useState('');
+  const [savedAt, setSavedAt] = useState(null);
   const saveModel = useCallback(async () => {
     if (!result || !projectId) return;
     setSaveState('Packing…');
     try {
-      const buf = packModel(result);
+      const buf = packModel(result, SAVED_POINT_CAP);
       let bin = '';
       const u8 = new Uint8Array(buf);
       const step = 0x8000;
@@ -396,6 +444,7 @@ export default function Photogrammetry({ onExit, portalUser }) {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: model }),
       });
       setModels(j.models || []);
+      setSavedAt({ at: Date.now(), points: model.stats && model.stats.savedPoints ? model.stats.savedPoints : result.positions.length / 3, bytes: buf.byteLength });
       setSaveState('Saved');
       setTimeout(() => setSaveState(''), 2500);
     } catch (e) {
@@ -438,6 +487,7 @@ export default function Photogrammetry({ onExit, portalUser }) {
         ortho = { rgba: new Uint8ClampedArray(buf.slice(off, off + ow * oh * 4)), w: ow, h: oh };
       }
       setResult({ positions, colors, mesh, ortho, cameras: meta.cameras || [], stats: meta.stats || {} });
+      setSavedAt(null);
       setRun(null);
       setTab('model');
       setSaveState('');
@@ -463,7 +513,15 @@ export default function Photogrammetry({ onExit, portalUser }) {
   const exportMeshPLY = () => download(new Blob([exportPLY(result.mesh.positions, result.mesh.colors, result.mesh.indices, 'Sunrise Construction — ' + (project ? project.name : ''))]), baseName + '-mesh.ply');
   const exportCloudGLB = () => download(new Blob([exportGLB(result.positions, result.colors, null, result.stats)]), baseName + '-points.glb');
   const exportMeshGLB = () => download(new Blob([exportGLB(result.mesh.positions, result.mesh.colors, result.mesh.indices, result.stats)]), baseName + '-mesh.glb');
-  const exportMeshOBJ = () => download(new Blob([exportOBJ(result.mesh.positions, result.mesh.colors, result.mesh.indices, project ? project.name : '')]), baseName + '-mesh.obj');
+  const exportMeshOBJ = () => {
+    // OBJ is text: a multi-million vertex mesh would build a string bigger than
+    // the tab can hold, and PLY/GLB carry the same data
+    if (result.mesh.positions.length / 3 > 1200000) {
+      setError('This mesh is too large for OBJ (' + Math.round(result.mesh.positions.length / 3e6 * 10) / 10 + 'M vertices). Use the PLY or GLB export — every CAD package reads them.');
+      return;
+    }
+    download(new Blob([exportOBJ(result.mesh.positions, result.mesh.colors, result.mesh.indices, project ? project.name : '')]), baseName + '-mesh.obj');
+  };
   const exportOrtho = () => {
     const o = result.ortho;
     const canvas = document.createElement('canvas');
@@ -605,7 +663,7 @@ export default function Photogrammetry({ onExit, portalUser }) {
           <BuildTab
             mob={mob} photos={photos} gpsCount={gpsCount} quality={quality} setQuality={setQuality}
             wantMesh={wantMesh} setWantMesh={setWantMesh} wantGeo={wantGeo} setWantGeo={setWantGeo}
-            estimate={estimate} run={run} onBuild={startBuild} onCancel={cancelBuild}
+            estimate={estimate} plan={plan} run={run} onBuild={startBuild} onCancel={cancelBuild}
             models={models} onOpenModel={openModel} onDeleteModel={deleteModel} saveState={saveState}
           />
         )}
@@ -615,7 +673,7 @@ export default function Photogrammetry({ onExit, portalUser }) {
             mob={mob} run={run} result={result} onCancel={cancelBuild} onBuild={() => setTab('build')}
             viewMode={viewMode} setViewMode={setViewMode} ptSize={ptSize} setPtSize={setPtSize}
             showCams={showCams} setShowCams={setShowCams} viewerRef={viewerRef}
-            onSave={saveModel} saveState={saveState} baseName={baseName} onScale={applyScale}
+            onSave={saveModel} saveState={saveState} savedAt={savedAt} baseName={baseName} onScale={applyScale}
             exports={{ exportCloudPLY, exportMeshPLY, exportCloudGLB, exportMeshGLB, exportMeshOBJ, exportOrtho, exportCamerasCSV }}
           />
         )}
@@ -647,6 +705,7 @@ function NewProjectForm({ onCreate }) {
 function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, onDelete, selected, setSelected }) {
   const [keepOriginal, setKeepOriginal] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [limit, setLimit] = useState(240);   // a 600-photo grid does not need to mount at once
   const fileRef = useRef(null);
 
   const toggle = (id) => setSelected((s) => {
@@ -667,8 +726,8 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
         }}>
         <div style={{ fontFamily: BBF, fontSize: 22, letterSpacing: 1.5, marginBottom: 6 }}>DROP PHOTOS HERE</div>
         <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE, marginBottom: 14 }}>
-          JPEG or PNG, straight off the drone or phone. 15–60 frames with heavy overlap gives the best model;
-          more than 120 will take a while in the browser.
+          JPEG or PNG, straight off the drone or phone. Anything from 15 to 600 frames with heavy overlap.
+          Large sets build in one long pass — the tab does the work, so leave it open.
         </div>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
           onChange={(e) => { onUpload(e.target.files, keepOriginal); e.target.value = ''; }} />
@@ -688,23 +747,34 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
           <div style={{ marginTop: 14 }}>
             <Bar pct={uploads.total ? uploads.done / uploads.total : 0} />
             <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 6 }}>
-              {uploads.done}/{uploads.total} · {uploads.name}
+              {uploads.done}/{uploads.total}
+              {uploads.startedAt && uploads.done > 2
+                ? ' · about ' + fmtTime((Date.now() - uploads.startedAt) / uploads.done * (uploads.total - uploads.done)) + ' left'
+                : ''}
+              {' · ' + uploads.name}
               <button style={{ ...ghostSm, marginLeft: 10, padding: '2px 8px' }} onClick={onCancelUpload}>Stop</button>
             </div>
           </div>
         )}
       </div>
 
-      {!!selected.size && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontFamily: NBF, fontSize: 13 }}>{selected.size} selected</span>
-          <button style={{ ...ghostSm, borderColor: 'rgba(239,68,68,.4)', color: '#fca5a5' }} onClick={() => onDelete([...selected])}>Remove</button>
-          <button style={ghostSm} onClick={() => setSelected(new Set())}>Clear</button>
+      {!!photos.length && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: NBF, fontSize: 13, color: MUTE }}>
+            {photos.length} photo{photos.length === 1 ? '' : 's'}
+            {selected.size ? ' · ' + selected.size + ' selected' : ''}
+          </span>
+          <button style={ghostSm} onClick={() => setSelected(new Set(photos.map((p) => p.id)))}>Select all</button>
+          {!!selected.size && <button style={ghostSm} onClick={() => setSelected(new Set())}>Clear</button>}
+          {!!selected.size && (
+            <button style={{ ...ghostSm, borderColor: 'rgba(239,68,68,.4)', color: '#fca5a5' }}
+              onClick={() => onDelete([...selected])}>Remove selected</button>
+          )}
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: mob ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(170px, 1fr))', gap: 10 }}>
-        {photos.map((p) => (
+        {photos.slice(0, limit).map((p) => (
           <div key={p.id} onClick={() => toggle(p.id)} style={{
             border: '1px solid ' + (selected.has(p.id) ? ORANGE : LINE), background: CARD, cursor: 'pointer', overflow: 'hidden',
           }}>
@@ -721,6 +791,13 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
           </div>
         ))}
       </div>
+      {photos.length > limit && (
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <button style={ghost} onClick={() => setLimit(limit + 480)}>
+            Show more ({photos.length - limit} not shown)
+          </button>
+        </div>
+      )}
       {!photos.length && !uploads.active && (
         <div style={{ ...card, color: MUTE, fontFamily: NBF }}>No photos in this capture yet.</div>
       )}
@@ -731,7 +808,7 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
 /* ── build tab ─────────────────────────────────────────────────────── */
 function BuildTab({
   mob, photos, gpsCount, quality, setQuality, wantMesh, setWantMesh, wantGeo, setWantGeo,
-  estimate, run, onBuild, onCancel, models, onOpenModel, onDeleteModel, saveState,
+  estimate, plan, run, onBuild, onCancel, models, onOpenModel, onDeleteModel, saveState,
 }) {
   const keys = PRESET_ORDER;
   return (
@@ -788,12 +865,18 @@ function BuildTab({
             ? <button style={{ ...btn, background: RED, color: '#fff' }} onClick={onCancel}>Stop build</button>
             : <button style={btn} onClick={onBuild} disabled={photos.length < 3}>Build model</button>}
           <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>
-            {photos.length < 3 ? 'Upload at least 3 photos.' : 'Rough estimate: ' + fmtTime(estimate) + ' for ' + photos.length + ' photos'}
+            {photos.length < 3 ? 'Upload at least 3 photos.' : 'Estimated ' + fmtTime(estimate) + ' for ' + photos.length + ' photos'}
           </span>
         </div>
-        {photos.length > 120 && (
+        {!!(plan && plan.notes.length) && (
           <div style={{ fontFamily: NBF, fontSize: 12, color: '#fcd34d', marginTop: 8 }}>
-            {photos.length} photos is a lot for an in-browser build — expect a long run, and keep this tab in the foreground.
+            {photos.length} photos: {plan.notes.join(', ')} so the build fits in browser memory.
+          </div>
+        )}
+        {photos.length > 250 && (
+          <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 6 }}>
+            Large captures run for a long time. Leave this tab open and awake — the build lives in the page, so closing
+            it stops the work. Progress and time remaining are shown on the Model tab while it runs.
           </div>
         )}
       </div>
@@ -845,10 +928,19 @@ const checkRow = { display: 'flex', gap: 8, alignItems: 'flex-start', fontFamily
 /* ── model tab ─────────────────────────────────────────────────────── */
 function ModelTab({
   mob, run, result, onCancel, onBuild, viewMode, setViewMode, ptSize, setPtSize,
-  showCams, setShowCams, viewerRef, onSave, saveState, baseName, exports, onScale,
+  showCams, setShowCams, viewerRef, onSave, saveState, savedAt, baseName, exports, onScale,
 }) {
   const logRef = useRef(null);
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [run && run.log && run.log.length]);
+  // the worker only posts a few times a second; tick locally so the clock and
+  // the countdown keep moving between messages
+  const [, tick] = useState(0);
+  const live = !!(run && run.stage !== 'done' && run.stage !== 'error');
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => tick((v) => v + 1), 1000);
+    return () => clearInterval(id);
+  }, [live]);
 
   if (!result && !run) {
     return (
@@ -867,17 +959,28 @@ function ModelTab({
     <div style={{ display: 'grid', gap: 16 }}>
       {run && (
         <div style={card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
             <div style={{ fontFamily: BBF, fontSize: 18, letterSpacing: 1.5 }}>
-              {run.stage === 'error' ? 'BUILD FAILED' : run.stage === 'done' ? 'BUILD COMPLETE' : 'BUILDING…'}
+              {run.stage === 'error' ? 'BUILD FAILED' : run.stage === 'done' ? 'BUILD COMPLETE' : 'BUILDING MODEL'}
+            </div>
+            <div style={{ fontFamily: BBF, fontSize: 34, letterSpacing: 1, color: ORANGE, lineHeight: 1 }}>
+              {Math.round((run.pct || 0) * 100)}%
+            </div>
+            <div style={{ fontFamily: NBF, fontSize: 13, color: CREAM }}>
+              {running
+                ? (run.etaMs != null ? fmtTime(Math.max(0, run.etaMs - (Date.now() - (run.at || run.startedAt)))) + ' remaining' : 'estimating…')
+                : run.stage === 'done' ? 'finished in ' + fmtTime((run.finishedAt || Date.now()) - run.startedAt) : ''}
             </div>
             <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>
-              {Math.round((run.pct || 0) * 100)}% · elapsed {fmtTime((run.finishedAt || Date.now()) - run.startedAt)}
+              elapsed {fmtTime((run.finishedAt || Date.now()) - run.startedAt)}
+              {run.stageLabel ? ' · ' + run.stageLabel : ''}
+              {run.units ? ' ' + Math.min(run.done, run.units) + '/' + run.units : ''}
             </div>
             {running && <button style={{ ...ghostSm, marginLeft: 'auto', borderColor: 'rgba(239,68,68,.4)', color: '#fca5a5' }} onClick={onCancel}>Stop</button>}
           </div>
           <Bar pct={run.pct || 0} />
           <div style={{ fontFamily: NBF, fontSize: 13, color: CREAM, marginTop: 8 }}>{run.msg}</div>
+          {run.note && <div style={{ fontFamily: NBF, fontSize: 12, color: '#fcd34d', marginTop: 4 }}>{run.note}</div>}
           {!!(run.log && run.log.length) && (
             <div ref={logRef} style={{
               marginTop: 10, maxHeight: 120, overflow: 'auto', background: 'rgba(0,0,0,.35)', border: '1px solid ' + LINE,
@@ -967,9 +1070,19 @@ function ModelTab({
                 PLY and OBJ open in CloudCompare, Meshlab, Recap and Civil 3D. GLB drops straight into the Task Tracker
                 3D view and any web viewer.
               </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <button style={btn} onClick={onSave} disabled={!!saveState}>{saveState || 'Save to this capture'}</button>
-                <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>Saved models are visible to everyone with portal access.</span>
+                {savedAt && (
+                  <span style={{ fontFamily: NBF, fontSize: 12, color: GREEN }}>
+                    Last saved {new Date(savedAt.at).toLocaleTimeString()} · {Math.round(savedAt.points).toLocaleString()} points · {fmtBytes(savedAt.bytes)}
+                  </span>
+                )}
+                <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>
+                  Visible to everyone with portal access.
+                  {s.densePoints > SAVED_POINT_CAP
+                    ? ' Saved copies are thinned to ' + (SAVED_POINT_CAP / 1e6).toFixed(1) + 'M points — export above for the full cloud.'
+                    : ''}
+                </span>
               </div>
             </div>
           </div>

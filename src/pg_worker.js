@@ -1,23 +1,28 @@
 /* pg_worker.js — the reconstruction engine, off the main thread.
    Decodes the uploaded photos, extracts features, matches them, runs
    structure-from-motion, then multi-view stereo, then a surface grid, and
-   posts progress the whole way. Everything runs in the browser: no upload of
-   imagery to a third-party service, no server-side compute. */
+   reports progress with an estimated time remaining the whole way.
+
+   Everything runs in the browser: no imagery is sent to a third-party service
+   and no server-side compute is involved. That puts memory and time squarely
+   in one tab, so the pipeline is written to stream — bounded caches for
+   decoded images and depth maps, and a voxel grid that folds points in as
+   they are produced rather than collecting tens of millions of them first. */
 
 import { toGray, detectAndDescribe, matchDescriptors, imageSignature, signatureScore } from './pg_features.js';
 import { reconstruct, cameraCentre } from './pg_sfm.js';
 import {
-  analyseViews, computeDepthMap, medianFilterDepth, fuseDepthMaps, sampleSpacing,
-  voxelDownsample, removeOutliers, buildSurfaceGrid,
+  analyseViews, computeDepthMap, medianFilterDepth, packDepth, fuseView, createVoxelGrid,
+  buildSurfaceGrid,
 } from './pg_dense.js';
 import { parseExif, focalPixels, defaultFocal, gpsToEnu } from './pg_exif.js';
 import { umeyama, mat3Vec, median } from './pg_math.js';
-import { PRESETS } from './pg_presets.js';
+import { PRESETS, adaptSettings, pointBudget } from './pg_presets.js';
+import { createProgress, priorCosts } from './pg_progress.js';
 
 let cancelled = false;
 
 const post = (msg, transfer) => self.postMessage(msg, transfer || []);
-const progress = (stage, pct, msg) => post({ type: 'progress', stage: stage, pct: Math.max(0, Math.min(1, pct)), msg: msg });
 function checkCancel() { if (cancelled) throw new Error('__cancelled__'); }
 
 /* ── image decoding ────────────────────────────────────────────────── */
@@ -57,7 +62,7 @@ async function decode(buf, maxDim) {
 
 /* Keeps a handful of decoded images alive during the dense pass; every view
    needs itself plus its neighbours, and re-decoding costs far less than
-   holding a hundred full-resolution buffers in memory. */
+   holding hundreds of full-resolution buffers in memory. */
 function makeCache(limit, maxDim) {
   const map = new Map();
   return {
@@ -75,19 +80,75 @@ function makeCache(limit, maxDim) {
   };
 }
 
+/* Order the views so a view's stereo partners are processed close to it. The
+   dense pass then only needs a small window of depth maps in memory at once. */
+function traversalOrder(usable, info) {
+  const inSet = new Set(usable);
+  const seen = new Set();
+  const order = [];
+  const remaining = usable.slice().sort((a, b) => (info[b].support || 0) - (info[a].support || 0));
+  for (const seed of remaining) {
+    if (seen.has(seed)) continue;
+    const queue = [seed];
+    seen.add(seed);
+    while (queue.length) {
+      const v = queue.shift();
+      order.push(v);
+      for (const nb of info[v].neighbours) {
+        if (!inSet.has(nb) || seen.has(nb)) continue;
+        seen.add(nb); queue.push(nb);
+      }
+    }
+  }
+  return order;
+}
+
 /* ── the pipeline ──────────────────────────────────────────────────── */
 
 async function build(job) {
   const photos = job.photos || [];
+  const N = photos.length;
   const preset = PRESETS[job.quality] || PRESETS.balanced;
-  const opt = Object.assign({}, preset, job.overrides || {});
-  if (photos.length < 3) throw new Error('at least 3 photos are needed — 15 to 60 with plenty of overlap works best');
+  if (N < 3) throw new Error('at least 3 photos are needed — 20 to 600 with plenty of overlap is the useful range');
+  if (N > 900) throw new Error(N + ' photos is beyond what a browser tab can hold; split the site into two captures');
+
+  const adapted = adaptSettings(preset, N);
+  const opt = Object.assign({}, adapted.opt, job.overrides || {});
+  const costs = priorCosts(opt, N);
+  const estPairs = Math.min(N * (N - 1) / 2, N * (opt.candidates + 2));
+
+  const progress = createProgress([
+    { key: 'features', label: 'Reading photos', units: N, cost: costs.features },
+    { key: 'matching', label: 'Matching photos', units: estPairs, cost: costs.matching },
+    { key: 'verify', label: 'Checking geometry', units: estPairs, cost: costs.verify },
+    { key: 'register', label: 'Placing cameras', units: N, cost: costs.register },
+    { key: 'bundle', label: 'Refining the solution', units: 10, cost: costs.bundle },
+    { key: 'dense', label: 'Building depth maps', units: opt.dense ? N : 0, cost: costs.dense },
+    { key: 'fuse', label: 'Fusing the point cloud', units: opt.dense ? N : 0, cost: costs.fuse },
+    { key: 'mesh', label: 'Building the surface', units: job.mesh === false ? 0 : 1, cost: costs.mesh },
+  ]);
+
+  let lastPost = 0;
+  const say = (key, msg, force) => {
+    const now = Date.now();
+    if (!force && now - lastPost < 350) return;
+    lastPost = now;
+    const snap = progress.snapshot(key);
+    post({ type: 'progress', msg: msg, stage: snap.stage, stageLabel: snap.stageLabel, pct: snap.pct,
+      etaMs: snap.etaMs, elapsedMs: snap.elapsedMs, done: snap.done, units: snap.units });
+  };
+
+  if (adapted.notes.length) {
+    post({ type: 'note', message: N + ' photos: ' + adapted.notes.join(', ') + ' so the build fits in browser memory.' });
+  }
 
   /* 1 — decode + features */
+  progress.begin('features');
   const feats = [], meta = [];
-  for (let i = 0; i < photos.length; i++) {
+  let totalFeatures = 0;
+  for (let i = 0; i < N; i++) {
     checkCancel();
-    progress('features', 0.02 + 0.22 * (i / photos.length), 'Reading ' + photos[i].name + ' (' + (i + 1) + '/' + photos.length + ')');
+    say('features', 'Reading ' + photos[i].name + ' (' + (i + 1) + '/' + N + ')');
     const buf = await fetchPhoto(photos[i]);
     // stored working copies are re-encoded and carry no EXIF, so fall back to
     // the values captured at upload time
@@ -96,65 +157,108 @@ async function build(job) {
       ? embedded : Object.assign({}, photos[i].exif || {}, embedded || {});
     const img = await decode(buf, opt.maxDim);
     const gray = toGray(img.rgba, img.w, img.h);
-    const f = detectAndDescribe(gray, img.w, img.h, {
-      maxFeatures: opt.features, fastThreshold: opt.fastThreshold,
-    });
+    const f = detectAndDescribe(gray, img.w, img.h, { maxFeatures: opt.features, fastThreshold: opt.fastThreshold });
     const fp = focalPixels(exif, img.w, img.h);
+    totalFeatures += f.count;
     feats.push({ kps: f.kps, desc: f.desc, count: f.count, sig: imageSignature(gray, img.w, img.h) });
     meta.push({
       id: photos[i].id, name: photos[i].name, w: img.w, h: img.h, exif: exif,
       focal: fp ? fp.f : defaultFocal(img.w, img.h), focalSource: fp ? fp.source : 'assumed 62° field of view',
       hasExifFocal: !!fp,
     });
+    progress.tick('features', i + 1);
   }
+  progress.finish('features');
+  // the photos just told us how fast this machine actually is
+  progress.calibrate('features');
   const noExifFocal = meta.filter((m) => !m.hasExifFocal).length;
-  progress('features', 0.24, 'Found ' + meta.reduce((a, _, i) => a + feats[i].count, 0).toLocaleString() + ' features across ' + photos.length + ' photos');
+  say('features', 'Found ' + totalFeatures.toLocaleString() + ' features across ' + N + ' photos', true);
 
-  /* 2 — decide which pairs to match: thumbnail similarity plus capture order */
+  /* 2 — decide which pairs to match.
+     Where the photos carry GPS — every drone survey — the flight geometry says
+     exactly which frames overlap, which beats guessing from thumbnails and is
+     the difference between a well-connected network and a drifting one on a
+     large site. Thumbnail similarity is the fallback for handheld sets, and
+     capture order is always included. */
   checkCancel();
-  const N = photos.length;
+  const gpsRef = meta.find((m) => m.exif && m.exif.lat != null);
+  const enu = meta.map((m) => (m.exif && m.exif.lat != null && gpsRef
+    ? gpsToEnu(m.exif.lat, m.exif.lon, m.exif.alt || 0, { lat: gpsRef.exif.lat, lon: gpsRef.exif.lon, alt: gpsRef.exif.alt || 0 })
+    : null));
+  const withGps = enu.filter(Boolean).length;
+  const useGps = withGps >= N * 0.6 && withGps >= 3;
+  const kCand = useGps ? Math.max(opt.candidates, 8) : opt.candidates;
   const wanted = new Map();
+  const ranked = new Array(N - 1);
   for (let i = 0; i < N; i++) {
-    const ranked = [];
-    for (let j = 0; j < N; j++) if (j !== i) ranked.push([j, signatureScore(feats[i].sig, feats[j].sig)]);
-    ranked.sort((a, b) => b[1] - a[1]);
-    const cand = new Set(ranked.slice(0, opt.candidates).map((r) => r[0]));
+    let r = 0;
+    if (useGps && enu[i]) {
+      for (let j = 0; j < N; j++) {
+        if (j === i || !enu[j]) continue;
+        const d = Math.hypot(enu[i][0] - enu[j][0], enu[i][1] - enu[j][1], (enu[i][2] - enu[j][2]) * 0.5);
+        ranked[r++] = [j, -d];                       // nearest first
+      }
+    } else {
+      for (let j = 0; j < N; j++) if (j !== i) ranked[r++] = [j, signatureScore(feats[i].sig, feats[j].sig)];
+    }
+    const slice = ranked.slice(0, r).sort((a, b) => b[1] - a[1]);
+    const cand = new Set();
+    for (let k = 0; k < Math.min(kCand, slice.length); k++) cand.add(slice[k][0]);
     for (let d = 1; d <= 2; d++) { if (i + d < N) cand.add(i + d); if (i - d >= 0) cand.add(i - d); }
     for (const j of cand) {
-      const key = Math.min(i, j) + ',' + Math.max(i, j);
+      const key = Math.min(i, j) * 100000 + Math.max(i, j);
       if (!wanted.has(key)) wanted.set(key, [Math.min(i, j), Math.max(i, j)]);
     }
   }
   const pairList = [...wanted.values()];
+  post({ type: 'note', message: (useGps
+    ? 'Photo pairs chosen from GPS positions (' + withGps + ' tagged photos)'
+    : 'Photo pairs chosen from image similarity and capture order') + ': ' + pairList.length.toLocaleString() + ' to check.' });
+  progress.setUnits('matching', pairList.length);
+  progress.setUnits('verify', pairList.length);
+  progress.begin('matching');
   const pairs = [];
   for (let k = 0; k < pairList.length; k++) {
     checkCancel();
     const [a, b] = pairList[k];
     const m = matchDescriptors(feats[a].desc, feats[a].count, feats[b].desc, feats[b].count, {});
     if (m.length >= 40) pairs.push({ i: a, j: b, matches: m });
-    if (k % 5 === 0 || k === pairList.length - 1) {
-      progress('matching', 0.25 + 0.18 * ((k + 1) / pairList.length), 'Matching image pairs ' + (k + 1) + '/' + pairList.length + ' (' + pairs.length + ' usable)');
-    }
+    progress.tick('matching', k + 1);
+    say('matching', 'Matching photo pairs ' + (k + 1) + '/' + pairList.length + ' — ' + pairs.length + ' usable');
   }
+  progress.finish('matching');
   if (pairs.length < 2) throw new Error('the photos do not overlap enough to match — aim for 60-80% overlap between consecutive shots');
+  // descriptors are the biggest thing held so far; the geometry stage only
+  // needs keypoints from here on
+  for (const f of feats) { f.desc = null; f.sig = null; }
 
   /* 3 — structure from motion */
   checkCancel();
+  progress.begin('verify');
+  const phase = {};                       // stages already entered, so timing windows are not restarted
   const images = meta.map((m, i) => ({ w: m.w, h: m.h, f: m.focal, cx: m.w / 2, cy: m.h / 2, kps: feats[i].kps }));
   const rec = reconstruct(images, pairs, {
     seed: 20240611,
     thresholdPx: 3,
-    refineFocal: job.refineFocal != null ? job.refineFocal : noExifFocal > photos.length / 2,
+    maxTracks: N > 200 ? 600000 : 400000,
+    refineFocal: job.refineFocal != null ? job.refineFocal : noExifFocal > N / 2,
+    shouldStop: () => cancelled,
     onProgress: (stage, pct, msg) => {
-      const base = stage === 'verify' ? 0.43 : stage === 'register' ? 0.5 : 0.58;
-      const span = stage === 'verify' ? 0.07 : stage === 'register' ? 0.08 : 0.04;
-      progress('sparse', base + span * pct, msg);
+      if (stage === 'verify') { progress.tick('verify', Math.round(pct * pairList.length)); say('verify', msg); }
+      else if (stage === 'register') {
+        if (!phase.register) { progress.finish('verify'); progress.begin('register'); phase.register = 1; }
+        progress.tick('register', Math.round(pct * N)); say('register', msg);
+      } else if (stage === 'bundle') {
+        if (!phase.bundle) { progress.finish('register'); progress.begin('bundle'); phase.bundle = 1; }
+        progress.tick('bundle', Math.round(pct * 10)); say('bundle', msg);
+      } else say(phase.register ? 'register' : 'verify', msg);
     },
   });
+  progress.finish('bundle');
   if (rec.stats.error) throw new Error(rec.stats.error);
   const registered = rec.cams.map((c, i) => (c ? i : -1)).filter((i) => i >= 0);
-  if (registered.length < 3) throw new Error('only ' + registered.length + ' photos could be placed — try more overlap or a slower orbit around the subject');
-  progress('sparse', 0.62, 'Placed ' + registered.length + '/' + N + ' cameras, ' + rec.points.length.toLocaleString() + ' tie points');
+  if (registered.length < 3) throw new Error('only ' + registered.length + ' photos could be placed — try more overlap or a slower pass over the subject');
+  say('bundle', 'Placed ' + registered.length + '/' + N + ' cameras · ' + rec.points.length.toLocaleString() + ' tie points', true);
 
   /* 4 — georeference from EXIF GPS when the flight recorded it, otherwise the
      model is metrically correct only up to a single unknown scale */
@@ -171,61 +275,119 @@ async function build(job) {
         return Math.hypot(q[0] * fit.s + fit.t[0] - dst[k][0], q[1] * fit.s + fit.t[1] - dst[k][1], q[2] * fit.s + fit.t[2] - dst[k][2]);
       });
       geo = { fit: fit, ref: ref, rms: median(resid), cameras: gpsCams.length };
-      progress('georef', 0.64, 'Georeferenced from ' + gpsCams.length + ' GPS tags (±' + geo.rms.toFixed(1) + ' m on camera positions)');
+      say('bundle', 'Georeferenced from ' + gpsCams.length + ' GPS tags (±' + geo.rms.toFixed(1) + ' m on camera positions)', true);
     }
   }
 
-  /* 5 — dense stereo */
+  /* 5 — dense stereo, streamed straight into a voxel grid */
   const info = analyseViews(rec.cams, rec.points, { neighbours: opt.neighbours });
-  let dense = null, spacing = 0;
-  const denseViews = [];
+  let cloud = null, spacing = 0, voxelUsed = 0;
   if (opt.dense) {
-    const cache = makeCache(Math.max(4, opt.neighbours + 3), opt.maxDim);
     const usable = registered.filter((i) => info[i] && info[i].neighbours.length >= 2);
     if (!usable.length) throw new Error('no view has enough stereo partners for a dense model — try the Draft preset');
-    for (let k = 0; k < usable.length; k++) {
+    progress.setUnits('dense', usable.length);
+    progress.setUnits('fuse', usable.length);
+    progress.begin('dense');
+
+    const order = traversalOrder(usable, info);
+    const imgCache = makeCache(Math.max(5, opt.neighbours + 4), opt.maxDim);
+    const depthCache = new Map();                     // view index → packed view
+    const lag = Math.min(10, Math.max(3, opt.neighbours + 2));
+    const depthCap = lag * 3 + 6;
+
+    const spacings = [];
+    for (const i of usable) spacings.push(opt.denseStride * info[i].medianDepth / images[i].f);
+    spacing = median(spacings) || 0;
+    // one voxel per sample step: fusion already requires two views to agree on
+    // the surface geometrically, so there is nothing to gain from merging more
+    // aggressively, and coarser voxels only cost detail. The grid coarsens
+    // itself if the point budget is reached.
+    const grid = createVoxelGrid({ voxel: Math.max(spacing, 1e-9), budget: pointBudget(N) });
+
+    const fuseAt = (idx) => {
+      const v = depthCache.get(idx);
+      if (!v || !v.packed || v.fused) return;
+      // check against the view's own stereo partners first, then anything else
+      // still in the cache: a surface point is often confirmed by a view that
+      // is not in this view's top-k list, and dropping those costs coverage
+      const seenIds = new Set([idx]);
+      const nbs = [];
+      for (const j of info[idx].neighbours) {
+        const d = depthCache.get(j);
+        if (d && d.packed && !seenIds.has(j)) { nbs.push(d); seenIds.add(j); }
+      }
+      for (const [j, d] of depthCache) {
+        if (seenIds.has(j) || !d.packed) continue;
+        nbs.push(d); seenIds.add(j);
+      }
+      fuseView(v, nbs, grid, {
+        consistency: opt.denseStride <= 2 ? 2 : 1,
+        searchRadius: opt.denseStride * 2,
+      });
+      // keep the samples until this view is evicted: a depth map that has been
+      // fused is still the evidence that confirms its neighbours
+      v.fused = true;
+    };
+
+    let fused = 0;
+    for (let k = 0; k < order.length; k++) {
       checkCancel();
-      const i = usable[k];
-      progress('dense', 0.65 + 0.26 * (k / usable.length), 'Depth map ' + (k + 1) + '/' + usable.length + ' — ' + meta[i].name);
-      const refImg = await cache.get(photos[i]);
+      const i = order[k];
+      say('dense', 'Depth map ' + (k + 1) + '/' + order.length + ' — ' + meta[i].name);
+      const refImg = await imgCache.get(photos[i]);
       const ref = {
-        gray: refImg.gray, rgb: refImg.rgba, w: refImg.w, h: refImg.h,
+        gray: refImg.gray, w: refImg.w, h: refImg.h,
         f: images[i].f, cx: images[i].cx, cy: images[i].cy,
         R: rec.cams[i].R, t: rec.cams[i].t, dmin: info[i].dmin, dmax: info[i].dmax,
-        medianDepth: info[i].medianDepth,
       };
       const nbs = [];
       for (const j of info[i].neighbours) {
-        const im = await cache.get(photos[j]);
+        const im = await imgCache.get(photos[j]);
         nbs.push({ gray: im.gray, w: im.w, h: im.h, f: images[j].f, cx: images[j].cx, cy: images[j].cy, R: rec.cams[j].R, t: rec.cams[j].t });
       }
       const dm = computeDepthMap(ref, nbs, { stride: opt.denseStride, samples: opt.denseSamples, minScore: opt.minScore });
-      ref.depth = medianFilterDepth(dm.depth, ref.w, ref.h, opt.denseStride);
-      denseViews.push(ref);
+      const filtered = medianFilterDepth(dm.depth, ref.w, ref.h, opt.denseStride);
+      depthCache.set(i, {
+        packed: packDepth(filtered, ref.w, ref.h, opt.denseStride, ref.dmin, ref.dmax, refImg.rgba),
+        w: ref.w, h: ref.h, f: ref.f, cx: ref.cx, cy: ref.cy, R: ref.R, t: ref.t,
+      });
+      progress.tick('dense', k + 1);
+
+      // fuse a few views behind the front, by which time their neighbours have
+      // depth maps too, then drop the oldest entries
+      if (k >= lag) { fuseAt(order[k - lag]); progress.tick('fuse', ++fused); }
+      while (depthCache.size > depthCap) {
+        const oldest = depthCache.keys().next().value;
+        if (oldest === undefined) break;
+        depthCache.delete(oldest);
+      }
     }
-    cache.clear();
-    checkCancel();
-    progress('dense', 0.92, 'Fusing ' + denseViews.length + ' depth maps');
-    const fused = fuseDepthMaps(denseViews, {
-      consistency: opt.denseStride <= 2 ? 2 : 1,
-      searchRadius: opt.denseStride,
-      maxPoints: job.maxPoints || 6000000,
-    });
-    spacing = sampleSpacing(denseViews, opt.denseStride) || 0;
-    let cloud = fused;
-    if (spacing > 0) {
-      cloud = voxelDownsample(cloud.positions, cloud.colors, spacing * 0.9);
-      progress('dense', 0.94, 'Cleaning ' + (cloud.positions.length / 3).toLocaleString() + ' points');
-      cloud = removeOutliers(cloud.positions, cloud.colors, spacing * 3, 5);
+    progress.finish('dense');
+    progress.begin('fuse');
+    for (let k = Math.max(0, order.length - lag); k < order.length; k++) {
+      checkCancel();
+      fuseAt(order[k]);
+      progress.tick('fuse', ++fused);
+      say('fuse', 'Fusing depth maps ' + fused + '/' + order.length);
     }
-    dense = cloud;
+    imgCache.clear(); depthCache.clear();
+    say('fuse', 'Cleaning ' + grid.size.toLocaleString() + ' points', true);
+    cloud = grid.finish(1);
+    voxelUsed = cloud.voxel;
+    progress.finish('fuse');
   }
 
-  /* 6 — point cloud in world units, then the surface grid */
+  /* 6 — point cloud in world units */
   checkCancel();
-  let positions = dense ? dense.positions : Float32Array.from(rec.points.flatMap((p) => p.X));
-  let colors = dense ? dense.colors : new Uint8Array((positions.length / 3) * 3).fill(190);
-  if (!dense) {
+  let positions, colors;
+  if (cloud) {
+    positions = cloud.positions; colors = cloud.colors;
+  } else {
+    positions = new Float32Array(rec.points.length * 3);
+    colors = new Uint8Array(rec.points.length * 3).fill(190);
+    for (let i = 0; i < rec.points.length; i++) {
+      positions[i * 3] = rec.points[i].X[0]; positions[i * 3 + 1] = rec.points[i].X[1]; positions[i * 3 + 2] = rec.points[i].X[2];
+    }
     // colour the sparse cloud from the first photo that saw each point
     const cache = makeCache(3, Math.min(900, opt.maxDim));
     const byCam = new Map();
@@ -234,11 +396,15 @@ async function build(job) {
       let a = byCam.get(ob.cam); if (!a) { a = []; byCam.set(ob.cam, a); }
       a.push([pi, ob]);
     });
+    let done = 0;
     for (const [ci, list] of byCam) {
       checkCancel();
+      say('fuse', 'Colouring points ' + (++done) + '/' + byCam.size);
       const im = await cache.get(photos[ci]);
+      const sx = im.w / images[ci].w, sy = im.h / images[ci].h;
       for (const [pi, ob] of list) {
-        const px = Math.round(ob.x * images[ci].f + images[ci].cx), py = Math.round(ob.y * images[ci].f + images[ci].cy);
+        const px = Math.round((ob.x * images[ci].f + images[ci].cx) * sx);
+        const py = Math.round((ob.y * images[ci].f + images[ci].cy) * sy);
         if (px < 0 || py < 0 || px >= im.w || py >= im.h) continue;
         const o = (py * im.w + px) * 4;
         colors[pi * 3] = im.rgba[o]; colors[pi * 3 + 1] = im.rgba[o + 1]; colors[pi * 3 + 2] = im.rgba[o + 2];
@@ -266,25 +432,31 @@ async function build(job) {
       const q = mat3Vec(R, c.C);
       c.C = [q[0] * s + t[0], q[1] * s + t[1], q[2] * s + t[2]];
     }
-    spacing *= s;
+    spacing *= s; voxelUsed *= s;
     units = 'metres (east / north / up)';
   }
 
   let mesh = null, ortho = null;
   if (job.mesh !== false && positions.length / 3 > 500) {
     checkCancel();
-    progress('mesh', 0.96, 'Building the surface model');
+    progress.begin('mesh');
+    say('mesh', 'Building the surface model', true);
     const viewpoint = [0, 1, 2].map((k) => camList.reduce((a, c) => a + c.C[k], 0) / camList.length);
     const surf = buildSurfaceGrid(positions, colors, {
       viewpoint: viewpoint,
       up: geo && geo.fit && geo.fit.R ? [0, 0, 1] : null,      // georeferenced clouds already have gravity
+      // size the cell from the sampling interval rather than the average point
+      // density: points cluster on texture and leave gaps on flat colour, and a
+      // density-derived cell punches those gaps straight through the surface
+      cell: spacing > 0 ? spacing * 2 : null,
       density: job.meshDensity || 1.4,
-      maxCells: opt.maxDim >= 2000 ? 1800 : 1200,
+      maxCells: N > 200 ? 1800 : opt.maxDim >= 2000 ? 1800 : 1200,
     });
     if (surf && surf.triangles > 0) {
       mesh = { positions: surf.positions, colors: surf.colors, indices: surf.indices, triangles: surf.triangles };
       ortho = { rgba: surf.grid.rgba, w: surf.grid.w, h: surf.grid.h, cell: surf.grid.cell };
     }
+    progress.finish('mesh');
   }
 
   const result = {
@@ -303,12 +475,15 @@ async function build(job) {
       focalPx: images[0].f,
       focalSource: meta[0].focalSource,
       focalRefined: rec.stats.focalScale !== 1 ? rec.stats.focalScale : null,
-      spacing: spacing,
+      spacing: voxelUsed || spacing,
       units: units,
       georeferenced: !!(geo && geo.fit && geo.fit.R),
       geoRms: geo && geo.rms != null ? geo.rms : null,
       geoRef: geo && geo.ref ? geo.ref : null,
       quality: job.quality || 'balanced',
+      adapted: adapted.notes,
+      bundle: rec.stats.globalBundle,
+      buildMs: progress.snapshot().elapsedMs,
       unregistered: meta.filter((m, i) => !rec.cams[i]).map((m) => m.name),
     },
   };
@@ -316,7 +491,7 @@ async function build(job) {
   const transfer = [result.positions.buffer, result.colors.buffer];
   if (mesh) transfer.push(mesh.positions.buffer, mesh.colors.buffer, mesh.indices.buffer);
   if (ortho) transfer.push(ortho.rgba.buffer);
-  progress('done', 1, 'Model complete');
+  say('mesh', 'Model complete', true);
   post({ type: 'done', result: result }, transfer);
 }
 

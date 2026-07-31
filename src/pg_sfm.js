@@ -634,9 +634,17 @@ export function bundleAdjustLM(cams, points, opts) {
   const hub = o.huberPx || 2.5;
   const maxIters = o.iters || 12;
 
+  // opts.freeSet restricts optimisation to a window of cameras: everything
+  // outside it is held fixed, which is what keeps refinement affordable while
+  // a few hundred photos are being registered one at a time
+  const freeSet = o.freeSet || null;
   const camIndex = new Int32Array(cams.length).fill(-1);
   let nFree = 0;
-  for (let i = 0; i < cams.length; i++) if (cams[i] && !cams[i].fixed) camIndex[i] = nFree++;
+  for (let i = 0; i < cams.length; i++) {
+    if (!cams[i] || cams[i].fixed) continue;
+    if (freeSet && !freeSet.has(i)) continue;
+    camIndex[i] = nFree++;
+  }
   const m = 6 * nFree + (refineF ? 1 : 0);
   if (m === 0 || !points.length) return { k: 1, reprojPx: meanReprojError(cams, points) * (focals ? focals[0] : 1), iters: 0 };
   const fIdx = 6 * nFree;
@@ -869,76 +877,159 @@ export function meanReprojError(cams, points) {
 /* Union–find over (image, feature) nodes; verified pairwise matches are
    merged into multi-view tracks. Tracks with two features in one image are
    dropped as inconsistent. */
-export function buildTracks(featCounts, pairs) {
-  const offsets = new Int32Array(featCounts.length + 1);
-  for (let i = 0; i < featCounts.length; i++) offsets[i + 1] = offsets[i] + featCounts[i];
-  const total = offsets[featCounts.length];
+export function buildTracks(featCounts, pairs, opts) {
+  const o = opts || {};
+  const nImg = featCounts.length;
+  const offsets = new Int32Array(nImg + 1);
+  for (let i = 0; i < nImg; i++) offsets[i + 1] = offsets[i] + featCounts[i];
+  const total = offsets[nImg];
   const parent = new Int32Array(total);
   for (let i = 0; i < total; i++) parent[i] = i;
+  const rank = new Uint8Array(total);
   function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
-  function union(a, b) { a = find(a); b = find(b); if (a !== b) parent[b] = a; }
+  function union(a, b) {
+    a = find(a); b = find(b);
+    if (a === b) return;
+    if (rank[a] < rank[b]) { const t = a; a = b; b = t; }
+    parent[b] = a;
+    if (rank[a] === rank[b]) rank[a]++;
+  }
   for (const pr of pairs) {
-    const m = pr.matches;
-    for (let k = 0; k < m.length; k += 2) union(offsets[pr.i] + m[k], offsets[pr.j] + m[k + 1]);
+    const m = pr.matches, oi = offsets[pr.i], oj = offsets[pr.j];
+    for (let k = 0; k < m.length; k += 2) union(oi + m[k], oj + m[k + 1]);
   }
-  const groups = new Map();
-  for (let i = 0; i < total; i++) {
-    const r = find(i);
-    let g = groups.get(r); if (!g) { g = []; groups.set(r, g); }
-    g.push(i);
-  }
-  const tracks = [];
-  for (const g of groups.values()) {
-    if (g.length < 2) continue;
-    const seen = new Set(); let bad = false;
-    const members = [];
-    for (const node of g) {
-      // binary search for the image owning this node
-      let lo = 0, hi = featCounts.length - 1, img = 0;
-      while (lo <= hi) { const mid = (lo + hi) >> 1; if (offsets[mid] <= node) { img = mid; lo = mid + 1; } else hi = mid - 1; }
-      if (seen.has(img)) { bad = true; break; }
-      seen.add(img);
-      members.push([img, node - offsets[img]]);
+
+  /* Group by root with counting sorts over typed arrays. A Map of arrays
+     would allocate one JS array per track — at 600 photos that is millions of
+     objects and gigabytes of heap. */
+  const root = new Int32Array(total);
+  const size = new Int32Array(total);
+  for (let i = 0; i < total; i++) { const r = find(i); root[i] = r; size[r]++; }
+
+  const minLen = Math.max(2, o.minLength || 2);
+  const maxTracks = o.maxTracks || 0;
+  // longest tracks first when a cap applies: they are the best constrained
+  let keepRoot = null;
+  if (maxTracks) {
+    const LEN_CAP = 64;
+    const hist = new Int32Array(LEN_CAP + 1);
+    for (let i = 0; i < total; i++) if (root[i] === i && size[i] >= minLen) hist[Math.min(LEN_CAP, size[i])]++;
+    let budget = maxTracks, cutoff = LEN_CAP;
+    for (let L = LEN_CAP; L >= minLen; L--) {
+      if (hist[L] <= budget) { budget -= hist[L]; cutoff = L; }
+      else { cutoff = L; break; }
     }
-    if (bad || members.length < 2) continue;
-    tracks.push(members);
+    keepRoot = { cutoff: cutoff, budget: budget };
   }
-  return tracks;
+
+  const trackOf = new Int32Array(total).fill(-1);
+  let nTracks = 0, partial = keepRoot ? keepRoot.budget : 0;
+  for (let i = 0; i < total; i++) {
+    if (root[i] !== i || size[i] < minLen) continue;
+    if (keepRoot) {
+      const L = Math.min(64, size[i]);
+      if (L < keepRoot.cutoff) continue;
+      if (L === keepRoot.cutoff) { if (partial <= 0) continue; partial--; }
+    }
+    trackOf[i] = nTracks++;
+  }
+
+  const counts = new Int32Array(nTracks);
+  for (let i = 0; i < total; i++) { const t = trackOf[root[i]]; if (t >= 0) counts[t]++; }
+  const start = new Int32Array(nTracks + 1);
+  for (let t = 0; t < nTracks; t++) start[t + 1] = start[t] + counts[t];
+  const cursor = Int32Array.from(start.subarray(0, nTracks));
+  const nodeImg = new Int32Array(start[nTracks]);
+  const nodeFeat = new Int32Array(start[nTracks]);
+  let img = 0;
+  for (let i = 0; i < total; i++) {
+    while (img + 1 < nImg && offsets[img + 1] <= i) img++;   // walk, never search
+    const t = trackOf[root[i]];
+    if (t < 0) continue;
+    const at = cursor[t]++;
+    nodeImg[at] = img; nodeFeat[at] = i - offsets[img];
+  }
+
+  /* A track must see each image at most once. Transitive closure over many
+     overlapping pairs inevitably pulls in a second feature from some image, so
+     keep the first observation per image rather than throwing the track away —
+     discarding them costs almost all of the data on a large survey. A track
+     whose conflicts dominate really is a bad merge, and that one is dropped.
+     Long tracks are trimmed as well: past a few dozen views the extra
+     observations add cost, not accuracy. */
+  const maxObs = Math.max(4, o.maxObservations || 40);
+  const seen = new Int32Array(nImg).fill(-1);
+  const keepNode = new Uint8Array(nodeImg.length);
+  const kept2 = new Int32Array(nTracks);
+  let kept = 0, totalNodes = 0;
+  for (let t = 0; t < nTracks; t++) {
+    let n = 0, dupes = 0;
+    for (let k = start[t]; k < start[t + 1]; k++) {
+      const im = nodeImg[k];
+      if (seen[im] === t) { dupes++; continue; }
+      seen[im] = t;
+      if (n >= maxObs) continue;
+      keepNode[k] = 1; n++;
+    }
+    const span = start[t + 1] - start[t];
+    if (n >= minLen && dupes <= span * 0.5) { kept2[t] = n; kept++; totalNodes += n; }
+    else { kept2[t] = 0; for (let k = start[t]; k < start[t + 1]; k++) keepNode[k] = 0; }
+  }
+  const start2 = new Int32Array(kept + 1);
+  const img2 = new Int32Array(totalNodes), feat2 = new Int32Array(totalNodes);
+  let w = 0, at = 0;
+  for (let t = 0; t < nTracks; t++) {
+    if (!kept2[t]) continue;
+    start2[w] = at;
+    for (let k = start[t]; k < start[t + 1]; k++) {
+      if (!keepNode[k]) continue;
+      img2[at] = nodeImg[k]; feat2[at] = nodeFeat[k]; at++;
+    }
+    w++;
+  }
+  start2[kept] = at;
+  return { count: kept, start: start2, img: img2, feat: feat2 };
 }
 
 /* ── incremental reconstruction ────────────────────────────────────── */
 
 /* images: [{ w, h, f, cx, cy, kps: Float32Array [x,y,...] }]
    pairs:  [{ i, j, matches: Int32Array }]  (raw putative matches)
-   opts:   { onProgress, thresholdPx, minTrack, seed, refineFocal }
-   Returns { cams, points, tracks, stats } — cams[i] is null when an image
-   could not be registered. */
+   opts:   { onProgress, thresholdPx, minTrack, maxTracks, seed, refineFocal,
+             localWindow, maxLMCameras, shouldStop }
+   Returns { cams, points, stats } — cams[i] is null when an image could not
+   be registered. Sized to run on hundreds of photos: tracks live in typed
+   arrays, the next view is chosen from running counters rather than a rescan,
+   and refinement during growth is windowed. */
 export function reconstruct(images, pairs, opts) {
   const o = opts || {};
   const rng = makeRng(o.seed || 12345);
   const report = o.onProgress || function () { };
+  const stop = o.shouldStop || function () { return false; };
   const thPx = o.thresholdPx || 3.0;
   const nImg = images.length;
 
   const focal = (i) => images[i].f;
-  const normPt = (i, fi) => {
-    const im = images[i];
-    return [(im.kps[fi * 2] - im.cx) / im.f, (im.kps[fi * 2 + 1] - im.cy) / im.f];
-  };
+  const normX = (i, fi) => (images[i].kps[fi * 2] - images[i].cx) / images[i].f;
+  const normY = (i, fi) => (images[i].kps[fi * 2 + 1] - images[i].cy) / images[i].f;
 
   /* 1 — geometric verification of every candidate pair */
   const verified = [];
   for (let pi = 0; pi < pairs.length; pi++) {
+    if (stop()) throw new Error('__cancelled__');
     const pr = pairs[pi];
     const m = pr.matches;
     const nM = m.length / 2;
+    report('verify', (pi + 1) / pairs.length, 'Verifying image pair ' + (pi + 1) + '/' + pairs.length);
     if (nM < 20) continue;
     const x1 = new Array(nM), x2 = new Array(nM);
-    for (let k = 0; k < nM; k++) { x1[k] = normPt(pr.i, m[2 * k]); x2[k] = normPt(pr.j, m[2 * k + 1]); }
+    for (let k = 0; k < nM; k++) {
+      x1[k] = [normX(pr.i, m[2 * k]), normY(pr.i, m[2 * k])];
+      x2[k] = [normX(pr.j, m[2 * k + 1]), normY(pr.j, m[2 * k + 1])];
+    }
     const th = thPx / ((focal(pr.i) + focal(pr.j)) / 2);
     const res = essentialRansac(x1, x2, th, rng, 700);
     const hom = homographyRansac(x1, x2, th, rng, 350);
-    report('verify', (pi + 1) / pairs.length, 'Verifying pair ' + (pi + 1) + '/' + pairs.length);
     const nE = res ? res.inliers.length : 0, nH = hom ? hom.count : 0;
     if (nE < 25 && nH < 25) continue;
     // Planar scenes — a solar field, a slab, a facade — are degenerate for the
@@ -950,32 +1041,34 @@ export function reconstruct(images, pairs, opts) {
     if (usesH && hom) { pose = decomposeH(hom.H, x1, x2, hom.inliers); inlierIdx = hom.inliers; }
     if (!pose && res) { pose = decomposeE(res.E, x1, x2, res.inliers); inlierIdx = res.inliers; }
     if (!pose || pose.good < 20 || !inlierIdx) continue;
-    // median parallax of the reconstructed inliers — a proxy for baseline
     const angles = [];
     const cB = cameraCentre(pose.R, pose.t);
     for (const X of pose.points) if (X) angles.push(parallaxAngle([0, 0, 0], cB, X) * 180 / Math.PI);
-    const medAng = median(angles);
     const inl = new Int32Array(inlierIdx.length * 2);
     for (let k = 0; k < inlierIdx.length; k++) { inl[2 * k] = m[2 * inlierIdx[k]]; inl[2 * k + 1] = m[2 * inlierIdx[k] + 1]; }
     verified.push({
       i: pr.i, j: pr.j, matches: inl, count: inlierIdx.length, planarity: planarity,
-      parallax: medAng, R: pose.R, t: pose.t, planar: !!usesH,
+      parallax: median(angles), R: pose.R, t: pose.t, planar: !!usesH,
     });
   }
-  if (!verified.length) return { cams: [], points: [], tracks: [], stats: { error: 'no geometrically consistent image pairs' } };
+  if (!verified.length) return { cams: [], points: [], stats: { error: 'no geometrically consistent image pairs' } };
 
-  /* 2 — tracks */
+  /* 2 — tracks, in compressed row form */
   const featCounts = images.map((im) => im.kps.length / 2);
-  const rawTracks = buildTracks(featCounts, verified);
   const minTrack = o.minTrack || 2;
-  const tracks = rawTracks.filter((t) => t.length >= minTrack);
-  report('tracks', 1, tracks.length + ' feature tracks');
+  const tr = buildTracks(featCounts, verified, { minLength: minTrack, maxTracks: o.maxTracks || 400000 });
+  const nTracks = tr.count;
+  report('tracks', 1, nTracks.toLocaleString() + ' feature tracks');
+  if (!nTracks) return { cams: [], points: [], stats: { error: 'no feature survived across enough images' } };
 
-  // index: image → [trackId, featIdx]
-  const byImage = Array.from({ length: nImg }, () => new Map());
-  for (let ti = 0; ti < tracks.length; ti++) for (const [img, fi] of tracks[ti]) byImage[img].set(fi, ti);
+  // per image: feature index → track id (−1 when the feature is in no track)
+  const trackOfFeat = new Array(nImg);
+  for (let i = 0; i < nImg; i++) trackOfFeat[i] = new Int32Array(featCounts[i]).fill(-1);
+  for (let t = 0; t < nTracks; t++) {
+    for (let k = tr.start[t]; k < tr.start[t + 1]; k++) trackOfFeat[tr.img[k]][tr.feat[k]] = t;
+  }
 
-  /* 3 — seed pair: many inliers, healthy parallax, not degenerate/planar */
+  /* 3 — seed pair: many inliers, healthy parallax */
   const scored = verified.map((v) => {
     let s = v.count;
     if (v.parallax < 2) s *= 0.05;              // pure rotation / tiny baseline
@@ -989,97 +1082,145 @@ export function reconstruct(images, pairs, opts) {
   cams[seed.i] = { R: eye3(), t: [0, 0, 0], fixed: true };
   cams[seed.j] = { R: seed.R, t: seed.t, fixed: false };
 
-  const pointOf = new Map();  // trackId → {X, obs:[{cam,x,y}]}
-  function obsFor(trackId) {
-    const out = [];
-    for (const [img, fi] of tracks[trackId]) {
-      if (!cams[img]) continue;
-      const p = normPt(img, fi);
-      out.push({ cam: img, x: p[0], y: p[1] });
+  const points = new Array(nTracks).fill(null);   // trackId → {X, obs}
+  let nPoints = 0;
+  // how many already-triangulated points each unregistered image can see —
+  // maintained incrementally so choosing the next view is O(images)
+  const visCount = new Int32Array(nImg);
+
+  function notePoint(t) {
+    for (let k = tr.start[t]; k < tr.start[t + 1]; k++) {
+      const im = tr.img[k];
+      if (!cams[im]) visCount[im]++;
     }
-    return out;
   }
-  function tryTriangulate(trackId, minAngleDeg) {
-    const obs = obsFor(trackId);
+  function tryTriangulate(t, minAngleDeg) {
+    if (points[t]) return false;
+    const obs = [];
+    for (let k = tr.start[t]; k < tr.start[t + 1]; k++) {
+      const im = tr.img[k];
+      if (!cams[im]) continue;
+      obs.push({ cam: im, x: normX(im, tr.feat[k]), y: normY(im, tr.feat[k]) });
+    }
     if (obs.length < 2) return false;
-    const views = obs.map((ob) => ({ R: cams[ob.cam].R, t: cams[ob.cam].t, x: ob.x, y: ob.y }));
-    const X = triangulate(views);
+    const X = triangulate(obs.map((ob) => ({ R: cams[ob.cam].R, t: cams[ob.cam].t, x: ob.x, y: ob.y })));
     if (!X || !isFinite(X[0] + X[1] + X[2])) return false;
-    // parallax between the two most separated observing cameras
     let maxAng = 0;
     for (let a = 0; a < obs.length; a++) for (let b = a + 1; b < obs.length; b++) {
       const ca = cameraCentre(cams[obs[a].cam].R, cams[obs[a].cam].t);
       const cb = cameraCentre(cams[obs[b].cam].R, cams[obs[b].cam].t);
       maxAng = Math.max(maxAng, parallaxAngle(ca, cb, X) * 180 / Math.PI);
+      if (maxAng >= (minAngleDeg == null ? 1.5 : minAngleDeg)) break;
     }
     if (maxAng < (minAngleDeg == null ? 1.5 : minAngleDeg)) return false;
     for (const ob of obs) {
       const pr = projectNorm(cams[ob.cam].R, cams[ob.cam].t, X);
       if (!pr) return false;
-      const th = thPx * 2 / focal(ob.cam);
-      if (Math.hypot(pr[0] - ob.x, pr[1] - ob.y) > th) return false;
+      if (Math.hypot(pr[0] - ob.x, pr[1] - ob.y) > thPx * 2 / focal(ob.cam)) return false;
     }
-    pointOf.set(trackId, { X: X, obs: obs });
+    points[t] = { X: X, obs: obs };
+    nPoints++;
+    notePoint(t);
     return true;
   }
 
-  // every track seen by the seed pair (tryTriangulate ignores tracks whose
-  // other observations belong to cameras that are not placed yet)
-  for (const ti of new Set(byImage[seed.i].values())) tryTriangulate(ti, 1.0);
-  report('init', 1, 'Seed pair ' + seed.i + '↔' + seed.j + ': ' + pointOf.size + ' points');
-  if (pointOf.size < 30) return { cams: [], points: [], tracks: tracks, stats: { error: 'seed pair produced too few 3D points' } };
+  const seedFeats = trackOfFeat[seed.i];
+  for (let f = 0; f < seedFeats.length; f++) if (seedFeats[f] >= 0) tryTriangulate(seedFeats[f], 1.0);
+  report('init', 1, 'Seed pair ' + (seed.i + 1) + '↔' + (seed.j + 1) + ': ' + nPoints + ' points');
+  if (nPoints < 30) return { cams: [], points: [], stats: { error: 'seed pair produced too few 3D points' } };
 
-  /* 4 — grow: repeatedly register the image with the most 3D matches */
-  const registered = new Set([seed.i, seed.j]);
-  const attempts = new Map();   // image → failed resection attempts (max 2)
+  /* 4 — grow: register the image that sees the most reconstructed points */
+  const registered = new Uint8Array(nImg);
+  registered[seed.i] = 1; registered[seed.j] = 1;
+  let nReg = 2;
+  const attempts = new Uint8Array(nImg);
+  const window = [];                                    // recently added cameras
+  // a wider window during growth on big captures: local refinement is what
+  // keeps drift from accumulating across hundreds of cameras
+  const localWindow = o.localWindow || (nImg > 300 ? 30 : 20);
+  const focals = images.map((im) => im.f);
   let guard = 0;
-  while (registered.size < nImg && guard++ < nImg * 4) {
-    let bestImg = -1, bestList = null;
-    for (let i = 0; i < nImg; i++) {
-      if (registered.has(i) || (attempts.get(i) || 0) >= 2) continue;
-      const list = [];
-      for (const [fi, ti] of byImage[i]) { const p = pointOf.get(ti); if (p) list.push([p, fi, ti]); }
-      if (list.length > (bestList ? bestList.length : 0)) { bestList = list; bestImg = i; }
+
+  function localBundle(iters) {
+    const freeSet = new Set(window);
+    const sub = [];
+    const seenT = new Set();
+    for (const ci of window) {
+      const arr = trackOfFeat[ci];
+      for (let f = 0; f < arr.length; f++) {
+        const t = arr[f];
+        if (t < 0 || seenT.has(t)) continue;
+        seenT.add(t);
+        if (points[t]) sub.push(points[t]);
+      }
     }
-    if (bestImg < 0 || !bestList || bestList.length < 12) break;
-    const X3 = bestList.map((l) => l[0].X);
-    const x2 = bestList.map((l) => normPt(bestImg, l[1]));
-    const pose = pnpRansac(X3, x2, thPx * 1.5 / focal(bestImg), rng, 400);
+    if (sub.length < 20) return;
+    bundleAdjustLM(cams, sub, { focals: focals, huberPx: thPx, iters: iters || 4, freeSet: freeSet });
+  }
+
+  while (nReg < nImg && guard++ < nImg * 3) {
+    if (stop()) throw new Error('__cancelled__');
+    let bestImg = -1, bestCount = 0;
+    for (let i = 0; i < nImg; i++) {
+      if (registered[i] || attempts[i] >= 2) continue;
+      if (visCount[i] > bestCount) { bestCount = visCount[i]; bestImg = i; }
+    }
+    if (bestImg < 0 || bestCount < 12) break;
+
+    const arr = trackOfFeat[bestImg];
+    const X3 = [], x2 = [], feats = [];
+    for (let f = 0; f < arr.length; f++) {
+      const t = arr[f];
+      if (t < 0 || !points[t]) continue;
+      X3.push(points[t].X);
+      x2.push([normX(bestImg, f), normY(bestImg, f)]);
+      feats.push(f);
+    }
+    const pose = X3.length >= 6 ? pnpRansac(X3, x2, thPx * 1.5 / focal(bestImg), rng, 400) : null;
     if (!pose || pose.inliers.length < 10) {
-      // retry later — more points may make it resectable on a second pass
-      attempts.set(bestImg, (attempts.get(bestImg) || 0) + 1);
-      report('register', registered.size / nImg, 'Image ' + (bestImg + 1) + ' not placed yet');
+      attempts[bestImg]++;                            // retry once more later
+      report('register', nReg / nImg, 'Image ' + (bestImg + 1) + ' not placed yet');
       continue;
     }
     cams[bestImg] = { R: pose.R, t: pose.t, fixed: false };
-    registered.add(bestImg);
-    // extend existing points with the new observation, then triangulate new ones
-    for (const [fi, ti] of byImage[bestImg]) {
-      const p = pointOf.get(ti);
+    registered[bestImg] = 1; nReg++;
+    visCount[bestImg] = 0;
+    window.push(bestImg);
+    if (window.length > localWindow) window.shift();
+
+    // extend existing points with the new view, then triangulate what is new
+    const thNorm = thPx * 2 / focal(bestImg);
+    for (let f = 0; f < arr.length; f++) {
+      const t = arr[f];
+      if (t < 0) continue;
+      const p = points[t];
       if (p) {
-        const np = normPt(bestImg, fi);
+        const px = normX(bestImg, f), py = normY(bestImg, f);
         const pr = projectNorm(pose.R, pose.t, p.X);
-        if (pr && Math.hypot(pr[0] - np[0], pr[1] - np[1]) < thPx * 2 / focal(bestImg)) p.obs.push({ cam: bestImg, x: np[0], y: np[1] });
-      } else tryTriangulate(ti, 1.5);
+        if (pr && Math.hypot(pr[0] - px, pr[1] - py) < thNorm) p.obs.push({ cam: bestImg, x: px, y: py });
+      } else tryTriangulate(t, 1.5);
     }
-    // local refinement every few images
-    if (registered.size % 3 === 0) {
-      const pts = [...pointOf.values()];
-      bundleAdjust(cams, pts, { rounds: 1, huber: thPx / 600 });
-    }
-    report('register', registered.size / nImg, 'Placed ' + registered.size + '/' + nImg + ' images, ' + pointOf.size + ' points');
+    if (nReg % 4 === 0) localBundle(3);
+    report('register', nReg / nImg, 'Placed ' + nReg + '/' + nImg + ' photos · ' + nPoints.toLocaleString() + ' points');
   }
 
-  /* 5 — retriangulate everything now that all poses exist, then global BA */
-  for (let ti = 0; ti < tracks.length; ti++) if (!pointOf.has(ti)) tryTriangulate(ti, 1.5);
-  let pts = [...pointOf.values()].filter((p) => p.obs.length >= 2);
-  report('bundle', 0.2, 'Bundle adjustment on ' + pts.length + ' points');
+  /* 5 — retriangulate what the later views unlocked, then refine globally */
+  for (let t = 0; t < nTracks; t++) {
+    if (!points[t]) tryTriangulate(t, 1.5);
+    if ((t & 65535) === 0 && stop()) throw new Error('__cancelled__');
+  }
+  let pts = [];
+  for (let t = 0; t < nTracks; t++) if (points[t] && points[t].obs.length >= 2) pts.push(points[t]);
+  report('bundle', 0.15, 'Refining ' + nReg + ' cameras and ' + pts.length.toLocaleString() + ' points');
+
   const nFree = cams.filter((c) => c && !c.fixed).length;
-  const useLM = nFree > 0 && nFree <= (o.maxLMCameras || 200);
-  if (useLM) {
-    bundleAdjustLM(cams, pts, { focals: images.map((im) => im.f), huberPx: thPx, iters: o.baRounds || 12 });
-  } else {
-    bundleAdjust(cams, pts, { rounds: o.baRounds || 4, huber: thPx / 600 });
+  // the reduced camera system is dense, so full LM is only affordable up to a
+  // few hundred cameras; beyond that block-coordinate refinement carries it
+  const useLM = nFree > 0 && nFree <= (o.maxLMCameras || 140);
+  if (useLM) bundleAdjustLM(cams, pts, { focals: focals, huberPx: thPx, iters: o.baRounds || 12 });
+  else {
+    bundleAdjust(cams, pts, { rounds: o.baRounds || (nImg > 300 ? 8 : 5), huber: thPx / 600 });
+    report('bundle', 0.5, 'Refined in blocks (' + nFree + ' cameras)');
   }
 
   /* optional shared-focal self-calibration: the focal scale joins the bundle
@@ -1087,19 +1228,42 @@ export function reconstruct(images, pairs, opts) {
      update on f alone cannot move — a wrong focal still admits a
      self-consistent, merely distorted, reconstruction.) */
   let fScale = 1;
-  if (o.refineFocal && useLM && pts.length >= 50) {
-    report('focal', 0.3, 'Self-calibrating focal length');
-    const lm = bundleAdjustLM(cams, pts, { focals: images.map((im) => im.f), refineFocal: true, huberPx: thPx, iters: 25 });
-    if (isFinite(lm.k) && lm.k > 0.3 && lm.k < 3 && Math.abs(lm.k - 1) > 0.002) {
-      fScale = lm.k;
-      // keep the normalised observations consistent with the new focal
-      for (const p of pts) for (const ob of p.obs) { ob.x /= lm.k; ob.y /= lm.k; }
-      for (let i = 0; i < nImg; i++) images[i].f *= lm.k;
-      report('focal', 1, 'Focal length refined to ' + images[0].f.toFixed(0) + 'px');
+  if (o.refineFocal && pts.length >= 50) {
+    report('bundle', 0.6, 'Self-calibrating focal length');
+    // on big captures calibrate on a subset of cameras: focal is one shared
+    // parameter, so a well-covered sample determines it just as well
+    let calCams = cams, calPts = pts;
+    if (!useLM) {
+      const keep = new Set();
+      const step = Math.max(1, Math.floor(nImg / 60));
+      for (let i = 0; i < nImg; i += step) if (cams[i]) keep.add(i);
+      calCams = cams.map((c, i) => (c && keep.has(i) ? { R: Float64Array.from(c.R), t: c.t.slice(), fixed: c.fixed } : null));
+      calPts = [];
+      for (const p of pts) {
+        const obs = p.obs.filter((ob) => keep.has(ob.cam));
+        if (obs.length >= 2) calPts.push({ X: p.X.slice(), obs: obs });
+        if (calPts.length >= 20000) break;
+      }
+    }
+    if (calPts.length >= 50) {
+      const lm = bundleAdjustLM(calCams, calPts, { focals: focals, refineFocal: true, huberPx: thPx, iters: 25 });
+      if (isFinite(lm.k) && lm.k > 0.3 && lm.k < 3 && Math.abs(lm.k - 1) > 0.002) {
+        fScale = lm.k;
+        for (const p of pts) for (const ob of p.obs) { ob.x /= lm.k; ob.y /= lm.k; }
+        for (let i = 0; i < nImg; i++) { images[i].f *= lm.k; focals[i] = images[i].f; }
+        if (!useLM) {
+          for (const p of pts) {
+            const X = triangulate(p.obs.map((ob) => ({ R: cams[ob.cam].R, t: cams[ob.cam].t, x: ob.x, y: ob.y })));
+            if (X && isFinite(X[0] + X[1] + X[2])) p.X = X;
+          }
+          bundleAdjust(cams, pts, { rounds: 3, huber: thPx / 600 });
+        }
+        report('bundle', 0.7, 'Focal length refined to ' + images[0].f.toFixed(0) + ' px');
+      }
     }
   }
 
-  /* 6 — outlier filtering */
+  /* 6 — drop observations (and points) the refined solution disagrees with */
   const kept = [];
   for (const p of pts) {
     const obs = [];
@@ -1111,23 +1275,24 @@ export function reconstruct(images, pairs, opts) {
     if (obs.length >= 2) { p.obs = obs; kept.push(p); }
   }
   pts = kept;
-  if (useLM) bundleAdjustLM(cams, pts, { focals: images.map((im) => im.f), huberPx: thPx, iters: 6 });
+  if (useLM) bundleAdjustLM(cams, pts, { focals: focals, huberPx: thPx, iters: 6 });
   else bundleAdjust(cams, pts, { rounds: 2, huber: thPx / 600 });
   const err = meanReprojError(cams, pts);
 
-  const nReg = cams.filter(Boolean).length;
-  report('bundle', 1, 'Done: ' + nReg + ' cameras, ' + pts.length + ' points');
+  const placed = cams.filter(Boolean).length;
+  report('bundle', 1, 'Solved ' + placed + ' cameras, ' + pts.length.toLocaleString() + ' points');
   return {
     cams: cams,
     points: pts,
-    tracks: tracks,
     stats: {
-      registered: nReg,
+      registered: placed,
       total: nImg,
       points: pts.length,
       reprojPx: err * (images[0] ? images[0].f : 1),
       focalScale: fScale,
       verifiedPairs: verified.length,
+      tracks: nTracks,
+      globalBundle: useLM ? 'levenberg-marquardt' : 'block-coordinate',
     },
   };
 }

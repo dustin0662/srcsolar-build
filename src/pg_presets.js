@@ -26,3 +26,40 @@ export const PRESETS = {
 };
 
 export const PRESET_ORDER = ['draft', 'fast', 'balanced', 'detailed'];
+
+/* The presets describe intent; this decides what is actually affordable for
+   the number of photos in hand. Anything it changes is reported to the
+   operator, because a silently downgraded model is worse than a slow one. */
+export function adaptSettings(preset, n) {
+  const opt = Object.assign({}, preset);
+  const notes = [];
+  const cap = (key, value, what) => { if (opt[key] > value) { opt[key] = value; notes.push(what); } };
+  const floor = (key, value, what) => { if (opt[key] < value) { opt[key] = value; notes.push(what); } };
+  if (n > 150) {
+    cap('maxDim', 1600, 'working images capped at 1600 px');
+    cap('features', 2600, '2,600 features per photo');
+    cap('candidates', 9, '9 match candidates per photo');
+  }
+  if (n > 300) {
+    cap('maxDim', 1400, 'working images capped at 1400 px');
+    cap('features', 2200, '2,200 features per photo');
+    floor('denseStride', 3, 'dense sampling every 3 px');
+    cap('candidates', 8, '8 match candidates per photo');
+    cap('neighbours', 4, '4 stereo partners per view');
+  }
+  if (n > 450) {
+    cap('maxDim', 1200, 'working images capped at 1200 px');
+    cap('features', 2000, '2,000 features per photo');
+    floor('denseStride', 4, 'dense sampling every 4 px');
+    cap('candidates', 7, '7 match candidates per photo');
+  }
+  return { opt: opt, notes: notes };
+}
+
+/* how many points to keep, and therefore how much memory the fusion grid may
+   take: a site model is not improved by holding ten million samples */
+export function pointBudget(n) {
+  if (n <= 60) return 2500000;
+  if (n <= 200) return 3000000;
+  return 3500000;
+}
