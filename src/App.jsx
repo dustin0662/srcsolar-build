@@ -4,6 +4,7 @@ import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } fr
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
 import ProjectTracker from "./project_tracker.jsx"
+import Photogrammetry from "./photogrammetry.jsx"
 import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
 import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -5152,7 +5153,7 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','photogrammetry','loads'],assignedProjects:[],taskScope:{}})
   const[invMsg,setInvMsg]=useState(null)
   const[assignUser,setAssignUser]=useState(null)
   const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
@@ -5177,7 +5178,7 @@ export default function App(){
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','photogrammetry','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
@@ -5296,7 +5297,7 @@ export default function App(){
     // can be sent by other means.
     if(!w)setInvMsg({k:'err',t:'Invite saved, but the Gmail window was blocked by your browser. Copy the link below and send it yourself.',link:link})
     else setInvMsg({k:'ok',t:'Invite created for '+iem+' — a Gmail compose window has opened.',link:link})
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','photogrammetry','loads'],assignedProjects:[],taskScope:{}})
   }
 
   function sendOnboardingInvite(applicant){
@@ -5381,7 +5382,7 @@ export default function App(){
   var userTools=user&&user.tools?user.tools:[]
   function hasTool(t){return isPortalAdmin||userTools.indexOf(t)>=0}
 
-  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',loads:'Loads Admin'}
+  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',photogrammetry:'Photogrammetry Studio',loads:'Loads Admin'}
 
   const boxRef=useRef()
 
@@ -5390,7 +5391,7 @@ export default function App(){
   useEffect(function(){window.__auditTool=page},[page])
   const toolStartRef=useRef(null)
   useEffect(function(){
-    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
+    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,photogrammetry:1,client:1}
     var prev=toolStartRef.current
     if(prev&&prev.tool!==page){logAudit({type:'tool_exit',tool:prev.tool,label:TOOL_LABELS[prev.tool]||prev.tool,detail:'Left '+(TOOL_LABELS[prev.tool]||prev.tool),durMs:Date.now()-prev.ts});toolStartRef.current=null}
     if(user&&TOOLS[page]&&!toolStartRef.current){toolStartRef.current={tool:page,ts:Date.now()};logAudit({type:'tool_enter',tool:page,label:TOOL_LABELS[page]||page,detail:'Opened '+(TOOL_LABELS[page]||page)})}
@@ -5599,6 +5600,7 @@ export default function App(){
                   {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
                   {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
                   {key:'projecttracker', label:'Project Tracker',  icon:'P', desc:'Daily calendar for tasks, issues & action items — open items roll forward; branded PDF & Excel exports', always:true},
+                  {key:'photogrammetry', label:'Photogrammetry Studio', icon:'3', desc:'Turn overlapping drone or phone photos into a 3D point cloud, surface mesh & orthophoto — built in your browser', always:true},
                   {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
                 ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
                   return (
@@ -5892,6 +5894,7 @@ export default function App(){
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
         {page==='documents'&&user&&<DocumentPortal user={user} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
         {page==='projecttracker'&&<ProjectTracker portalUser={user||null} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
+        {page==='photogrammetry'&&<Photogrammetry portalUser={user||null} onExit={function(){setPage('dashboard')}}/>}
         {page==='onboarding'&&user&&<OnboardingPage portalUser={user} onComplete={function(){var nu=portalUsers.map(function(x){return x.id===user.id?touchUser(Object.assign({},x,{onboardingComplete:true})):x});svPU(nu);setUser(Object.assign({},user,{onboardingComplete:true}));setPage('mytimecard')}} onExit={function(){setUser(null);setPage('landing')}}/>}
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
