@@ -152,6 +152,8 @@ export default function Photogrammetry({ onExit, portalUser }) {
   const [photos, setPhotos] = useState([]);
   const [models, setModels] = useState([]);
   const [tab, setTab] = useState('photos');
+  const [unfinished, setUnfinished] = useState(null);   // a build that can be resumed
+  const [autoSave, setAutoSave] = useState(null);       // a finished long build to store without being asked
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -175,6 +177,15 @@ export default function Photogrammetry({ onExit, portalUser }) {
     } catch (e) { setError('Could not load photos: ' + e.message); }
   }, []);
 
+  const loadBuilds = useCallback(async (pid) => {
+    if (!pid) { setUnfinished(null); return; }
+    try {
+      const j = await apiJson('?builds=1&project=' + encodeURIComponent(pid));
+      const open = (j.builds || []).filter((b) => !b.done);
+      setUnfinished(open.length ? open[0] : null);
+    } catch (e) { /* resume is a convenience, not a requirement */ }
+  }, []);
+
   const loadModels = useCallback(async (pid) => {
     if (!pid) { setModels([]); return; }
     try {
@@ -184,7 +195,7 @@ export default function Photogrammetry({ onExit, portalUser }) {
   }, []);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
-  useEffect(() => { loadPhotos(projectId); loadModels(projectId); }, [projectId, loadPhotos, loadModels]);
+  useEffect(() => { loadPhotos(projectId); loadModels(projectId); loadBuilds(projectId); }, [projectId, loadPhotos, loadModels, loadBuilds]);
 
   const saveProject = useCallback(async (p) => {
     const j = await apiJson('?saveProject=1', {
@@ -350,13 +361,30 @@ export default function Photogrammetry({ onExit, portalUser }) {
   const estimate = useMemo(() => (photos.length ? estimateBuildSeconds(plan.opt, photos.length, wantMesh) * 1000 : null),
     [plan, photos.length, wantMesh]);
 
-  const startBuild = useCallback(() => {
+  const discardBuild = useCallback(async (buildId) => {
+    if (!projectId || !buildId) return;
+    try {
+      await apiJson('?deleteBuild=1&project=' + encodeURIComponent(projectId), {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ buildId: buildId }),
+      });
+      setUnfinished(null);
+    } catch (e) { setError('Could not clear the saved progress: ' + e.message); }
+  }, [projectId]);
+
+  const startBuild = useCallback((resumeBuild) => {
     if (!projectId || photos.length < 3) { setError('Upload at least 3 overlapping photos first.'); return; }
     setError('');
     setResult(null);
     setSavedAt(null);
     const started = Date.now();
-    setRun({ pct: 0, stage: 'starting', msg: 'Starting the reconstruction…', log: [], startedAt: started });
+    const buildId = (resumeBuild && resumeBuild.buildId) || uid();
+    // one working build per capture: starting fresh retires the older one
+    if (!resumeBuild && unfinished && unfinished.buildId) discardBuild(unfinished.buildId);
+    setRun({
+      pct: resumeBuild ? (resumeBuild.pct || 0) : 0, stage: 'starting',
+      msg: resumeBuild ? 'Picking up where the last session stopped…' : 'Starting the reconstruction…',
+      log: [], startedAt: started, buildId: buildId, resuming: !!resumeBuild,
+    });
     setTab('model');
     try {
       if (workerRef.current) workerRef.current.terminate();
@@ -370,18 +398,28 @@ export default function Photogrammetry({ onExit, portalUser }) {
             etaMs: m.etaMs, elapsedMs: m.elapsedMs, done: m.done, units: m.units, at: Date.now(),
             log: r.log.length && r.log[r.log.length - 1] === m.msg ? r.log : r.log.concat([m.msg]).slice(-200),
           } : r));
+        } else if (m.type === 'checkpoint') {
+          setRun((r) => (r ? { ...r, savedAt: m.at } : r));
         } else if (m.type === 'note') {
           setRun((r) => (r ? { ...r, note: m.message, log: r.log.concat(['· ' + m.message]) } : r));
         } else if (m.type === 'done') {
           setResult(m.result);
+          setUnfinished(null);
           setRun((r) => (r ? { ...r, pct: 1, stage: 'done', msg: 'Model complete', finishedAt: Date.now() } : r));
           worker.terminate(); workerRef.current = null;
+          // a build worth checkpointing is worth keeping: save it to the capture
+          // rather than leaving it to a tab that might get closed. Short builds
+          // are cheap to repeat, so their working files go straight away.
+          if (Date.now() - started > 120000) setAutoSave({ result: m.result, buildId: m.buildId });
+          else if (m.buildId) discardBuild(m.buildId);
         } else if (m.type === 'cancelled') {
           setRun(null); worker.terminate(); workerRef.current = null;
+          loadBuilds(projectId);          // a stopped build can be picked up again
         } else if (m.type === 'error') {
           setError(m.message);
           setRun((r) => (r ? { ...r, stage: 'error', msg: m.message } : r));
           worker.terminate(); workerRef.current = null;
+          loadBuilds(projectId);
         }
       };
       worker.onerror = (e) => {
@@ -390,9 +428,13 @@ export default function Photogrammetry({ onExit, portalUser }) {
       };
       worker.postMessage({
         type: 'build',
-        quality: quality,
+        quality: resumeBuild ? (resumeBuild.quality || quality) : quality,
         mesh: wantMesh,
         georeference: wantGeo,
+        endpoint: ENDPOINT,
+        projectId: projectId,
+        buildId: buildId,
+        resume: !!resumeBuild,
         photos: photos.map((p) => ({
           id: p.id, name: p.name, exif: p.exif || null,
           urls: Array.from({ length: p.parts || 1 }, (_, k) =>
@@ -403,12 +445,13 @@ export default function Photogrammetry({ onExit, portalUser }) {
       setError('This browser cannot run the reconstruction engine: ' + e.message);
       setRun(null);
     }
-  }, [projectId, photos, quality, wantMesh, wantGeo]);
+  }, [projectId, photos, quality, wantMesh, wantGeo, loadBuilds, discardBuild, unfinished]);
 
   const cancelBuild = useCallback(() => {
     if (workerRef.current) { workerRef.current.terminate(); workerRef.current = null; }
     setRun(null);
-  }, []);
+    loadBuilds(projectId);
+  }, [loadBuilds, projectId]);
 
   useEffect(() => () => { if (workerRef.current) workerRef.current.terminate(); }, []);
 
@@ -452,6 +495,16 @@ export default function Photogrammetry({ onExit, portalUser }) {
       setError('Could not save the model: ' + e.message);
     }
   }, [result, projectId, project, portalUser]);
+
+  useEffect(() => {
+    if (!autoSave || !result || saveState) return;
+    setAutoSave(null);
+    (async () => {
+      await saveModel();
+      // the model is stored; the working checkpoint has done its job
+      if (autoSave.buildId) discardBuild(autoSave.buildId);
+    })();
+  }, [autoSave, result, saveState, saveModel, discardBuild]);
 
   const openModel = useCallback(async (m) => {
     setSaveState('Loading ' + m.name);
@@ -649,6 +702,11 @@ export default function Photogrammetry({ onExit, portalUser }) {
             {gpsCount ? ' · ' + gpsCount + ' with GPS' : ' · no GPS tags'}
             {models.length ? ' · ' + models.length + ' saved model' + (models.length === 1 ? '' : 's') : ''}
           </span>
+          {!!unfinished && !run && (
+            <button style={{ ...ghostSm, borderColor: ORANGE, color: ORANGE }} onClick={() => setTab('build')}>
+              Unfinished build at {Math.round((unfinished.pct || 0) * 100)}% — resume
+            </button>
+          )}
         </div>
 
         {tab === 'photos' && (
@@ -663,8 +721,9 @@ export default function Photogrammetry({ onExit, portalUser }) {
           <BuildTab
             mob={mob} photos={photos} gpsCount={gpsCount} quality={quality} setQuality={setQuality}
             wantMesh={wantMesh} setWantMesh={setWantMesh} wantGeo={wantGeo} setWantGeo={setWantGeo}
-            estimate={estimate} plan={plan} run={run} onBuild={startBuild} onCancel={cancelBuild}
+            estimate={estimate} plan={plan} run={run} onBuild={() => startBuild(null)} onCancel={cancelBuild}
             models={models} onOpenModel={openModel} onDeleteModel={deleteModel} saveState={saveState}
+            unfinished={unfinished} onResume={() => startBuild(unfinished)} onDiscard={() => discardBuild(unfinished.buildId)}
           />
         )}
 
@@ -727,7 +786,7 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
         <div style={{ fontFamily: BBF, fontSize: 22, letterSpacing: 1.5, marginBottom: 6 }}>DROP PHOTOS HERE</div>
         <div style={{ fontFamily: NBF, fontSize: 13, color: MUTE, marginBottom: 14 }}>
           JPEG or PNG, straight off the drone or phone. Anything from 15 to 600 frames with heavy overlap.
-          Large sets build in one long pass — the tab does the work, so leave it open.
+          Uploads carry on where they left off — dropping the same folder again skips whatever is already here.
         </div>
         <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
           onChange={(e) => { onUpload(e.target.files, keepOriginal); e.target.value = ''; }} />
@@ -809,10 +868,28 @@ function PhotosTab({ mob, projectId, photos, uploads, onUpload, onCancelUpload, 
 function BuildTab({
   mob, photos, gpsCount, quality, setQuality, wantMesh, setWantMesh, wantGeo, setWantGeo,
   estimate, plan, run, onBuild, onCancel, models, onOpenModel, onDeleteModel, saveState,
+  unfinished, onResume, onDiscard,
 }) {
   const keys = PRESET_ORDER;
+  const running = run && run.stage !== 'done' && run.stage !== 'error';
   return (
     <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.4fr 1fr', gap: 16, alignItems: 'start' }}>
+      {!!unfinished && !running && (
+        <div style={{ ...card, gridColumn: '1 / -1', borderColor: 'rgba(249,115,22,.55)', background: 'rgba(249,115,22,.08)' }}>
+          <div style={{ fontFamily: BBF, fontSize: 18, letterSpacing: 1.5, marginBottom: 6 }}>UNFINISHED BUILD</div>
+          <div style={{ fontFamily: NBF, fontSize: 13, color: CREAM, marginBottom: 10 }}>
+            A build of {unfinished.photoCount} photo{unfinished.photoCount === 1 ? '' : 's'} stopped at{' '}
+            <strong>{Math.round((unfinished.pct || 0) * 100)}%</strong>
+            {unfinished.stage ? ' during ' + STAGE_WORDS[unfinished.stage] : ''}, {timeAgo(unfinished.updatedAt)}.
+            Everything it had finished is saved with the capture — resuming carries on from there instead of starting
+            over, from this or any other machine.
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button style={btn} onClick={onResume}>Resume build</button>
+            <button style={ghostSm} onClick={onDiscard}>Discard saved progress</button>
+          </div>
+        </div>
+      )}
       <div style={card}>
         <div style={{ fontFamily: BBF, fontSize: 20, letterSpacing: 1.5, marginBottom: 4 }}>MODEL QUALITY</div>
         <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginBottom: 14 }}>
@@ -873,12 +950,11 @@ function BuildTab({
             {photos.length} photos: {plan.notes.join(', ')} so the build fits in browser memory.
           </div>
         )}
-        {photos.length > 250 && (
-          <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 6 }}>
-            Large captures run for a long time. Leave this tab open and awake — the build lives in the page, so closing
-            it stops the work. Progress and time remaining are shown on the Model tab while it runs.
-          </div>
-        )}
+        <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 8, lineHeight: 1.5 }}>
+          The build runs in this tab, so closing it stops the work — but not the progress: each stage is saved as it
+          finishes, and reopening this capture offers to carry on from there. Progress and time remaining are on the
+          Model tab while it runs.
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: 16 }}>
@@ -924,6 +1000,23 @@ function BuildTab({
 }
 
 const checkRow = { display: 'flex', gap: 8, alignItems: 'flex-start', fontFamily: NBF, fontSize: 13, color: CREAM, cursor: 'pointer' };
+
+const STAGE_WORDS = {
+  features: 'reading the photos', matching: 'matching photos', verify: 'checking geometry',
+  register: 'placing cameras', sparse: 'placing cameras', bundle: 'refining the solution',
+  dense: 'building depth maps', fuse: 'fusing the point cloud', mesh: 'building the surface',
+};
+
+function timeAgo(ts) {
+  if (!ts) return 'a while ago';
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 90) return s + ' seconds ago';
+  const m = Math.round(s / 60);
+  if (m < 90) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+  const h = Math.round(m / 60);
+  if (h < 36) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+  return Math.round(h / 24) + ' days ago';
+}
 
 /* ── model tab ─────────────────────────────────────────────────────── */
 function ModelTab({
@@ -981,6 +1074,12 @@ function ModelTab({
           <Bar pct={run.pct || 0} />
           <div style={{ fontFamily: NBF, fontSize: 13, color: CREAM, marginTop: 8 }}>{run.msg}</div>
           {run.note && <div style={{ fontFamily: NBF, fontSize: 12, color: '#fcd34d', marginTop: 4 }}>{run.note}</div>}
+          {running && (
+            <div style={{ fontFamily: NBF, fontSize: 12, color: GREEN, marginTop: 6 }}>
+              {run.savedAt ? 'Progress saved ' + Math.max(0, Math.round((Date.now() - run.savedAt) / 1000)) + 's ago' : 'Saving progress as it goes'}
+              <span style={{ color: MUTE }}> — closing this tab pauses the build; reopen the capture on any machine to carry on.</span>
+            </div>
+          )}
           {!!(run.log && run.log.length) && (
             <div ref={logRef} style={{
               marginTop: 10, maxHeight: 120, overflow: 'auto', background: 'rgba(0,0,0,.35)', border: '1px solid ' + LINE,

@@ -10,7 +10,9 @@ import { getStore } from '@netlify/blobs';
      pb:<project>:<photo>:<part>  → one binary slice of a photo
      th:<project>:<photo>         → small jpeg thumbnail
      md:<project>                 → model index (json)
-     mc:<project>:<model>:<chunk> → base64 slice of a saved model         */
+     mc:<project>:<model>:<chunk> → base64 slice of a saved model
+     bi:<project>                 → index of builds in progress (json)
+     ck:<project>:<build>:<name>  → one checkpoint artefact of a build     */
 
 const MAX_MODELS = 24;
 const idx = (p) => 'ph:' + p;
@@ -18,6 +20,9 @@ const part = (p, ph, i) => 'pb:' + p + ':' + ph + ':' + i;
 const thumb = (p, ph) => 'th:' + p + ':' + ph;
 const mIdx = (p) => 'md:' + p;
 const mChunk = (p, m, i) => 'mc:' + p + ':' + m + ':' + i;
+const bIdx = (p) => 'bi:' + p;
+const ckPrefix = (p, b) => 'ck:' + p + ':' + b + ':';
+const ck = (p, b, name) => ckPrefix(p, b) + name;
 
 const json = (body, status) => Response.json(body, { status: status || 200, headers: { 'cache-control': 'no-store' } });
 const bad = (msg, status) => json({ error: msg }, status || 400);
@@ -64,12 +69,39 @@ export default async (req) => {
       const data = await store.get(mChunk(project, q('model'), q('modelChunk')), { type: 'text' });
       return json({ data: data || '' });
     }
+    if (q('builds') != null) {
+      const list = (await store.get(bIdx(project), { type: 'json' })) || { builds: [] };
+      return json(list);
+    }
+    if (q('ckptGet') != null) {
+      const buf = await store.get(ck(project, q('build'), q('name')), { type: 'arrayBuffer' });
+      if (!buf) return bad('not found', 404);
+      return new Response(buf, { headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' } });
+    }
+    if (q('ckptList') != null) {
+      const prefix = ckPrefix(project, q('build')) + (q('prefix') || '');
+      const res = await store.list({ prefix: prefix });
+      return json({ names: (res.blobs || []).map((b) => b.key.slice(ckPrefix(project, q('build')).length)) });
+    }
+    if (q('ckptIndex') != null) {
+      const index = await store.get(ck(project, q('build'), 'index'), { type: 'json' });
+      return json({ index: index || null });
+    }
     return bad('bad request');
   }
 
   if (req.method !== 'POST') return bad('method not allowed', 405);
 
   /* binary uploads carry the payload as the raw body */
+  if (q('ckptPut') != null) {
+    if (!project || !q('build') || !q('name')) return bad('project, build and name required');
+    const buf = await req.arrayBuffer();
+    if (!buf || !buf.byteLength) return bad('empty checkpoint part');
+    if (buf.byteLength > 6 * 1024 * 1024) return bad('checkpoint part too large', 413);
+    await store.set(ck(project, q('build'), q('name')), buf);
+    return json({ ok: true, bytes: buf.byteLength });
+  }
+
   if (q('upload') != null) {
     if (!project || !q('photo')) return bad('project and photo required');
     const buf = await req.arrayBuffer();
@@ -110,8 +142,13 @@ export default async (req) => {
     for (const m of models.models || []) {
       for (let i = 0; i < (m.chunks || 0); i++) { try { await store.delete(mChunk(id, m.id, i)); } catch (e) { /* already gone */ } }
     }
+    try {
+      const res = await store.list({ prefix: 'ck:' + id + ':' });
+      for (const b of res.blobs || []) { try { await store.delete(b.key); } catch (e) { /* already gone */ } }
+    } catch (e) { /* nothing stored */ }
     try { await store.delete(idx(id)); } catch (e) { /* already gone */ }
     try { await store.delete(mIdx(id)); } catch (e) { /* already gone */ }
+    try { await store.delete(bIdx(id)); } catch (e) { /* already gone */ }
     return json(cur);
   }
 
@@ -140,6 +177,39 @@ export default async (req) => {
     cur.rev = (cur.rev || 0) + 1;
     await store.setJSON(idx(project), cur);
     return json(cur);
+  }
+
+  if (q('ckptIndex') != null) {
+    if (!q('build')) return bad('build required');
+    const index = body.index || {};
+    index.buildId = q('build');
+    index.updatedAt = Date.now();
+    await store.setJSON(ck(project, q('build'), 'index'), index);
+    // keep a per-project list so an unfinished build is discoverable without
+    // knowing its id
+    const cur = (await store.get(bIdx(project), { type: 'json' })) || { builds: [] };
+    const summary = {
+      buildId: index.buildId, updatedAt: index.updatedAt, createdAt: index.createdAt || index.updatedAt,
+      stage: index.stage, pct: index.pct, photoCount: index.photoCount, quality: index.quality,
+      signature: index.signature, done: !!index.done,
+    };
+    cur.builds = [summary].concat((cur.builds || []).filter((b) => b.buildId !== index.buildId)).slice(0, 12);
+    await store.setJSON(bIdx(project), cur);
+    return json({ ok: true });
+  }
+
+  if (q('deleteBuild') != null) {
+    const id = body.buildId;
+    if (!id) return bad('buildId required');
+    const cur = (await store.get(bIdx(project), { type: 'json' })) || { builds: [] };
+    cur.builds = (cur.builds || []).filter((b) => b.buildId !== id);
+    await store.setJSON(bIdx(project), cur);
+    let removed = 0;
+    try {
+      const res = await store.list({ prefix: ckPrefix(project, id) });
+      for (const b of res.blobs || []) { try { await store.delete(b.key); removed++; } catch (e) { /* already gone */ } }
+    } catch (e) { /* nothing stored yet */ }
+    return json({ ok: true, removed: removed, builds: cur.builds });
   }
 
   if (q('deletePhoto') != null) {

@@ -7,7 +7,12 @@
    and no server-side compute is involved. That puts memory and time squarely
    in one tab, so the pipeline is written to stream — bounded caches for
    decoded images and depth maps, and a voxel grid that folds points in as
-   they are produced rather than collecting tens of millions of them first. */
+   they are produced rather than collecting tens of millions of them first.
+
+   It also means closing the tab stops the work, so every expensive stage
+   checkpoints to the same store the photos live in: features per photo,
+   matches per block of pairs, the sparse solution once, and the dense cloud
+   in blocks. Reopening the capture resumes from the last completed piece. */
 
 import { toGray, detectAndDescribe, matchDescriptors, imageSignature, signatureScore } from './pg_features.js';
 import { reconstruct, cameraCentre } from './pg_sfm.js';
@@ -19,6 +24,7 @@ import { parseExif, focalPixels, defaultFocal, gpsToEnu } from './pg_exif.js';
 import { umeyama, mat3Vec, median } from './pg_math.js';
 import { PRESETS, adaptSettings, pointBudget } from './pg_presets.js';
 import { createProgress, priorCosts } from './pg_progress.js';
+import { createCheckpoint, buildSignature } from './pg_checkpoint.js';
 
 let cancelled = false;
 
@@ -128,45 +134,114 @@ async function build(job) {
     { key: 'mesh', label: 'Building the surface', units: job.mesh === false ? 0 : 1, cost: costs.mesh },
   ]);
 
+  /* ── checkpointing ── */
+  const ckpt = job.buildId && job.endpoint && job.projectId
+    ? createCheckpoint(job.endpoint, job.projectId, job.buildId, {
+      onError: (e) => post({ type: 'note', message: 'Could not write a checkpoint (' + e.message + ') — the build continues, but a reopen would restart this stage.' }),
+    })
+    : null;
+  const signature = buildSignature(photos.map((p) => p.id), {
+    quality: job.quality, mesh: job.mesh !== false, geo: job.georeference !== false,
+    maxDim: opt.maxDim, features: opt.features, stride: opt.denseStride, dense: !!opt.dense,
+    candidates: opt.candidates, neighbours: opt.neighbours,
+  });
+  let state = null;
+  if (ckpt && job.resume) {
+    const prior = await ckpt.readIndex();
+    // a checkpoint from a different photo set or different settings describes a
+    // different reconstruction; splicing them together would be nonsense
+    if (prior && prior.signature === signature && !prior.done) state = prior;
+    else if (prior) post({ type: 'note', message: 'The saved progress was for different settings, so this build starts fresh.' });
+  }
+  const resuming = !!state;
+  if (!state) {
+    state = {
+      createdAt: Date.now(), signature: signature, photoCount: N, quality: job.quality,
+      stage: 'features', pairsBlocks: 0, pairsDone: 0, sparse: 0, denseBlocks: 0, denseFused: 0, pct: 0,
+    };
+  }
+  let lastPct = state.pct || 0;
+  let lastIndexAt = 0;
+  /* The index is what a reopened capture reads, so it should not lag far
+     behind the work. Written on every stage boundary and otherwise on a
+     timer — often enough to be honest, rarely enough not to chatter. */
+  const saveIndex = async (patch, force) => {
+    if (!ckpt) return;
+    Object.assign(state, patch || {}, { pct: lastPct });
+    const now = Date.now();
+    if (!force && now - lastIndexAt < 8000) return;
+    lastIndexAt = now;
+    const okWrite = await ckpt.writeIndex(state);
+    if (okWrite) post({ type: 'checkpoint', at: Date.now(), stage: state.stage });
+  };
+
   let lastPost = 0;
   const say = (key, msg, force) => {
     const now = Date.now();
     if (!force && now - lastPost < 350) return;
     lastPost = now;
     const snap = progress.snapshot(key);
+    lastPct = snap.pct;
     post({ type: 'progress', msg: msg, stage: snap.stage, stageLabel: snap.stageLabel, pct: snap.pct,
-      etaMs: snap.etaMs, elapsedMs: snap.elapsedMs, done: snap.done, units: snap.units });
+      etaMs: snap.etaMs, elapsedMs: snap.elapsedMs, done: snap.done, units: snap.units, resumed: resuming });
   };
 
   if (adapted.notes.length) {
     post({ type: 'note', message: N + ' photos: ' + adapted.notes.join(', ') + ' so the build fits in browser memory.' });
   }
 
-  /* 1 — decode + features */
+  /* 1 — decode + features, one checkpoint per photo */
   progress.begin('features');
-  const feats = [], meta = [];
+  const feats = new Array(N), meta = new Array(N);
   let totalFeatures = 0;
+  const featStored = ckpt ? new Set((await ckpt.list('feat:')).map((n) => n.slice(5))) : new Set();
+  if (resuming && featStored.size) post({ type: 'note', message: 'Resuming: ' + featStored.size + ' of ' + N + ' photos were already read.' });
+
   for (let i = 0; i < N; i++) {
     checkCancel();
-    say('features', 'Reading ' + photos[i].name + ' (' + (i + 1) + '/' + N + ')');
-    const buf = await fetchPhoto(photos[i]);
-    // stored working copies are re-encoded and carry no EXIF, so fall back to
-    // the values captured at upload time
-    const embedded = parseExif(buf);
-    const exif = (embedded && (embedded.focal35 || embedded.focalMm || embedded.lat != null))
-      ? embedded : Object.assign({}, photos[i].exif || {}, embedded || {});
-    const img = await decode(buf, opt.maxDim);
-    const gray = toGray(img.rgba, img.w, img.h);
-    const f = detectAndDescribe(gray, img.w, img.h, { maxFeatures: opt.features, fastThreshold: opt.fastThreshold });
-    const fp = focalPixels(exif, img.w, img.h);
-    totalFeatures += f.count;
-    feats.push({ kps: f.kps, desc: f.desc, count: f.count, sig: imageSignature(gray, img.w, img.h) });
-    meta.push({
-      id: photos[i].id, name: photos[i].name, w: img.w, h: img.h, exif: exif,
-      focal: fp ? fp.f : defaultFocal(img.w, img.h), focalSource: fp ? fp.source : 'assumed 62° field of view',
-      hasExifFocal: !!fp,
-    });
+    const id = photos[i].id;
+    let restored = null;
+    if (featStored.has(id)) {
+      say('features', 'Restoring ' + photos[i].name + ' (' + (i + 1) + '/' + N + ')');
+      const c = await ckpt.load('feat:' + id);
+      if (c && c.meta && c.meta.count >= 0) {
+        restored = {
+          kps: c.at(0, Float32Array, c.meta.count * 2),
+          desc: c.at(1, Uint32Array, c.meta.count * 8),
+          sig: c.at(2, Float32Array, c.meta.sigLen),
+          count: c.meta.count, m: c.meta.photo,
+        };
+      }
+    }
+    if (restored) {
+      feats[i] = { kps: restored.kps, desc: restored.desc, count: restored.count, sig: restored.sig };
+      meta[i] = restored.m;
+      totalFeatures += restored.count;
+    } else {
+      say('features', 'Reading ' + photos[i].name + ' (' + (i + 1) + '/' + N + ')');
+      const buf = await fetchPhoto(photos[i]);
+      // stored working copies are re-encoded and carry no EXIF, so fall back to
+      // the values captured at upload time
+      const embedded = parseExif(buf);
+      const exif = (embedded && (embedded.focal35 || embedded.focalMm || embedded.lat != null))
+        ? embedded : Object.assign({}, photos[i].exif || {}, embedded || {});
+      const img = await decode(buf, opt.maxDim);
+      const gray = toGray(img.rgba, img.w, img.h);
+      const f = detectAndDescribe(gray, img.w, img.h, { maxFeatures: opt.features, fastThreshold: opt.fastThreshold });
+      const fp = focalPixels(exif, img.w, img.h);
+      const sig = imageSignature(gray, img.w, img.h);
+      const m = {
+        id: id, name: photos[i].name, w: img.w, h: img.h, exif: exif,
+        focal: fp ? fp.f : defaultFocal(img.w, img.h), focalSource: fp ? fp.source : 'assumed 62° field of view',
+        hasExifFocal: !!fp,
+      };
+      feats[i] = { kps: f.kps, desc: f.desc, count: f.count, sig: sig };
+      meta[i] = m;
+      totalFeatures += f.count;
+      if (ckpt) await ckpt.save('feat:' + id, { count: f.count, sigLen: sig.length, photo: m }, [f.kps, f.desc, sig]);
+    }
     progress.tick('features', i + 1);
+    if (ckpt) await saveIndex({ stage: 'features', featuresDone: i + 1 }, i === N - 1);
   }
   progress.finish('features');
   // the photos just told us how fast this machine actually is
@@ -218,13 +293,55 @@ async function build(job) {
   progress.setUnits('verify', pairList.length);
   progress.begin('matching');
   const pairs = [];
-  for (let k = 0; k < pairList.length; k++) {
+  const PAIR_BLOCK = 250;
+  let startPair = 0;
+  if (resuming && state.pairsBlocks) {
+    // matches are cheap to store and expensive to redo: restore whole blocks
+    for (let b = 0; b < state.pairsBlocks; b++) {
+      const c = await ckpt.load('pairs:' + b);
+      if (!c) break;
+      const data = c.at(0, Int32Array, c.meta.total);
+      let off = 0;
+      for (const [i, j, len] of c.meta.pairs) {
+        pairs.push({ i: i, j: j, matches: data.subarray(off, off + len) });
+        off += len;
+      }
+      startPair = c.meta.until;
+    }
+    if (startPair) {
+      progress.tick('matching', startPair);
+      post({ type: 'note', message: 'Resuming: ' + startPair.toLocaleString() + ' photo pairs were already matched.' });
+    }
+  }
+  let blockPairs = [];
+  let lastPairFlush = Date.now();
+  const flushPairs = async (until, blockIndex) => {
+    if (!ckpt || !blockPairs.length) return false;
+    let total = 0;
+    for (const p of blockPairs) total += p.matches.length;
+    const data = new Int32Array(total);
+    let off = 0;
+    for (const p of blockPairs) { data.set(p.matches, off); off += p.matches.length; }
+    await ckpt.save('pairs:' + blockIndex, {
+      pairs: blockPairs.map((p) => [p.i, p.j, p.matches.length]), total: total, until: until,
+    }, [data]);
+    blockPairs = [];
+    return true;
+  };
+  for (let k = startPair; k < pairList.length; k++) {
     checkCancel();
     const [a, b] = pairList[k];
     const m = matchDescriptors(feats[a].desc, feats[a].count, feats[b].desc, feats[b].count, {});
-    if (m.length >= 40) pairs.push({ i: a, j: b, matches: m });
+    if (m.length >= 40) { pairs.push({ i: a, j: b, matches: m }); blockPairs.push({ i: a, j: b, matches: m }); }
     progress.tick('matching', k + 1);
     say('matching', 'Matching photo pairs ' + (k + 1) + '/' + pairList.length + ' — ' + pairs.length + ' usable');
+    const lastPair = k === pairList.length - 1;
+    if ((k + 1) % PAIR_BLOCK === 0 || lastPair || Date.now() - lastPairFlush > 20000) {
+      lastPairFlush = Date.now();
+      const wrote = await flushPairs(k + 1, state.pairsBlocks);
+      if (wrote) await saveIndex({ stage: 'matching', pairsBlocks: state.pairsBlocks + 1, pairsDone: k + 1 }, true);
+      else await saveIndex({ stage: 'matching', pairsDone: k + 1 }, lastPair);
+    }
   }
   progress.finish('matching');
   if (pairs.length < 2) throw new Error('the photos do not overlap enough to match — aim for 60-80% overlap between consecutive shots');
@@ -237,7 +354,37 @@ async function build(job) {
   progress.begin('verify');
   const phase = {};                       // stages already entered, so timing windows are not restarted
   const images = meta.map((m, i) => ({ w: m.w, h: m.h, f: m.focal, cx: m.w / 2, cy: m.h / 2, kps: feats[i].kps }));
-  const rec = reconstruct(images, pairs, {
+
+  /* the sparse solution is one artefact: it either exists in full or is redone.
+     Restoring it also restores the focal lengths, which self-calibration may
+     have changed. */
+  let rec = null;
+  if (resuming && state.sparse) {
+    say('verify', 'Restoring the camera solution', true);
+    const c = await ckpt.load('sparse', state.sparse);
+    if (c && c.meta && c.meta.nPoints >= 0) {
+      const X = c.at(0, Float32Array, c.meta.nPoints * 3);
+      const obsCam = c.at(1, Int32Array, c.meta.nObs);
+      const obsXY = c.at(2, Float32Array, c.meta.nObs * 2);
+      const start = c.at(3, Int32Array, c.meta.nPoints + 1);
+      const points = new Array(c.meta.nPoints);
+      for (let p = 0; p < c.meta.nPoints; p++) {
+        const obs = [];
+        for (let k = start[p]; k < start[p + 1]; k++) obs.push({ cam: obsCam[k], x: obsXY[k * 2], y: obsXY[k * 2 + 1] });
+        points[p] = { X: [X[p * 3], X[p * 3 + 1], X[p * 3 + 2]], obs: obs };
+      }
+      rec = {
+        cams: c.meta.cams.map((cam) => (cam ? { R: Float64Array.from(cam.R), t: cam.t.slice(), fixed: !!cam.fixed } : null)),
+        points: points, stats: c.meta.stats,
+      };
+      for (let i = 0; i < N; i++) if (c.meta.focals[i]) images[i].f = c.meta.focals[i];
+      progress.tick('verify', pairList.length);
+      progress.finish('verify');
+      progress.tick('register', N);
+      post({ type: 'note', message: 'Resuming: the camera solution was already computed (' + rec.stats.registered + ' cameras).' });
+    }
+  }
+  if (!rec) rec = reconstruct(images, pairs, {
     seed: 20240611,
     thresholdPx: 3,
     maxTracks: N > 200 ? 600000 : 400000,
@@ -256,6 +403,27 @@ async function build(job) {
   });
   progress.finish('bundle');
   if (rec.stats.error) throw new Error(rec.stats.error);
+  if (ckpt && !state.sparse) {
+    say('bundle', 'Saving the camera solution', true);
+    let nObs = 0;
+    for (const p of rec.points) nObs += p.obs.length;
+    const X = new Float32Array(rec.points.length * 3);
+    const obsCam = new Int32Array(nObs), obsXY = new Float32Array(nObs * 2);
+    const start = new Int32Array(rec.points.length + 1);
+    let at = 0;
+    for (let p = 0; p < rec.points.length; p++) {
+      const pt = rec.points[p];
+      X[p * 3] = pt.X[0]; X[p * 3 + 1] = pt.X[1]; X[p * 3 + 2] = pt.X[2];
+      start[p] = at;
+      for (const ob of pt.obs) { obsCam[at] = ob.cam; obsXY[at * 2] = ob.x; obsXY[at * 2 + 1] = ob.y; at++; }
+    }
+    start[rec.points.length] = at;
+    const parts = await ckpt.save('sparse', {
+      nPoints: rec.points.length, nObs: nObs, stats: rec.stats, focals: images.map((im) => im.f),
+      cams: rec.cams.map((c) => (c ? { R: Array.from(c.R), t: c.t.slice(), fixed: !!c.fixed } : null)),
+    }, [X, obsCam, obsXY, start]);
+    await saveIndex({ stage: 'sparse', sparse: parts || 1 }, true);
+  }
   const registered = rec.cams.map((c, i) => (c ? i : -1)).filter((i) => i >= 0);
   if (registered.length < 3) throw new Error('only ' + registered.length + ' photos could be placed — try more overlap or a slower pass over the subject');
   say('bundle', 'Placed ' + registered.length + '/' + N + ' cameras · ' + rec.points.length.toLocaleString() + ' tie points', true);
@@ -293,47 +461,52 @@ async function build(job) {
     const imgCache = makeCache(Math.max(5, opt.neighbours + 4), opt.maxDim);
     const depthCache = new Map();                     // view index → packed view
     const lag = Math.min(10, Math.max(3, opt.neighbours + 2));
-    const depthCap = lag * 3 + 6;
+    const depthCap = lag * 4 + 8;
+    // enough blocks that an interrupted run loses little, few enough that a
+    // long capture is not writing constantly
+    const BLOCK_VIEWS = Math.max(4, Math.min(25, Math.ceil(usable.length / 8)));
 
     const spacings = [];
     for (const i of usable) spacings.push(opt.denseStride * info[i].medianDepth / images[i].f);
     spacing = median(spacings) || 0;
+    const voxel = Math.max(spacing, 1e-9);
     // one voxel per sample step: fusion already requires two views to agree on
     // the surface geometrically, so there is nothing to gain from merging more
     // aggressively, and coarser voxels only cost detail. The grid coarsens
     // itself if the point budget is reached.
-    const grid = createVoxelGrid({ voxel: Math.max(spacing, 1e-9), budget: pointBudget(N) });
+    const makeGrid = () => createVoxelGrid({ voxel: voxel, budget: pointBudget(N) });
 
-    const fuseAt = (idx) => {
-      const v = depthCache.get(idx);
-      if (!v || !v.packed || v.fused) return;
-      // check against the view's own stereo partners first, then anything else
-      // still in the cache: a surface point is often confirmed by a view that
-      // is not in this view's top-k list, and dropping those costs coverage
-      const seenIds = new Set([idx]);
-      const nbs = [];
-      for (const j of info[idx].neighbours) {
-        const d = depthCache.get(j);
-        if (d && d.packed && !seenIds.has(j)) { nbs.push(d); seenIds.add(j); }
+    /* Fused points are written out in blocks. A block is a finished piece of
+       cloud, so a reopened build reloads them and carries on from the view it
+       had reached rather than sweeping the whole set again. */
+    const blocks = [];
+    let startFuse = 0;
+    if (resuming && state.denseBlocks) {
+      for (let b = 0; b < state.denseBlocks; b++) {
+        const c = await ckpt.load('dense:' + b, state.denseParts ? state.denseParts[b] : 1);
+        if (!c) break;
+        blocks.push({
+          positions: c.at(0, Float32Array, c.meta.count * 3),
+          colors: c.at(1, Uint8Array, c.meta.count * 3),
+        });
+        startFuse = c.meta.fusedUntil;
       }
-      for (const [j, d] of depthCache) {
-        if (seenIds.has(j) || !d.packed) continue;
-        nbs.push(d); seenIds.add(j);
+      if (startFuse) {
+        const have = blocks.reduce((a2, b2) => a2 + b2.positions.length / 3, 0);
+        post({ type: 'note', message: 'Resuming: ' + startFuse + ' of ' + order.length + ' depth maps were already fused (' + have.toLocaleString() + ' points).' });
+        progress.tick('dense', startFuse);
+        progress.tick('fuse', startFuse);
       }
-      fuseView(v, nbs, grid, {
-        consistency: opt.denseStride <= 2 ? 2 : 1,
-        searchRadius: opt.denseStride * 2,
-      });
-      // keep the samples until this view is evicted: a depth map that has been
-      // fused is still the evidence that confirms its neighbours
-      v.fused = true;
-    };
+    }
 
-    let fused = 0;
-    for (let k = 0; k < order.length; k++) {
-      checkCancel();
+    let blockGrid = makeGrid();
+    let lastBlockAt = Date.now();
+    const denseParts = (state.denseParts || []).slice();
+
+    const ensureDepth = async (k) => {
+      if (k < 0 || k >= order.length) return;
       const i = order[k];
-      say('dense', 'Depth map ' + (k + 1) + '/' + order.length + ' — ' + meta[i].name);
+      if (depthCache.has(i)) return;
       const refImg = await imgCache.get(photos[i]);
       const ref = {
         gray: refImg.gray, w: refImg.w, h: refImg.h,
@@ -351,26 +524,89 @@ async function build(job) {
         packed: packDepth(filtered, ref.w, ref.h, opt.denseStride, ref.dmin, ref.dmax, refImg.rgba),
         w: ref.w, h: ref.h, f: ref.f, cx: ref.cx, cy: ref.cy, R: ref.R, t: ref.t,
       });
-      progress.tick('dense', k + 1);
-
-      // fuse a few views behind the front, by which time their neighbours have
-      // depth maps too, then drop the oldest entries
-      if (k >= lag) { fuseAt(order[k - lag]); progress.tick('fuse', ++fused); }
       while (depthCache.size > depthCap) {
         const oldest = depthCache.keys().next().value;
-        if (oldest === undefined) break;
+        if (oldest === undefined || oldest === i) break;
         depthCache.delete(oldest);
+      }
+    };
+
+    const fuseAt = (idx) => {
+      const v = depthCache.get(idx);
+      if (!v || !v.packed || v.fused) return;
+      // check against the view's own stereo partners first, then anything else
+      // still in the cache: a surface point is often confirmed by a view that
+      // is not in this view's top-k list, and dropping those costs coverage
+      const seenIds = new Set([idx]);
+      const nbs = [];
+      for (const j of info[idx].neighbours) {
+        const d = depthCache.get(j);
+        if (d && d.packed && !seenIds.has(j)) { nbs.push(d); seenIds.add(j); }
+      }
+      for (const [j, d] of depthCache) {
+        if (seenIds.has(j) || !d.packed) continue;
+        nbs.push(d); seenIds.add(j);
+      }
+      fuseView(v, nbs, blockGrid, {
+        consistency: opt.denseStride <= 2 ? 2 : 1,
+        searchRadius: opt.denseStride * 2,
+      });
+      // keep the samples until this view is evicted: a depth map that has been
+      // fused is still the evidence that confirms its neighbours
+      v.fused = true;
+    };
+
+    const flushBlock = async (fusedUntil) => {
+      const b = blockGrid.finish(1);
+      blockGrid = makeGrid();
+      if (!b.positions.length) return;
+      blocks.push(b);
+      if (!ckpt) return;
+      const parts = await ckpt.save('dense:' + state.denseBlocks, {
+        count: b.positions.length / 3, fusedUntil: fusedUntil, voxel: b.voxel,
+      }, [b.positions, b.colors]);
+      denseParts[state.denseBlocks] = parts || 1;
+      await saveIndex({ stage: 'dense', denseBlocks: state.denseBlocks + 1, denseFused: fusedUntil, denseParts: denseParts }, true);
+    };
+
+    // on resume the depth maps behind the restart point are gone; recompute a
+    // window of them so the next views still have something to check against
+    if (startFuse > 0) {
+      for (let k = Math.max(0, startFuse - lag); k < startFuse; k++) {
+        checkCancel();
+        say('dense', 'Reloading the working window ' + (k - Math.max(0, startFuse - lag) + 1) + '/' + Math.min(lag, startFuse));
+        await ensureDepth(k);
+      }
+    }
+
+    for (let k = startFuse; k < order.length; k++) {
+      checkCancel();
+      say('dense', 'Depth map ' + (k + 1) + '/' + order.length + ' — ' + meta[order[k]].name);
+      for (let a2 = k; a2 <= Math.min(order.length - 1, k + lag); a2++) await ensureDepth(a2);
+      fuseAt(order[k]);
+      progress.tick('dense', k + 1);
+      progress.tick('fuse', k + 1);
+      if ((k + 1 - startFuse) % BLOCK_VIEWS === 0 || k === order.length - 1 || Date.now() - lastBlockAt > 30000) {
+        lastBlockAt = Date.now();
+        await flushBlock(k + 1);
       }
     }
     progress.finish('dense');
     progress.begin('fuse');
-    for (let k = Math.max(0, order.length - lag); k < order.length; k++) {
-      checkCancel();
-      fuseAt(order[k]);
-      progress.tick('fuse', ++fused);
-      say('fuse', 'Fusing depth maps ' + fused + '/' + order.length);
-    }
     imgCache.clear(); depthCache.clear();
+
+    /* merge the blocks into one cloud — points that fall in the same voxel
+       across blocks come back together here */
+    say('fuse', 'Merging ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' of points', true);
+    const grid = makeGrid();
+    for (const b of blocks) {
+      const n = b.positions.length / 3;
+      for (let i = 0; i < n; i++) {
+        grid.add(b.positions[i * 3], b.positions[i * 3 + 1], b.positions[i * 3 + 2],
+          b.colors[i * 3], b.colors[i * 3 + 1], b.colors[i * 3 + 2]);
+      }
+    }
+    blocks.length = 0;
     say('fuse', 'Cleaning ' + grid.size.toLocaleString() + ' points', true);
     cloud = grid.finish(1);
     voxelUsed = cloud.voxel;
@@ -488,11 +724,13 @@ async function build(job) {
     },
   };
 
+  if (ckpt) await saveIndex({ stage: 'done', done: true, finishedAt: Date.now() }, true);
+
   const transfer = [result.positions.buffer, result.colors.buffer];
   if (mesh) transfer.push(mesh.positions.buffer, mesh.colors.buffer, mesh.indices.buffer);
   if (ortho) transfer.push(ortho.rgba.buffer);
   say('mesh', 'Model complete', true);
-  post({ type: 'done', result: result }, transfer);
+  post({ type: 'done', result: result, buildId: job.buildId || null, resumed: resuming }, transfer);
 }
 
 self.onmessage = async (e) => {
@@ -503,7 +741,7 @@ self.onmessage = async (e) => {
   try {
     await build(msg);
   } catch (err) {
-    if (String(err && err.message) === '__cancelled__') post({ type: 'cancelled' });
+    if (String(err && err.message) === '__cancelled__') post({ type: 'cancelled', buildId: msg.buildId || null });
     else post({ type: 'error', message: String((err && err.message) || err) });
   }
 };
