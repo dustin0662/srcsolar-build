@@ -589,7 +589,7 @@ export default function KmzSatelliteTracker({ onExit, onSwitchToDrawing, initial
         }}>
           {onExit && <button className="kmz-btn" onClick={onExit}>← Dashboard</button>}
           {onSwitchToDrawing && <button className="kmz-btn" onClick={onSwitchToDrawing}>Drawing Mode</button>}
-          <img src="/logo-sunrise-mark.svg" alt="Sunrise Construction" style={{ width: 38, height: 32, objectFit: 'contain' }} />
+          <img src="/logo-sunrise.svg" alt="Sunrise Construction" style={{ width: 44, height: 32, objectFit: 'contain' }} />
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, letterSpacing: 3, color: BRAND_ORANGE }}>
             TASK TRACKER
           </div>
