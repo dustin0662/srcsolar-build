@@ -19,63 +19,17 @@ const BRAND = {
     email: "Kaleb.LeBaron@sunriseconstructionco.com",
     address: "12856 N Hwy 183 Ste B PMB 2011, Austin TX 78750",
   },
-  // Full Sunrise Construction mark — inlined so PDF exports never need a network fetch.
-  // Icon: orange sun with rays over a navy tilted solar-panel array; wordmark below.
-  logoSvg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 380" width="160" height="152">
-    <defs>
-      <linearGradient id="be-sun" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#FDB824"/><stop offset=".55" stop-color="#F97316"/><stop offset="1" stop-color="#EA580C"/>
-      </linearGradient>
-      <linearGradient id="be-pnl" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#1e3a6a"/><stop offset=".55" stop-color="#0f2447"/><stop offset="1" stop-color="#081832"/>
-      </linearGradient>
-      <linearGradient id="be-pnl-f" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2a4d80"/><stop offset="1" stop-color="#132c55"/>
-      </linearGradient>
-    </defs>
-    <g fill="url(#be-sun)">
-      <path d="M200 10 L207 100 L200 105 L193 100 Z"/>
-      <path d="M110 32 L182 108 L177 116 L167 115 Z"/>
-      <path d="M290 32 L218 108 L223 116 L233 115 Z"/>
-      <path d="M158 12 L194 106 L188 111 L180 108 Z"/>
-      <path d="M242 12 L206 106 L212 111 L220 108 Z"/>
-      <path d="M62 90 L172 122 L170 130 L162 130 Z"/>
-      <path d="M40 152 L162 148 L162 156 L156 158 Z"/>
-      <path d="M338 90 L228 122 L230 130 L238 130 Z"/>
-      <path d="M360 152 L238 148 L238 156 L244 158 Z"/>
-      <path d="M72 200 L164 172 L166 180 L162 186 Z"/>
-      <path d="M92 244 L166 190 L172 196 L172 204 Z"/>
-      <path d="M328 200 L236 172 L234 180 L238 186 Z"/>
-      <path d="M308 244 L234 190 L228 196 L228 204 Z"/>
-    </g>
-    <path d="M129 154 a71 71 0 1 1 88 68 l 4 -22 a49 49 0 1 0 -70 -50 Z" fill="url(#be-sun)"/>
-    <path d="M215 220 q 20 -6 26 -22 l -12 -4 q -6 12 -20 16 Z" fill="url(#be-sun)"/>
-    <g stroke="#050d1e" stroke-width="1.5" stroke-linejoin="round">
-      <polygon fill="url(#be-pnl)"   points="150,205 205,203 210,225 152,227"/>
-      <polygon fill="url(#be-pnl)"   points="205,203 258,201 266,222 210,225"/>
-      <polygon fill="url(#be-pnl)"   points="258,201 308,199 318,220 266,222"/>
-      <polygon fill="url(#be-pnl-f)" points="308,199 356,197 368,218 318,220"/>
-      <polygon fill="url(#be-pnl)"   points="152,227 210,225 216,250 155,253"/>
-      <polygon fill="url(#be-pnl)"   points="210,225 266,222 275,247 216,250"/>
-      <polygon fill="url(#be-pnl)"   points="266,222 318,220 328,246 275,247"/>
-      <polygon fill="url(#be-pnl-f)" points="318,220 368,218 381,244 328,246"/>
-      <polygon fill="url(#be-pnl)"   points="155,253 216,250 223,278 159,282"/>
-      <polygon fill="url(#be-pnl)"   points="216,250 275,247 285,275 223,278"/>
-      <polygon fill="url(#be-pnl)"   points="275,247 328,246 340,274 285,275"/>
-      <polygon fill="url(#be-pnl-f)" points="328,246 381,244 395,274 340,274"/>
-      <path d="M368 218 L395 274 L395 250 Z" fill="#0a1e3d"/>
-      <circle cx="379" cy="252" r="10" fill="none" stroke="#F97316" stroke-width="2"/>
-      <line x1="371" y1="245" x2="387" y2="259" stroke="#F97316" stroke-width="2"/>
-      <line x1="371" y1="259" x2="387" y2="245" stroke="#F97316" stroke-width="2"/>
-    </g>
-    <g font-family="Arial Black, Impact, sans-serif" font-weight="900">
-      <text x="200" y="335" text-anchor="middle" fill="#0f2447" font-size="52" letter-spacing="6">SUNRISE</text>
-      <line x1="112" y1="365" x2="150" y2="365" stroke="#F97316" stroke-width="3"/>
-      <text x="200" y="373" text-anchor="middle" fill="#F97316" font-size="22" letter-spacing="10" font-weight="700">CONSTRUCTION</text>
-      <line x1="250" y1="365" x2="288" y2="365" stroke="#F97316" stroke-width="3"/>
-    </g>
-  </svg>`,
+  // Logo is served from same-origin /logo-sunrise.svg — referenced via absolute
+  // URL at HTML-build time (see logoImgHtml helper below).
+  logoPath: "/logo-sunrise.svg",
 };
+
+// Builds an <img> tag with an absolute origin so it renders inside the
+// window.open() popup used for PDF export (about:blank has no base URL).
+function logoImgHtml(h) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `<img src="${origin}${BRAND.logoPath}" style="height:${h}px;width:auto;object-fit:contain;display:inline-block;vertical-align:middle" alt="Sunrise Construction"/>`;
+}
 
 function fmt(n) { return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 function fmtPct(n) { return (Number(n || 0) * 100).toFixed(1) + "%"; }
@@ -128,7 +82,7 @@ function buildProposalHTML(params, computed) {
     .highlight-box .sub { font-size: 11pt; opacity: 0.85; margin-top: 4px; }
   `;
 
-  const headerBar = `<div class="header-bar"><div class="logo">${BRAND.shortName.toUpperCase()}</div><div class="date">${fmtDate(p.bidDate)}</div></div>`;
+  const headerBar = `<div class="header-bar"><div class="logo" style="display:flex;align-items:center;gap:10px">${logoImgHtml(28)}<span>${BRAND.shortName.toUpperCase()}</span></div><div class="date">${fmtDate(p.bidDate)}</div></div>`;
   const footer = (pg) => `<div class="footer"><span>${co} — Confidential</span><span>Page ${pg}</span></div>`;
 
   const pages = [];
@@ -136,6 +90,7 @@ function buildProposalHTML(params, computed) {
   // PAGE 1 — Cover
   pages.push(`<div class="page" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:linear-gradient(180deg,#1a1a2e 0%,#1a1a2e 55%,#F97316 55%,#F97316 58%,#f5f2ee 58%);">
     <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center">
+      <div style="background:#fff;padding:16px 24px;border-radius:8px;margin-bottom:24px;display:inline-block">${logoImgHtml(120)}</div>
       <div style="font-family:'Black Ops One',Impact,sans-serif;font-size:42pt;color:#fff;letter-spacing:6px;margin-bottom:8px">${BRAND.shortName.toUpperCase()}</div>
       <div style="font-size:11pt;color:rgba(255,255,255,.6);letter-spacing:4px;text-transform:uppercase;margin-bottom:40px">${BRAND.tagline}</div>
       <div style="width:120px;height:4px;background:#F97316;margin:24px auto"></div>
@@ -502,7 +457,7 @@ function buildExecutionPlanHTML(params, computed) {
     <title>${co} — Execution Plan — ${p.projectName || "Project"}</title>
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
     <style>${pageStyle}</style></head><body>
-    <div class="header"><div class="logo">${BRAND.shortName.toUpperCase()}</div><div>${fmtDate(p.bidDate)}</div></div>
+    <div class="header"><div class="logo" style="display:flex;align-items:center;gap:10px">${logoImgHtml(32)}<span>${BRAND.shortName.toUpperCase()}</span></div><div>${fmtDate(p.bidDate)}</div></div>
     <h1>EXECUTION PLAN</h1>
     <p style="font-size:12pt;margin-bottom:16px"><strong>${p.projectName || "Solar Project"}</strong> — ${p.projectLocation || ""} — ${p.systemSizeMW} MW DC</p>
 
@@ -539,6 +494,7 @@ function buildExecutionPlanHTML(params, computed) {
     </ul>
 
     <div style="margin-top:24px;padding:16px;background:#1a1a2e;color:#fff;text-align:center">
+      <div style="background:#fff;padding:10px;border-radius:6px;display:inline-block;margin-bottom:10px">${logoImgHtml(50)}</div>
       <div style="font-family:'Black Ops One',Impact,sans-serif;font-size:14pt;letter-spacing:3px;margin-bottom:4px">${BRAND.shortName.toUpperCase()}</div>
       <div style="font-size:9pt;opacity:.7">${c.name} · ${c.phone} · ${c.email}</div>
     </div>
