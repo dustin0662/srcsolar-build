@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const EMPTY = { projects: [], items: [], rev: 0, lastModified: 0 };
 
@@ -20,7 +21,7 @@ function mergeDelete(list, tombstones) {
   return list.filter((x) => !dead.has(x.id));
 }
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('projecttracker'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
 
@@ -44,4 +45,4 @@ export default async (req) => {
     return Response.json(doc);
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

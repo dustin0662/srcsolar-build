@@ -1,10 +1,11 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const MAX_PER_DAY = 6000;
 const dayKey = (d) => 'log:' + d;
 const dstr = (ts) => { const d = new Date(ts || Date.now()); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('activity'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -39,4 +40,4 @@ export default async (req) => {
     return Response.json({ ok: true });
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

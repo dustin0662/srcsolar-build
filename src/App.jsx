@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { isNative, publicUrl } from "./native/platform.js"
+import { openExternal } from "./native/external.js"
+import { saveSession, loadSession, clearSession, homePageFor } from "./native/session.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
@@ -5131,8 +5134,10 @@ export default function App(){
   const[scrollY,setScrollY]=useState(0)
   const[totalH,setTotalH]=useState(4000)
   const[mob,setMob]=useState(typeof window!=='undefined'?window.innerWidth<768:false)
-  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}return 'landing'})
-  const[user,setUser]=useState(null)
+  // A saved session (see src/native/session.js) skips the landing page on
+  // reload / app launch. URL-driven entry points still win.
+  const[user,setUser]=useState(function(){return loadSession()})
+  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}var s=loadSession();return s?homePageFor(s):'landing'})
   const[lang,setLangState]=useState(function(){try{var v=localStorage.getItem('site-lang');return v==='en'||v==='es'?v:null}catch(e){return null}})
   function setLang(L){setLangState(L);try{localStorage.setItem('site-lang',L)}catch(e){}}
   const T=function(k){return tt(k,lang||'en')}
@@ -5186,6 +5191,40 @@ export default function App(){
       // a signing link stands on its own — no account, no landing page
       var signTok=params.get('sign');if(signTok){setSignToken(signTok)}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
     try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
+  },[])
+
+  // Keep the signed-in user across reloads and app launches. One effect
+  // covers every sign-in/sign-out path (login, invite signup, password change,
+  // the four sign-out buttons) instead of touching each call site.
+  useEffect(function(){
+    if(user){saveSession(user);window.__auditUser={name:user.name,email:user.email,role:user.role}}
+    else clearSession()
+  },[user])
+
+  // A restored session is only trusted until the live user list arrives —
+  // if the account was removed or its role/tools changed, follow the server.
+  useEffect(function(){
+    if(!user||!portalUsers||!portalUsers.length)return
+    var fresh=portalUsers.find(function(x){return nEmail(x.email)===nEmail(user.email)})
+    if(!fresh){setUser(null);setPage('landing');return}
+    if(fresh.passwordHash!==user.passwordHash||fresh.role!==user.role||JSON.stringify(fresh.tools||[])!==JSON.stringify(user.tools||[])||fresh.onboardingComplete!==user.onboardingComplete){setUser(fresh)}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[portalUsers])
+
+  // Deep links delivered by the Android shell (intent → appUrlOpen) carry the
+  // same ?invite= / ?sign= / ?form= query the web app already understands.
+  useEffect(function(){
+    if(!isNative)return
+    function onLink(e){
+      try{
+        var p=new URLSearchParams((e.detail&&e.detail.search)||'')
+        var inv=p.get('invite');if(inv){window._pendingInvite=inv;setLoginErr('You have an invitation! Set a password below to create your account.');setPage('login');return}
+        var st=p.get('sign');if(st){setSignToken(st);return}
+        var f=p.get('form');if(f==='employee'){setPage('employeeform');return}if(f==='admin'){setPage('employeeadmin')}
+      }catch(err){}
+    }
+    window.addEventListener('native:deeplink',onLink)
+    return function(){window.removeEventListener('native:deeplink',onLink)}
   },[])
 
   // Stamp every write so the server can pick the newest copy of each account
@@ -5287,11 +5326,11 @@ export default function App(){
     svInv(invites.filter(function(x){return nEmail(x.email)!==iem}).concat([inv]))
     logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+iem})
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
-    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var link=publicUrl('/?invite='+token)
     var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC&D Employee Portal Invitation'
     var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC&D Employee Portal.\n\nClick to join:\n'+link)
     var w=null
-    try{w=window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')}catch(e){}
+    try{w=openExternal('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')}catch(e){}
     // Popup blockers are common here — always hand back the link so the invite
     // can be sent by other means.
     if(!w)setInvMsg({k:'err',t:'Invite saved, but the Gmail window was blocked by your browser. Copy the link below and send it yourself.',link:link})
@@ -5307,10 +5346,10 @@ export default function App(){
     var inv={id:uid(),name:applicant.name||'',email:email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,invitedBy:inv.invitedBy}))
-    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var link=publicUrl('/?invite='+token)
     var subj='Welcome to Sunrise Construction & Development — Complete Your Onboarding'
     var bodyTxt='Welcome to the team, '+(inv.name||'')+'!\n\nClick the link below to set your password and complete your onboarding (upload Social Security card, government ID, and sign the employee handbook):\n\n'+link+'\n\n— SRC&D'
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    openExternal('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
     logAudit({type:'action',tool:'admin',detail:'Sent onboarding invite to '+email})
     return true
   }
@@ -5602,7 +5641,7 @@ export default function App(){
                   {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
                 ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
                   return (
-                    <div key={tile.key} onClick={function(){if(tile.href){window.open(tile.href,'_blank','noopener,noreferrer')}else{setPage(tile.key)}}} style={{
+                    <div key={tile.key} onClick={function(){if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} style={{
                       background:'#ffffff',backdropFilter:'blur(12px)',
                       border:'1px solid rgba(0,0,0,.08)',
                       padding:m?'24px 18px':'32px 28px',

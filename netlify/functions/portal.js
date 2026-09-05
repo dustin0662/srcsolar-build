@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 /* Shared key/value store behind the portal's sGet/sSet helpers.
    Without this, portal_users lived only in the browser tab that created it —
@@ -26,7 +27,7 @@ function mergeUsers(cur, incoming, deleted) {
   return [...out.values()].filter((r) => !dead.has(String(r.id)) && !dead.has(norm(r.email)));
 }
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('portal'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -47,4 +48,4 @@ export default async (req) => {
     return Response.json(doc);
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

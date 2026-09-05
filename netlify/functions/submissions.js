@@ -1,9 +1,10 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const KEY = 'submissions';
 const MAX = 5000;
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('crm'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -56,4 +57,4 @@ export default async (req) => {
     return Response.json({ error: 'bad request' }, { status: 400 });
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

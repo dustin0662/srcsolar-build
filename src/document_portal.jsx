@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
+import { publicUrl, publicHost } from './native/platform.js';
+import { openExternal } from './native/external.js';
 
 /* ── design tokens ─────────────────────────────────────────────────── */
 const ORANGE = '#F97316', GOLD = '#EAB308', GREEN = '#16a34a', RED = '#dc2626';
@@ -650,7 +652,7 @@ export function PublicSignPage({ token, onExit }) {
         <div style={{ ...NB, fontSize: 15, color: MID, lineHeight: 1.6 }}>{body}</div>
         {/* label follows whatever host is serving the page, so it stays right
             if the site moves between the custom domain and netlify.app */}
-        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to {window.location.hostname.replace(/^www\./, '')}</button>}
+        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to {publicHost()}</button>}
       </div>
     </div>
   );
@@ -751,7 +753,7 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   const [auditDoc, setAuditDoc] = useState(null);
   const [copiedTok, setCopiedTok] = useState('');
   /* the signing link is all a recipient needs — no account, no password */
-  const signLink = (s) => window.location.origin + window.location.pathname + '?sign=' + s.token;
+  const signLink = (s) => publicUrl('/?sign=' + s.token);
   function copySignLink(s) {
     const url = signLink(s);
     try { navigator.clipboard.writeText(url); setCopiedTok(s.token); setTimeout(() => setCopiedTok(''), 2000); }
@@ -763,7 +765,7 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
     const body = (s.name ? s.name.split(' ')[0] + ',\n\n' : '') +
       'Please review and sign "' + d.name + '" for Sun Rise Construction and Development LLC.\n\n' +
       'Open this link to sign — no account or sign-up is needed:\n' + url + '\n\n— SRC&D';
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s.email) + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body), '_blank');
+    openExternal('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s.email) + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body), '_blank');
   }
   const [savedSigs, setSavedSigs] = useState([]);
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
