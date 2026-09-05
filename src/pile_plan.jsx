@@ -667,7 +667,8 @@ export default function PilePlan({ onExit, portalUser }) {
   const allowed = allowedPaintSet(scopeForActive); // null = all allowed
 
   const [paint, setPaint] = useState('s1');         // s0-s4 stages, q1/q2 QC, q0 clear
-  const [mode, setMode] = useState('brush');        // brush | fill | pan
+  const [mode, setMode] = useState('brush');        // brush | fill | pan | delete | bg
+  const [delSel, setDelSel] = useState(() => new Set()); // points queued for deletion (delete mode)
   const [sheetOpen, setSheetOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [projOpen, setProjOpen] = useState(false);
@@ -739,6 +740,28 @@ export default function PilePlan({ onExit, portalUser }) {
     pushLog('undid last change');
   };
 
+  /* ---- delete mode: queue points, then remove them from every per-point array ---- */
+  const markDel = (list) => setDelSel((prev) => { const n = new Set(prev); for (const i of list) n.add(i); return n; });
+  const toggleDel = (i) => setDelSel((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const clearDel = () => setDelSel(new Set());
+  const deleteMarked = () => {
+    const del = delSel; if (!del.size) return;
+    if (!window.confirm(`Delete ${del.size} point${del.size === 1 ? '' : 's'} from "${projName}"? This removes them from the plan, the map and every report, and cannot be undone.`)) return;
+    const N = pointsRef.current.length;
+    const keep = []; const remap = new Array(N).fill(-1);
+    for (let i = 0; i < N; i++) if (!del.has(i)) { remap[i] = keep.length; keep.push(i); }
+    const pick = (arr) => (Array.isArray(arr) && arr.length === N ? keep.map((i) => arr[i]) : arr);
+    setPoints((p) => pick(p)); setSections((s) => pick(s));
+    setStage((s) => pick(s)); setQc((q) => pick(q)); setBy((b) => pick(b)); setAt((a) => pick(a));
+    setNotes((n) => { const out = {}; for (const k of Object.keys(n || {})) { const j = remap[+k]; if (j >= 0) out[j] = n[k]; } return out; });
+    setSub((s) => { const out = {}; for (const k of Object.keys(s || {})) { const bits = String(s[k] || ''); let nb = ''; for (const i of keep) nb += bits[i] === '1' ? '1' : '0'; out[k] = nb; } return out; });
+    setGeo((g) => { if (!g) return g; const out = { ...g }; for (const k of Object.keys(g)) if (Array.isArray(g[k]) && g[k].length === N) out[k] = pick(g[k]); return out; });
+    setSelSection(null); setNotePt(null); setDelSel(new Set());
+    undoRef.current = []; setCanUndo(false);   // undo snapshots predate the new indexing
+    setLastModified(Date.now());
+    pushLog(`deleted ${del.size} point${del.size === 1 ? '' : 's'}`);
+  };
+
   /* ---- painting ---- */
   const allowedRef = useRef(allowed); useEffect(() => { allowedRef.current = allowed; }, [allowed]);
   /* blocks are "Block N" until someone names them */
@@ -749,6 +772,7 @@ export default function PilePlan({ onExit, portalUser }) {
   }, []);
   const stampIndex = (i) => { const t = Date.now(); setAt((prev) => { const n = prev.slice(); n[i] = t; return n; }); setBy((prev) => { if (prev[i] === userName) return prev; const n = prev.slice(); n[i] = userName; return n; }); };
   const applyPaintToIndex = (i) => {
+    if (modeRef.current === 'delete') { markDel([i]); return; }
     const pv = paintRef.current;
     if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
     const p = parsePaint(pv, subtasksRef.current);
@@ -786,9 +810,10 @@ export default function PilePlan({ onExit, portalUser }) {
   /* Apply the active paint to every index in `list` in one pass — used by the
      section fill and by the click-and-drag marquee. */
   const applyPaintToList = (list, describe) => {
+    if (!list || !list.length) return;
+    if (modeRef.current === 'delete') { markDel(list); return; }
     const pv = paintRef.current;
     if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
-    if (!list || !list.length) return;
     snapshotUndo();
     const p = parsePaint(pv, subtasksRef.current);
     const hit = new Set(list); const t = Date.now(); const N = pointsRef.current.length;
@@ -829,13 +854,14 @@ export default function PilePlan({ onExit, portalUser }) {
   /* Shared paint plumbing for the satellite + 3D overlays, so those views
      behave exactly like the plan SVG (brush drags, marquee fill, tap-to-note). */
   const overlayPick = (i) => {
+    if (modeRef.current === 'delete') { toggleDel(i); return; }
     if (modeRef.current === 'pan') { setNotePt(i); return; }
     if (modeRef.current === 'fill') { fillAt(i); return; }
     if (!paintAllowed(allowedRef.current, paintRef.current, subtasksRef.current)) { setNotePt(i); return; }
     snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null };
     applyPaintToIndex(i); burstFlush();
   };
-  const overlayBrushStart = () => { snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; };
+  const overlayBrushStart = () => { if (modeRef.current === 'delete') return; snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; };
   const overlayBrushPoint = (i) => applyPaintToIndex(i);
   const overlayBrushEnd = () => burstFlush();
   const saveOverlay3d = (ov) => { setOverlay3d(ov); setLastModified(Date.now()); pushLog(ov.on === false ? 'hid 3D overlay' : (ov.locked ? 'locked 3D overlay alignment' : 'updated 3D overlay alignment')); };
@@ -974,6 +1000,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const m = modeRef.current;
     if (m === 'bg') { if (bgRef.current) { const p = toView(e.clientX, e.clientY); bgDragRef.current = { sx: p.x, sy: p.y, x0: bgRef.current.x, y0: bgRef.current.y }; } }
     else if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
+    else if (m === 'delete') { paintingRef.current = true; paintAt(e.clientX, e.clientY); }
     else if (m === 'fill') { const p = toView(e.clientX, e.clientY); marqRef.current = { cx: e.clientX, cy: e.clientY, a: p, b: p, moved: false }; setMarq({ a: p, b: p }); }
     else { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: vwRef.current.x, vy: vwRef.current.y }; pannedRef.current = false; }
   };
@@ -986,7 +1013,7 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
   useEffect(() => {
-    const mv = (e) => { if (paintingRef.current && modeRef.current === 'brush' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
+    const mv = (e) => { if (paintingRef.current && (modeRef.current === 'brush' || modeRef.current === 'delete') && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
     const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (marqRef.current) commitMarquee(); panRef.current = null; if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
@@ -999,7 +1026,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
     setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setGeo(d.geo || null); setViewMode((d.geo && d.geo.lonLat && d.geo.lonLat.length) ? 'sat' : 'plan'); setSectionNames(d.sectionNames || {}); setSubtasks(d.subtasks || []); setSub(d.sub || {}); setSelSection(null); setLog(d.log); setLastModified(d.lastModified);
-    undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
+    undoRef.current = []; setCanUndo(false); setDelSel(new Set()); if (modeRef.current === 'delete') setMode('brush'); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
   const deleteProject = (id) => {
@@ -1241,8 +1268,10 @@ export default function PilePlan({ onExit, portalUser }) {
   /* ---- dots ---- */
   const dotEls = useMemo(() => points.map((d, i) => {
     const dim = selSection != null && sections && sections[i] !== selSection;
+    const del = delSel.has(i);
+    if (del) return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={5.2} fill="#dc2626" stroke="#fff" strokeWidth={1.2} opacity={1} />;
     return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} opacity={dim ? 0.16 : 1} />;
-  }), [points, stage, qc, selSection, sections]);
+  }), [points, stage, qc, selSection, sections, delSel]);
 
   /* outline around the selected block, so you can see which one you picked */
   const selHull = useMemo(() => {
@@ -1325,9 +1354,11 @@ export default function PilePlan({ onExit, portalUser }) {
         <button onClick={() => setMode('brush')} style={segBtn(mode === 'brush')}>Brush</button>
         <button onClick={() => setMode('fill')} style={segBtn(mode === 'fill')}>Fill</button>
         <button onClick={() => setMode('pan')} style={segBtn(mode === 'pan')}>Pan</button>
+        {isAdmin && <button onClick={() => { setMode(mode === 'delete' ? 'brush' : 'delete'); clearDel(); }} style={{ ...segBtn(mode === 'delete'), ...(mode === 'delete' ? { background: '#dc2626', borderColor: '#dc2626', color: '#fff' } : null) }}>Delete</button>}
       </div>
       <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: -3 }}>
         {mode === 'brush' ? 'Click and drag across points to paint them.'
+          : mode === 'delete' ? `Tap or drag over points to queue them, then press Delete. ${delSel.size ? delSel.size + ' queued.' : ''}`
           : mode === 'fill' ? `Drag a box to fill everything inside it — a single click fills the whole ${sectionCount > 1 ? 'block' : 'plan'}.`
             : 'Drag to move the view. Tap a point for its status, history and notes.'}
       </div>
@@ -1578,6 +1609,7 @@ export default function PilePlan({ onExit, portalUser }) {
               onLayerMode={setTileLayer}
               active={notePt}
               mode={mode}
+              marked={delSel}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1600,6 +1632,7 @@ export default function PilePlan({ onExit, portalUser }) {
               canAlign={isAdmin}
               onModelBuffer={(b) => { modelBufRef.current = b; }}
               dispColor={dispColor}
+              marked={delSel}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1618,7 +1651,8 @@ export default function PilePlan({ onExit, portalUser }) {
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.4} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />; })()}
             </svg>
           )}
-          <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
+          {/* on phones this drops to a second row so it clears the satellite/streets toggle */}
+          <div style={{ position: 'absolute', top: mob ? 58 : 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
               v.need === false ? null : (
                 <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
@@ -1646,14 +1680,38 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       {mob && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: 'rgba(4,4,12,.92)', borderTop: '1px solid ' + LINE }}>
-          <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '10px 14px', minHeight: 44 }}>Status &#9650;</button>
-          <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, minHeight: 44, cursor: 'pointer' }}>
-            <span style={{ width: 18, height: 18, background: paintColor, flexShrink: 0, border: '1px solid rgba(255,255,255,.4)', clipPath: CLIP }} />
-            <span style={{ fontFamily: NBF, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15 }}>{paintLabel}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: 'rgba(4,4,12,.94)', borderTop: '1px solid ' + LINE }}>
+          {mode === 'delete' ? (
+            /* delete mode: what's queued + the two actions */
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 14, height: 14, background: '#dc2626', border: '2px solid #fff', borderRadius: 7, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontFamily: NBF, fontWeight: 600, fontSize: 15, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{delSel.size ? `${delSel.size} point${delSel.size === 1 ? '' : 's'} selected` : 'Tap or drag over points to remove'}</span>
+              <button onClick={clearDel} disabled={!delSel.size} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, opacity: delSel.size ? 1 : .4 }}>Clear</button>
+              <button onClick={deleteMarked} disabled={!delSel.size} style={{ ...ctaBtn, background: '#dc2626', color: '#fff', padding: '10px 14px', minHeight: 44, opacity: delSel.size ? 1 : .4 }}>Delete</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '10px 14px', minHeight: 44 }}>Status &#9650;</button>
+              <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, minHeight: 44, cursor: 'pointer' }}>
+                <span style={{ width: 18, height: 18, background: paintColor, flexShrink: 0, border: '1px solid rgba(255,255,255,.4)', clipPath: CLIP }} />
+                <span style={{ fontFamily: NBF, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15 }}>{paintLabel}</span>
+              </div>
+              <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, minWidth: 44, opacity: canUndo ? 1 : .4 }}>&#8634;</button>
+            </div>
+          )}
+          {/* explicit tool row — no more cycling through modes blind */}
+          <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 6 }}>
+            {[{ k: 'brush', l: 'Brush', hint: 'Drag to paint' }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block' }, { k: 'pan', l: 'Pan', hint: 'Move & pinch' }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points' }] : []).map((t) => {
+              const on = mode === t.k; const red = t.k === 'delete';
+              return (
+                <button key={t.k} onClick={() => { if (mode === 'delete' && t.k !== 'delete') clearDel(); setMode(t.k); }}
+                  style={{ minHeight: 48, padding: '6px 4px', border: '1px solid ' + (on ? (red ? '#dc2626' : ORANGE) : LINE), background: on ? (red ? '#dc2626' : ORANGE) : 'rgba(255,255,255,.04)', color: on ? (red ? '#fff' : '#1a1206') : CREAM, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                  <span>{t.l}</span>
+                  <span style={{ fontSize: 9, letterSpacing: .5, textTransform: 'none', fontWeight: 500, opacity: .8 }}>{t.hint}</span>
+                </button>
+              );
+            })}
           </div>
-          <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, minWidth: 44, opacity: canUndo ? 1 : .4 }}>&#8634;</button>
-          <button onClick={() => setMode(mode === 'brush' ? 'fill' : mode === 'fill' ? 'pan' : 'brush')} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, minWidth: 64 }}>{mode === 'brush' ? 'Brush' : mode === 'fill' ? 'Fill' : 'Pan'}</button>
         </div>
       )}
 

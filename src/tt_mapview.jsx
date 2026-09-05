@@ -27,7 +27,7 @@ function colorFor(stage, qc) {
 export default function TTMapView({
   geo, stage, qc, sections, sectionNames, selSection,
   onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints,
-  active, layerMode, onLayerMode, mode,
+  active, layerMode, onLayerMode, mode, marked,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -94,16 +94,17 @@ export default function TTMapView({
   useEffect(() => {
     markersRef.current.forEach((m, i) => {
       const dim = selSection != null && sections && sections[i] !== selSection;
+      const del = marked && marked.has(i);   // queued for deletion
       m.setStyle({
-        fillColor: colorFor(stage[i], qc[i]),
-        radius: active === i ? 8 : 5,
-        color: active === i ? ORANGE : 'rgba(2,3,10,.6)',
-        weight: active === i ? 2 : 0.8,
-        fillOpacity: dim ? 0.18 : 0.95,
-        opacity: dim ? 0.18 : 1,
+        fillColor: del ? '#dc2626' : colorFor(stage[i], qc[i]),
+        radius: del ? 7 : active === i ? 8 : 5,
+        color: del ? '#fff' : active === i ? ORANGE : 'rgba(2,3,10,.6)',
+        weight: del ? 2 : active === i ? 2 : 0.8,
+        fillOpacity: dim && !del ? 0.18 : 0.95,
+        opacity: dim && !del ? 0.18 : 1,
       });
     });
-  }, [stage, qc, active, selSection, sections]);
+  }, [stage, qc, active, selSection, sections, marked]);
 
   /* silhouette outline around the selected block */
   useEffect(() => {
@@ -131,11 +132,18 @@ export default function TTMapView({
      instead of panning the map. Pan mode hands the map back. */
   useEffect(() => {
     const map = mapRef.current; if (!map) return;
-    const painting = mode === 'brush' || mode === 'fill';
+    const painting = mode === 'brush' || mode === 'fill' || mode === 'delete';
     if (painting) { map.dragging.disable(); map.doubleClickZoom.disable(); map.boxZoom.disable(); }
     else { map.dragging.enable(); map.doubleClickZoom.enable(); map.boxZoom.enable(); }
     const el = map.getContainer();
-    if (el) el.style.cursor = painting ? 'crosshair' : '';
+    if (el) {
+      el.style.cursor = painting ? 'crosshair' : '';
+      /* Leaflet's stylesheet drops touch-action to "pan-x pan-y" as soon as
+         dragging is disabled, so on a phone the browser claimed every brush
+         stroke as a scroll and fired pointercancel after the first dot.
+         Owning the gesture is what makes brush/fill work on touch. */
+      el.style.touchAction = painting ? 'none' : '';
+    }
   }, [mode]);
 
   /* hit-test in screen space — markers use the canvas renderer, so there are
@@ -176,8 +184,9 @@ export default function TTMapView({
       /* right button pans regardless of tool — Leaflet's own dragging is
          left-button only, so drive the centre by hand */
       if (e.button === 2) { rpanRef.current = { x: e.clientX, y: e.clientY }; e.preventDefault(); return; }
+      if (e.isPrimary === false) return;   // second finger = pinch-zoom, not a stroke
       const m = modeRef.current;
-      if (m === 'brush') {
+      if (m === 'brush' || m === 'delete') {
         paintingRef.current = true;
         if (cb.current.onBrushStart) cb.current.onBrushStart();
         const i = nearestPoint(e.clientX, e.clientY);
@@ -190,6 +199,7 @@ export default function TTMapView({
       }
     };
     const move = (e) => {
+      if (e.isPrimary === false) return;
       if (rpanRef.current) {
         const r = rpanRef.current; const dx = e.clientX - r.x, dy = e.clientY - r.y;
         if (dx || dy) { map.panBy([-dx, -dy], { animate: false }); rpanRef.current = { x: e.clientX, y: e.clientY }; }

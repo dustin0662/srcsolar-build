@@ -6,6 +6,9 @@ import { useNavStack } from "./native/navstack.js"
 import { useIsMobile } from "./native/useIsMobile.js"
 import { getCurrentPosition as geoGetCurrentPosition, watchPosition as geoWatchPosition, clearWatch as geoClearWatch, isSupported as geoSupported } from "./native/geo.js"
 import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
+import LoadsFrame from "./native/LoadsFrame.jsx"
+import LockScreen from "./native/LockScreen.jsx"
+import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
@@ -5156,7 +5159,9 @@ export default function App(){
   // A saved session (see src/native/session.js) skips the landing page on
   // reload / app launch. URL-driven entry points still win.
   const[user,setUser]=useState(function(){return loadSession()})
-  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}var s=loadSession();return s?homePageFor(s):'landing'})
+  // The Android app is the employee portal, not the marketing site: with no
+  // saved session it opens straight on the login page.
+  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}var s=loadSession();return s?homePageFor(s):(isNative?'login':'landing')})
   const[lang,setLangState]=useState(function(){try{var v=localStorage.getItem('site-lang');return v==='en'||v==='es'?v:null}catch(e){return null}})
   function setLang(L){setLangState(L);try{localStorage.setItem('site-lang',L)}catch(e){}}
   const T=function(k){return tt(k,lang||'en')}
@@ -5279,6 +5284,8 @@ export default function App(){
   function finishLogin(u){
     window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
     setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
+    // Android app: offer fingerprint / face unlock once, after the first password sign-in.
+    if(isNative)setTimeout(function(){offerBiometricUnlock().catch(function(){})},600)
   }
 
   function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
@@ -5452,6 +5459,22 @@ export default function App(){
   // login) let the shell minimize the app.
   useNavStack(page,setPage,user?'dashboard':'landing')
 
+  // Biometric gate (Android app only): a saved session opens behind a
+  // fingerprint / face prompt when the user has opted in, and re-locks after
+  // the app sits in the background for a while.
+  const[locked,setLocked]=useState(function(){return isNative&&!!loadSession()&&biometricEnabled()})
+  useEffect(function(){
+    if(!isNative)return
+    var hiddenAt=0
+    function onVis(){
+      if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
+      if(hiddenAt&&Date.now()-hiddenAt>RELOCK_AFTER_MS&&user&&biometricEnabled())setLocked(true)
+      hiddenAt=0
+    }
+    document.addEventListener('visibilitychange',onVis)
+    return function(){document.removeEventListener('visibilitychange',onVis)}
+  },[user])
+
   // Bottom tab bar shows on phone widths (and always in the Android shell)
   // for signed-in users on pages that don't carry their own bottom chrome.
   var showTabBar=!!(mob&&user&&user.role!=='client'&&TABBAR_PAGES.has(page))
@@ -5551,6 +5574,7 @@ export default function App(){
   if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
 
   if(!lang) return <LangPicker onPick={setLang}/>;
+  if(locked&&user) return <LockScreen userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/>;
 
   return(
     <div style={{position:'fixed',inset:0,fontFamily:"'Barlow',sans-serif"}}>
@@ -5602,7 +5626,8 @@ export default function App(){
               <div style={{display:'flex',gap:10,alignItems:'center',marginTop:10}}>
                 <div onClick={function(){setLang(lang==='en'?'es':'en')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#F5F0EB',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(255,255,255,.18)',cursor:'pointer'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>
                 {page==='landing'&&<a href="#contact" onClick={function(){setMenuOpen(false)}} style={{flex:1,background:A,color:'#1a1206',...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',textDecoration:'none',padding:'12px 16px',minHeight:44,display:'flex',alignItems:'center',justifyContent:'center',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{T('cta_partner')}</a>}
-                {user&&<div onClick={function(){setMenuOpen(false);setUser(null);setPage('landing')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#f87171',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(248,113,113,.3)',cursor:'pointer',marginLeft:'auto'}}>Sign out</div>}
+                {user&&isNative&&<div onClick={function(){var on=!biometricEnabled();if(on){biometricVerify('Confirm to enable fingerprint / face unlock').then(function(ok){if(ok){setBiometricEnabled(true);setMenuOpen(false)}})}else{setBiometricEnabled(false);setMenuOpen(false)}}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:biometricEnabled()?'#22c55e':'#CCC8C2',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid '+(biometricEnabled()?'rgba(34,197,94,.4)':'rgba(255,255,255,.18)'),cursor:'pointer'}}>{biometricEnabled()?'Biometric unlock: on':'Biometric unlock: off'}</div>}
+                {user&&<div onClick={function(){setMenuOpen(false);setUser(null);setPage(isNative?'login':'landing')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#f87171',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(248,113,113,.3)',cursor:'pointer',marginLeft:'auto'}}>Sign out</div>}
               </div>
             </div>
           </div>
@@ -5703,7 +5728,7 @@ export default function App(){
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
                 {dashTiles.map(function(tile){
                   return (
-                    <div key={tile.key} onClick={function(){if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} style={{
+                    <div key={tile.key} onClick={function(){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} style={{
                       background:'#ffffff',backdropFilter:'blur(12px)',
                       border:'1px solid rgba(0,0,0,.08)',
                       padding:m?'24px 18px':'32px 28px',
@@ -5997,7 +6022,8 @@ export default function App(){
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
-        {showTabBar&&<MobileTabBar page={page} setPage={setPage} tiles={dashTiles} onOpenTile={function(t){if(t.href){openExternal(t.href,'_blank')}else{setPage(t.key)}}}/>}
+        {page==='loads'&&<LoadsFrame mob={mob} onExit={function(){setPage('dashboard')}}/>}
+        {showTabBar&&<MobileTabBar page={page} setPage={setPage} tiles={dashTiles} onOpenTile={function(t){if(t.key==='loads'&&isNative){setPage('loads')}else if(t.href){openExternal(t.href,'_blank')}else{setPage(t.key)}}}/>}
         {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
         {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
         {['hse'].includes(page)&&(
