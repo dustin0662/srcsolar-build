@@ -4,6 +4,7 @@ import { openExternal } from "./native/external.js"
 import { saveSession, loadSession, clearSession, homePageFor } from "./native/session.js"
 import { useNavStack } from "./native/navstack.js"
 import { useIsMobile } from "./native/useIsMobile.js"
+import { getCurrentPosition as geoGetCurrentPosition, watchPosition as geoWatchPosition, clearWatch as geoClearWatch, isSupported as geoSupported } from "./native/geo.js"
 import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
@@ -3949,10 +3950,12 @@ function TimekeepingModule({ onExit, portalUser }) {
 
   function getLocation() {
     return new Promise(function(resolve, reject) {
-      if (!navigator.geolocation) return reject('Geolocation not supported');
-      navigator.geolocation.getCurrentPosition(
+      if (!geoSupported()) return reject('Geolocation not supported');
+      // geo.js uses @capacitor/geolocation in the Android app (runtime permission
+      // prompt, fused provider) and navigator.geolocation on the web.
+      geoGetCurrentPosition(
         function(pos) { resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() }); },
-        function(err) { reject(err.message); },
+        function(err) { reject((err && err.message) || String(err)); },
         { enableHighAccuracy: true, timeout: 15000 }
       );
     });
@@ -3987,8 +3990,8 @@ function TimekeepingModule({ onExit, portalUser }) {
   }
 
   function startTracking(workerId) {
-    if (geoWatch.current) navigator.geolocation.clearWatch(geoWatch.current);
-    geoWatch.current = navigator.geolocation.watchPosition(
+    if (geoWatch.current) geoClearWatch(geoWatch.current);
+    geoWatch.current = geoWatchPosition(
       function(pos) {
         var key = workerId + '_' + today;
         sGet('tk_breadcrumbs').then(function(allB) {
@@ -4005,7 +4008,7 @@ function TimekeepingModule({ onExit, portalUser }) {
   }
 
   function stopTracking() {
-    if (geoWatch.current) { navigator.geolocation.clearWatch(geoWatch.current); geoWatch.current = null; }
+    if (geoWatch.current) { geoClearWatch(geoWatch.current); geoWatch.current = null; }
   }
 
   useEffect(function(){ return function(){ stopTracking(); }; }, []);

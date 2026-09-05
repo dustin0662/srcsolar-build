@@ -5,6 +5,8 @@ import { App as CapApp } from '@capacitor/app'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { isNative, API_ORIGIN } from './platform.js'
+import { installExportBridges } from './share.js'
+import { installCameraBridge } from './camera.js'
 
 const FUNCTIONS_PREFIX = '/.netlify/'
 
@@ -54,7 +56,11 @@ export function installNativeBootstrap() {
     } catch (e) { /* ignore malformed */ }
   })
 
-  // 5. Keep the splash up until React has painted its first frame.
+  // 5. Exports → share sheet; image pickers → native camera/photos.
+  installExportBridges()
+  installCameraBridge()
+
+  // 6. Keep the splash up until React has painted its first frame.
   window.addEventListener('load', () => {
     requestAnimationFrame(() => setTimeout(() => SplashScreen.hide().catch(() => {}), 120))
   })

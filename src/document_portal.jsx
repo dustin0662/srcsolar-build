@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
-import { publicUrl, publicHost } from './native/platform.js';
+import { publicUrl, publicHost, isNative } from './native/platform.js';
 import { openExternal } from './native/external.js';
+import { saveAndShare } from './native/share.js';
 import { useIsMobile } from './native/useIsMobile.js';
 
 /* ── design tokens ─────────────────────────────────────────────────── */
@@ -840,6 +841,9 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   async function viewDoc(d) {
     try {
       const blob = await downloadBlob(d.id, d.chunks || 0, d.mime || 'application/pdf', 'orig');
+      // No popup windows in the Android shell — hand the file to the share
+      // sheet, which offers the device's PDF viewer.
+      if (isNative) { await saveAndShare(blob, d.name || 'document.pdf', { title: d.name }); return; }
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);

@@ -1,5 +1,6 @@
 import React from "react";
-import { PUBLIC_ORIGIN } from "./native/platform.js";
+import { PUBLIC_ORIGIN, isNative } from "./native/platform.js";
+import { shareHtml } from "./native/share.js";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  BID EXPORT MODULE — Proposal & Execution Plan PDF generation
@@ -687,6 +688,9 @@ export function buildExecutionPlanHTML(params, computed, photos = {}) {
 // ─── Export Functions ─────────────────────────────────────────────────
 
 function openInNewWindow(html, title) {
+  // The Android shell has no popup windows: hand the document to the share
+  // sheet as an .html file (opens in Chrome, Drive, Gmail, …).
+  if (isNative) { shareHtml(html, String(title || "document").replace(/[\\/:*?"<>|]+/g, "_") + ".html", { title }); return; }
   const win = window.open("", "_blank", "width=900,height=700");
   if (!win) { alert("Pop-up blocked. Please allow pop-ups for this site."); return; }
   win.document.write(html);
