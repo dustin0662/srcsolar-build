@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { isNative, publicUrl } from "./native/platform.js"
 import { openExternal } from "./native/external.js"
 import { saveSession, loadSession, clearSession, homePageFor } from "./native/session.js"
+import { useNavStack } from "./native/navstack.js"
+import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
@@ -13,15 +15,27 @@ import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
 
 const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;600&family=Barlow+Condensed:wght@400;600;700&display=swap');
+:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--tabbar-h:0px}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;touch-action:manipulation}
 body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
 input,select,textarea{font-size:16px !important}
 @media(max-width:768px){
-  body{padding-bottom:env(safe-area-inset-bottom,0)}
+  body{padding-bottom:var(--sab)}
   .desktop-only{display:none !important}
   input,select,textarea{font-size:16px !important}
 }
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;600&family=Barlow+Condensed:wght@400;600;700&display=swap');
+/* Mobile shell (phone widths and the Android app) */
+html.has-tabbar{--tabbar-h:calc(64px + var(--sab))}
+html.native{overscroll-behavior:none}
+html.native *{-webkit-tap-highlight-color:transparent}
+html.native ::selection{background:rgba(249,115,22,.3)}
+@media(hover:none){
+  .hover-lift:hover{transform:none !important}
+}
+.tapt{min-height:44px;min-width:44px}
+.mobile-only{display:none}
+@media(max-width:768px){.mobile-only{display:block}}
 *{box-sizing:border-box;margin:0;padding:0}
 @keyframes spin{to{transform:rotate(360deg)}}@keyframes spinR{to{transform:rotate(-360deg)}}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
@@ -5133,7 +5147,8 @@ export default function App(){
   const[prog,setProg]=useState(0)
   const[scrollY,setScrollY]=useState(0)
   const[totalH,setTotalH]=useState(4000)
-  const[mob,setMob]=useState(typeof window!=='undefined'?window.innerWidth<768:false)
+  // The Android shell is always "mobile", whatever the screen width.
+  const[mob,setMob]=useState(isNative||(typeof window!=='undefined'?window.innerWidth<768:false))
   // A saved session (see src/native/session.js) skips the landing page on
   // reload / app launch. URL-driven entry points still win.
   const[user,setUser]=useState(function(){return loadSession()})
@@ -5427,6 +5442,39 @@ export default function App(){
   // ── audit context + time/session tracking ──
   useEffect(function(){window.__auditUser=user?{name:user.name,email:user.email,role:user.role}:null},[user])
   useEffect(function(){window.__auditTool=page},[page])
+
+  // Back stack: browser back / Android hardware back pops to the previous
+  // page instead of leaving the app. Root pages (landing, dashboard, client,
+  // login) let the shell minimize the app.
+  useNavStack(page,setPage,user?'dashboard':'landing')
+
+  // Bottom tab bar shows on phone widths (and always in the Android shell)
+  // for signed-in users on pages that don't carry their own bottom chrome.
+  var showTabBar=!!(mob&&user&&user.role!=='client'&&TABBAR_PAGES.has(page))
+  useEffect(function(){
+    var el=document.documentElement
+    if(showTabBar)el.classList.add('has-tabbar');else el.classList.remove('has-tabbar')
+    return function(){el.classList.remove('has-tabbar')}
+  },[showTabBar])
+
+  // Dashboard tiles, filtered by the user's tool grants. Shared by the tile
+  // grid and the mobile tab bar's "More" sheet.
+  var dashTiles=[
+    {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
+    {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
+    {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
+    {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
+    {key:'precon',   label:'PreCon Controls',      icon:'P', desc:'Estimating, takeoffs & bid management'},
+    {key:'compliance',label:'Compliance Center',   icon:'C', desc:'ISNet, licensing & regulatory docs'},
+    {key:'hse',      label:'HS&E',                 icon:'S', desc:'Safety incidents, training & audits'},
+    {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
+    {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
+    {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
+    {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
+    {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
+    {key:'projecttracker', label:'Project Tracker',  icon:'P', desc:'Daily calendar for tasks, issues & action items — open items roll forward; branded PDF & Excel exports', always:true},
+    {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
+  ].filter(function(tile){return tile.always||hasTool(tile.key)})
   const toolStartRef=useRef(null)
   useEffect(function(){
     var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
@@ -5455,7 +5503,7 @@ export default function App(){
   },[adminTab,user])
 
   useEffect(()=>{
-    const onResize=()=>setMob(window.innerWidth<768)
+    const onResize=()=>setMob(isNative||window.innerWidth<768)
     window.addEventListener('resize',onResize)
     return()=>window.removeEventListener('resize',onResize)
   },[])
@@ -5484,6 +5532,8 @@ export default function App(){
   const BB={fontFamily:"'Bebas Neue',sans-serif"}
   const NB={fontFamily:"'Barlow Condensed',sans-serif"}
   const m=mob
+  const[menuOpen,setMenuOpen]=useState(false)
+  useEffect(function(){setMenuOpen(false)},[page])
 
   const phases2=Z_PHASES.map(([ps,pe,ts,te,ms,me])=>({pileP:phaseP(scrollP,ps,pe),tubeP:phaseP(scrollP,ts,te),panelP:phaseP(scrollP,ms,me)}))
   const overallP2=phases2.reduce((s,p)=>s+(p.pileP+p.tubeP+p.panelP)/3,0)/phases2.length
@@ -5507,7 +5557,7 @@ export default function App(){
 
         {/* Phase label — hide on mobile */}
         {/* ── NAV ── */}
-        <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'space-between',padding:m?'14px 20px':'16px 40px',background:'rgba(2,2,12,.85)',backdropFilter:'blur(14px)',borderBottom:'1px solid rgba(249,115,22,.1)'}}>
+        <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'space-between',padding:m?'10px 16px':'16px 40px',paddingTop:m?'calc(10px + var(--sat))':'16px',minHeight:m?'calc(64px + var(--sat))':'auto',background:'rgba(2,2,12,.85)',backdropFilter:'blur(14px)',borderBottom:'1px solid rgba(249,115,22,.1)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0,marginRight:m?0:20}}>
             <img src={LOGO_SRC} alt="SRC" style={{width:m?36:48,height:m?36:48,objectFit:"contain"}}/>
             <div style={{display:m?'none':'block'}}>
@@ -5524,12 +5574,35 @@ export default function App(){
           </div>}
 
           {!m&&<div onClick={function(){setLang(lang==='en'?'es':'en')}} title={T('lang_change')} style={{...NB,fontSize:10,letterSpacing:'1.5px',textTransform:'uppercase',color:'#777',cursor:'pointer',padding:'4px 9px',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap'}} onMouseEnter={e=>{e.currentTarget.style.color=A;e.currentTarget.style.borderColor='rgba(249,115,22,.4)'}} onMouseLeave={e=>{e.currentTarget.style.color='#777';e.currentTarget.style.borderColor='rgba(255,255,255,.12)'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>}
-          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_login')}</div>}
-          {page!=='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_back_to_site')}</div>}
-          <a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:m?'2px':'3px',textTransform:'uppercase',textDecoration:'none',padding:m?'8px 12px':'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
+          {!m&&page==='landing'&&<div style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage(user?'dashboard':'login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{user?'Dashboard':T('nav_login')}</div>}
+          {/* "Back to Site" used to sign the user out — a foot-gun on a phone. It now
+              just returns to the public site; signing out stays an explicit action. */}
+          {!m&&page!=='landing'&&<div style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_back_to_site')}</div>}
+          {!m&&<a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:13,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',textDecoration:'none',padding:'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
             {T('cta_partner')}
-          </a>
+          </a>}
+          {/* Mobile: one 44px menu button instead of hidden links */}
+          {m&&<button aria-label="Menu" aria-expanded={menuOpen} onClick={function(){setMenuOpen(!menuOpen)}} style={{background:menuOpen?'rgba(249,115,22,.15)':'transparent',border:'1px solid rgba(249,115,22,.35)',color:'#F5F0EB',width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',borderRadius:6}}>
+            {menuOpen?<X size={20}/>:<Menu size={20}/>}
+          </button>}
         </nav>
+        {m&&menuOpen&&(
+          <div onClick={function(){setMenuOpen(false)}} style={{position:'fixed',inset:0,zIndex:99,background:'rgba(2,2,12,.6)',backdropFilter:'blur(2px)'}}>
+            <div onClick={function(e){e.stopPropagation()}} style={{position:'absolute',top:'calc(64px + var(--sat))',left:0,right:0,background:'#06060f',borderBottom:'1px solid rgba(249,115,22,.25)',padding:'8px 12px 14px',display:'flex',flexDirection:'column',gap:2,boxShadow:'0 18px 40px rgba(0,0,0,.6)'}}>
+              {page==='landing'&&[{k:'nav_safety',h:'safety'},{k:'nav_capabilities',h:'capabilities'},{k:'nav_portfolio',h:'portfolio'},{k:'nav_careers',h:'careers'},{k:'nav_contact',h:'contact'}].map(l=>(
+                <a key={l.k} href={'#'+l.h} onClick={function(){setMenuOpen(false)}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',textDecoration:'none',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)'}}>{T(l.k)}</a>
+              ))}
+              {page!=='landing'&&<div onClick={function(){setMenuOpen(false);setPage('landing')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>{T('nav_back_to_site')}</div>}
+              {user&&page!=='dashboard'&&<div onClick={function(){setMenuOpen(false);setPage('dashboard')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>Dashboard</div>}
+              {!user&&<div onClick={function(){setMenuOpen(false);setPage('login')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:A,padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>{T('nav_login')}</div>}
+              <div style={{display:'flex',gap:10,alignItems:'center',marginTop:10}}>
+                <div onClick={function(){setLang(lang==='en'?'es':'en')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#F5F0EB',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(255,255,255,.18)',cursor:'pointer'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>
+                {page==='landing'&&<a href="#contact" onClick={function(){setMenuOpen(false)}} style={{flex:1,background:A,color:'#1a1206',...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',textDecoration:'none',padding:'12px 16px',minHeight:44,display:'flex',alignItems:'center',justifyContent:'center',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{T('cta_partner')}</a>}
+                {user&&<div onClick={function(){setMenuOpen(false);setUser(null);setPage('landing')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#f87171',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(248,113,113,.3)',cursor:'pointer',marginLeft:'auto'}}>Sign out</div>}
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* ── PHASE LABEL ── */}
@@ -5624,22 +5697,7 @@ export default function App(){
                 );
               })()}
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
-                {[
-                  {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
-                  {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
-                  {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
-                  {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
-                  {key:'precon',   label:'PreCon Controls',      icon:'P', desc:'Estimating, takeoffs & bid management'},
-                  {key:'compliance',label:'Compliance Center',   icon:'C', desc:'ISNet, licensing & regulatory docs'},
-                  {key:'hse',      label:'HS&E',                 icon:'S', desc:'Safety incidents, training & audits'},
-                  {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
-                  {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
-                  {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
-                  {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
-                  {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
-                  {key:'projecttracker', label:'Project Tracker',  icon:'P', desc:'Daily calendar for tasks, issues & action items — open items roll forward; branded PDF & Excel exports', always:true},
-                  {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
-                ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
+                {dashTiles.map(function(tile){
                   return (
                     <div key={tile.key} onClick={function(){if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} style={{
                       background:'#ffffff',backdropFilter:'blur(12px)',
@@ -5935,6 +5993,7 @@ export default function App(){
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {showTabBar&&<MobileTabBar page={page} setPage={setPage} tiles={dashTiles} onOpenTile={function(t){if(t.href){openExternal(t.href,'_blank')}else{setPage(t.key)}}}/>}
         {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
         {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
         {['hse'].includes(page)&&(
