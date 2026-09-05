@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { jsPDF } from 'jspdf';
 import { publicUrl, publicHost } from './native/platform.js';
 import { openExternal } from './native/external.js';
+import { useIsMobile } from './native/useIsMobile.js';
 
 /* ── design tokens ─────────────────────────────────────────────────── */
 const ORANGE = '#F97316', GOLD = '#EAB308', GREEN = '#16a34a', RED = '#dc2626';
@@ -246,6 +247,7 @@ async function renderPdfPages(arrayBuffer, scale) {
 
 /* ── markup modal: admin places signature fields per signer ─────────── */
 function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
+  const mob = useIsMobile();
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [signers, setSigners] = useState(doc.workflow && doc.workflow.signers ? doc.workflow.signers.slice() : []);
@@ -368,19 +370,22 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
   return (
     <div style={overlay} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={Object.assign({}, modal(1100), { padding: 0 })}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid ' + BORDER }}>
-          <div>
-            <div style={{ ...BB, fontSize: 22, color: TEXT }}>PREPARE FOR SIGNATURE</div>
-            <div style={{ ...NB, fontSize: 12, color: MID }}>{doc.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: mob ? '10px 12px' : '14px 18px', borderBottom: '1px solid ' + BORDER }}>
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+            <div style={{ ...BB, fontSize: mob ? 19 : 22, color: TEXT }}>PREPARE FOR SIGNATURE</div>
+            <div style={{ ...NB, fontSize: 12, color: MID, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={lineBtn}>Cancel</button>
-            <button onClick={send} disabled={busy} style={cta}>{busy ? 'Sending…' : 'Send for Signature →'}</button>
+            <button onClick={onClose} style={Object.assign({}, lineBtn, mob ? { minHeight: 44, padding: '0 14px' } : null)}>Cancel</button>
+            <button onClick={send} disabled={busy} style={Object.assign({}, cta, mob ? { minHeight: 44 } : null)}>{busy ? 'Sending…' : (mob ? 'Send →' : 'Send for Signature →')}</button>
           </div>
         </div>
-        <div style={{ display: 'flex', minHeight: 0, maxHeight: 'calc(92vh - 60px)' }}>
-          {/* signer panel */}
-          <div style={{ width: 280, flexShrink: 0, borderRight: '1px solid ' + BORDER, padding: 14, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', minHeight: 0, maxHeight: mob ? 'calc(92dvh - 60px)' : 'calc(92vh - 60px)' }}>
+          {/* signer panel — a side rail on desktop, a collapsible top drawer on phones
+              so the PDF page keeps the full width */}
+          <div style={mob
+            ? { width: '100%', flexShrink: 0, maxHeight: '38%', borderBottom: '1px solid ' + BORDER, padding: '10px 12px', overflowY: 'auto' }
+            : { width: 280, flexShrink: 0, borderRight: '1px solid ' + BORDER, padding: 14, overflowY: 'auto' }}>
             <div style={{ ...kicker, marginBottom: 6 }}>Signers</div>
             {signers.map((s, i) => (
               <div key={s.id} onClick={() => setActiveSignerIdx(i)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', border: '1px solid ' + (i === activeSignerIdx ? s.color : BORDER), background: i === activeSignerIdx ? s.color + '15' : '#fff', marginBottom: 6 }}>
@@ -392,14 +397,14 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
                 <button onClick={(e) => { e.stopPropagation(); removeSigner(i); }} style={{ background: 'transparent', border: 'none', color: MID, fontSize: 18, cursor: 'pointer', padding: 0 }}>×</button>
               </div>
             ))}
-            <button onClick={addSigner} style={Object.assign({}, ghost, { width: '100%', padding: '8px 0', marginTop: 4 })}>+ Add Signer</button>
+            <button onClick={addSigner} style={Object.assign({}, ghost, { width: '100%', padding: mob ? '12px 0' : '8px 0', minHeight: mob ? 44 : undefined, marginTop: 4 })}>+ Add Signer</button>
             <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 8, lineHeight: 1.5 }}>Anyone without a portal account gets a signing link — no sign-up needed.</div>
 
             <div style={{ ...kicker, marginTop: 16, marginBottom: 6 }}>Fields</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
               {FIELD_KINDS.map((k) => (
                 <button key={k.k} onClick={() => setTool(k.k)} title={k.label}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: mob ? '11px 8px' : '7px 8px', minHeight: mob ? 44 : undefined, cursor: 'pointer', textAlign: 'left',
                     border: '1px solid ' + (tool === k.k ? ORANGE : BORDER), background: tool === k.k ? 'rgba(249,115,22,.10)' : '#fff',
                     ...NB, fontSize: 11, color: tool === k.k ? ORANGE : TEXT, fontWeight: tool === k.k ? 700 : 400 }}>
                   <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{k.glyph}</span>
@@ -434,9 +439,13 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
                     style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%', border: '2px solid ' + col, background: col + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', ...NB, fontSize: 10, letterSpacing: '.5px', textTransform: 'uppercase', color: col, cursor: 'move', overflow: 'hidden', touchAction: 'none' }}>
                     <span style={{ padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.kind === 'checkbox' ? '☑' : def.label + (s ? ' · ' + s.name.split(' ')[0] : '')}</span>
                     <button onClick={(e) => { e.stopPropagation(); removeField(f.id); }} onPointerDown={(e) => e.stopPropagation()}
-                      style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', padding: 0, background: col, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>×</button>
+                      style={mob
+                        ? { position: 'absolute', top: -6, right: -6, width: 26, height: 26, lineHeight: '24px', padding: 0, background: col, color: '#fff', border: '2px solid #fff', borderRadius: 13, cursor: 'pointer', fontSize: 15 }
+                        : { position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', padding: 0, background: col, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>×</button>
                     <span onPointerDown={(e) => startDrag(e, f, 'resize')} title="Resize"
-                      style={{ position: 'absolute', right: -3, bottom: -3, width: 11, height: 11, background: '#fff', border: '2px solid ' + col, cursor: 'nwse-resize', touchAction: 'none' }} />
+                      style={mob
+                        ? { position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, background: '#fff', border: '3px solid ' + col, borderRadius: 14, cursor: 'nwse-resize', touchAction: 'none', boxShadow: '0 1px 4px rgba(0,0,0,.3)' }
+                        : { position: 'absolute', right: -3, bottom: -3, width: 11, height: 11, background: '#fff', border: '2px solid ' + col, cursor: 'nwse-resize', touchAction: 'none' }} />
                   </div>
                 ); })}
               </div>

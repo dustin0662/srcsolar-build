@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
+import { useIsMobile } from './native/useIsMobile.js';
 
 const ENDPOINT = '/.netlify/functions/projecttracker';
 const LS_KEY = 'srcd_pt_v1';
@@ -257,7 +258,7 @@ function exportXlsx(project, sel, itemsByKind) {
 /* ------------------------------------------------------------------ */
 export default function ProjectTracker({ onExit, portalUser, allUsers }) {
   const { state, mutate, status } = useProjectTrackerData();
-  const mob = typeof window !== 'undefined' ? window.innerWidth < 780 : false;
+  const mob = useIsMobile();
   const [_, force] = useState(0);
   useEffect(() => {
     const h = () => force((n) => n + 1);
@@ -471,7 +472,7 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                   {calDays.map((d) => (
                     <button key={d.ds} onClick={() => setSelected(d.ds)} style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between',
-                      gap: 4, minHeight: 52, padding: '5px 7px', textAlign: 'left',
+                      gap: 4, minHeight: mob ? 46 : 52, padding: mob ? '4px 5px' : '5px 7px', textAlign: 'left',
                       background: d.isSel ? ORANGE : 'rgba(255,255,255,.02)',
                       color: d.isSel ? '#1a1206' : d.inMonth ? CREAM : 'rgba(148,163,184,.5)',
                       border: '1px solid ' + (d.isToday && !d.isSel ? GOLD : LINE),
@@ -507,13 +508,13 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                           <span style={{ fontSize: 12, color: MUTE }}>{rows.length} item{rows.length === 1 ? '' : 's'}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 6, margin: '10px 0', flexWrap: 'wrap' }}>
-                          <input value={d.name} onChange={(e) => setDraft(kd.k, 'name', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addItem(kd.k); }} placeholder={'New ' + kd.singular} style={{ ...inputStyle, flex: 1, minWidth: 140 }} />
-                          <input value={d.desc} onChange={(e) => setDraft(kd.k, 'desc', e.target.value)} placeholder="Description (optional)" style={{ ...inputStyle, flex: 2, minWidth: 180 }} />
-                          <select value={d.assignee} onChange={(e) => setDraft(kd.k, 'assignee', e.target.value)} style={{ ...inputStyle, width: 170 }}>
+                          <input value={d.name} onChange={(e) => setDraft(kd.k, 'name', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addItem(kd.k); }} placeholder={'New ' + kd.singular} style={{ ...inputStyle, flex: mob ? '1 1 100%' : 1, minWidth: mob ? 0 : 140 }} />
+                          <input value={d.desc} onChange={(e) => setDraft(kd.k, 'desc', e.target.value)} placeholder="Description (optional)" style={{ ...inputStyle, flex: mob ? '1 1 100%' : 2, minWidth: mob ? 0 : 180 }} />
+                          <select value={d.assignee} onChange={(e) => setDraft(kd.k, 'assignee', e.target.value)} style={{ ...inputStyle, width: mob ? undefined : 170, flex: mob ? '1 1 60%' : undefined, minWidth: 0 }}>
                             <option value="">Unassigned</option>
                             {users.map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
-                          <button onClick={() => addItem(kd.k)} style={ctaBtn}>Add</button>
+                          <button onClick={() => addItem(kd.k)} style={{ ...ctaBtn, flex: mob ? '1 1 30%' : undefined, minHeight: mob ? 44 : undefined }}>Add</button>
                         </div>
                         {!rows.length && <div style={{ fontSize: 13, color: MUTE, margin: '4px 0 0' }}>No {kd.title.toLowerCase()} on this date.</div>}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

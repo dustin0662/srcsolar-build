@@ -3,6 +3,7 @@ import { isNative, publicUrl } from "./native/platform.js"
 import { openExternal } from "./native/external.js"
 import { saveSession, loadSession, clearSession, homePageFor } from "./native/session.js"
 import { useNavStack } from "./native/navstack.js"
+import { useIsMobile } from "./native/useIsMobile.js"
 import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
@@ -3202,7 +3203,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
   var counts={applicants:items.filter(function(x){return x.kind==='career'}).length,partners:items.filter(function(x){return x.kind==='partner'}).length};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:1200,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:20,transition:'opacity .2s'}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:4}}>
@@ -3436,7 +3437,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
   const [sigName, setSigName] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [msg, setMsg] = useState('');
-  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+  const mob = useIsMobile();
 
   useEffect(function(){
     var alive = true;
@@ -3594,7 +3595,7 @@ function MyTimeCard({ portalUser, onExit }){
   const [punches, setPunches] = useState({});
   const [loading, setLoading] = useState(true);
   const [weekStart, setWeekStart] = useState(function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d});
-  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+  const mob = useIsMobile();
 
   useEffect(function(){
     var alive=true;setLoading(true);
@@ -3637,7 +3638,7 @@ function MyTimeCard({ portalUser, onExit }){
   var DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:960,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:18}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:6}}>
@@ -4107,7 +4108,7 @@ function TimekeepingModule({ onExit, portalUser }) {
         </div>
         <div style={{width:1,height:20,background:TK_BORDER}}/>
         <div style={{...BB,fontSize: mob ? 18 : 24, letterSpacing: '2px', color: TK_TEXT}}>TIMEKEEPING</div>
-        <div style={{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap'}}>
+        <div style={mob?{flexBasis:'100%',display:'flex',gap:4,flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:2,marginTop:6}:{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap'}}>
           {['clock','roster','gps','payroll','invites','admin'].map(function(t){
             if (['admin','payroll','invites'].indexOf(t) >= 0 && !isAdmin) return null;
             var labels = {clock:'Time Clock',roster:'Roster',gps:'GPS Trail',payroll:'Payroll',invites:'Invites',admin:'Manage'};
@@ -4153,9 +4154,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:14}}>
                         {!active ? (
-                          <button onClick={function(){punchIn(w.id)}} style={{...btnPrimary,background:'#22c55e',flex:1}}>&#9654; Clock In</button>
+                          <button onClick={function(){punchIn(w.id)}} style={{...btnPrimary,background:'#22c55e',flex:1,minHeight:48,fontSize:15}}>&#9654; Clock In</button>
                         ) : (
-                          <button onClick={function(){punchOut(w.id)}} style={{...btnPrimary,background:'#ef4444',flex:1}}>&#9632; Clock Out</button>
+                          <button onClick={function(){punchOut(w.id)}} style={{...btnPrimary,background:'#ef4444',flex:1,minHeight:48,fontSize:15}}>&#9632; Clock Out</button>
                         )}
                       </div>
                     </div>

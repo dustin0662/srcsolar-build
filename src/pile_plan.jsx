@@ -1553,7 +1553,8 @@ export default function PilePlan({ onExit, portalUser }) {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 14 }}>
           <div style={{ textAlign: 'right', lineHeight: 1 }}><div style={{ fontFamily: BBF, fontSize: mob ? 22 : 30, color: GOLD, textShadow: '0 0 18px rgba(234,179,8,.4)' }}>{stats.overall.toFixed(0)}%</div>{!mob && <div style={{ fontFamily: NBF, fontSize: 9, letterSpacing: 2, color: MUTE, textTransform: 'uppercase' }}>Complete</div>}</div>
-          {!mob && <button onClick={handleExport} style={ctaBtn}>Export PDF</button>}
+          {/* Export stays available on phones — the PDF goes to the share sheet there. */}
+          <button onClick={handleExport} style={mob ? { ...ctaBtn, padding: '10px 12px', fontSize: 11, minHeight: 44 } : ctaBtn}>{mob ? 'PDF' : 'Export PDF'}</button>
         </div>
       </div>
 
@@ -1621,18 +1622,20 @@ export default function PilePlan({ onExit, portalUser }) {
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
               v.need === false ? null : (
                 <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
-                  style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: '6px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{v.l}</button>
+                  style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: mob ? '10px 11px' : '6px 12px', minHeight: mob ? 40 : undefined, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{mob && v.k === 'model' ? '3D' : v.l}</button>
               )
             ))}
           </div>
           {selSection != null && (
-            <div style={{ position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
-              <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>{sectionLabelFor(selSection)}</span>
-              <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 17, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
+            <div style={mob
+              ? { position: 'absolute', left: 14, bottom: 'calc(14px + var(--sab, 0px))', zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
+              : { position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
+              <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sectionLabelFor(selSection)}</span>
+              <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 20, lineHeight: 1, cursor: 'pointer', minWidth: 32, minHeight: 32 }}>&times;</button>
             </div>
           )}
           {viewMode === 'plan' && (
-            <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+            <div style={{ position: 'absolute', bottom: mob ? 'calc(14px + var(--sab, 0px))' : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
               <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
               <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
               <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
@@ -1643,20 +1646,20 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       {mob && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(4,4,12,.92)', borderTop: '1px solid ' + LINE }}>
-          <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '9px 14px' }}>Status &#9650;</button>
-          <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: 'rgba(4,4,12,.92)', borderTop: '1px solid ' + LINE }}>
+          <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '10px 14px', minHeight: 44 }}>Status &#9650;</button>
+          <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, minHeight: 44, cursor: 'pointer' }}>
             <span style={{ width: 18, height: 18, background: paintColor, flexShrink: 0, border: '1px solid rgba(255,255,255,.4)', clipPath: CLIP }} />
             <span style={{ fontFamily: NBF, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15 }}>{paintLabel}</span>
           </div>
-          <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, padding: '9px 11px', opacity: canUndo ? 1 : .4 }}>&#8634;</button>
-          <button onClick={() => setMode(mode === 'brush' ? 'fill' : mode === 'fill' ? 'pan' : 'brush')} style={{ ...ghostBtn, padding: '9px 11px' }}>{mode === 'brush' ? 'Brush' : mode === 'fill' ? 'Fill' : 'Pan'}</button>
+          <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, minWidth: 44, opacity: canUndo ? 1 : .4 }}>&#8634;</button>
+          <button onClick={() => setMode(mode === 'brush' ? 'fill' : mode === 'fill' ? 'pan' : 'brush')} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, minWidth: 64 }}>{mode === 'brush' ? 'Brush' : mode === 'fill' ? 'Fill' : 'Pan'}</button>
         </div>
       )}
 
       {mob && sheetOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: `linear-gradient(180deg,#0d0f1c, ${INK})`, borderTop: '2px solid ' + ORANGE, borderRadius: '18px 18px 0 0', padding: 16, maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: `linear-gradient(180deg,#0d0f1c, ${INK})`, borderTop: '2px solid ' + ORANGE, borderRadius: '18px 18px 0 0', padding: 16, paddingBottom: 'calc(16px + var(--sab, 0px))', maxHeight: '85dvh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>{sectionLabel('Status Legend')}<button onClick={() => setSheetOpen(false)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
             {legendBody}
             <button onClick={() => setSheetOpen(false)} style={{ ...ctaBtn, padding: '13px 0' }}>Done</button>

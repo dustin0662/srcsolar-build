@@ -144,7 +144,9 @@ export default function TTMapView({
     const map = mapRef.current; if (!map || !geo || !geo.lonLat) return -1;
     const r = map.getContainer().getBoundingClientRect();
     const pt = L.point(cx - r.left, cy - r.top);
-    let best = -1, bd = 144; // 12px radius
+    // 12px radius for a mouse; ~22px for a fingertip
+    const coarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+    let best = -1, bd = coarse ? 484 : 144;
     for (let i = 0; i < geo.lonLat.length; i++) {
       const [lon, lat] = geo.lonLat[i];
       const p = map.latLngToContainerPoint(L.latLng(lat, lon));
@@ -242,7 +244,7 @@ export default function TTMapView({
           <button key={k} onClick={() => onLayerMode(k)} style={{
             background: layerMode === k ? ORANGE : 'transparent',
             color: layerMode === k ? '#1a1206' : '#F5F0EB',
-            border: 'none', padding: '5px 10px',
+            border: 'none', padding: '5px 10px', minHeight: 36,
             fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 12,
             letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer',
           }}>{k}</button>
