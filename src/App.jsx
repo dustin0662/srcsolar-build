@@ -332,7 +332,7 @@ function LangPicker({ onPick }){
   var BB={fontFamily:"'Bebas Neue',sans-serif"};
   var NB={fontFamily:"'Barlow Condensed',sans-serif"};
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9999,background:'radial-gradient(120% 80% at 50% -10%, #14182a 0%, #0a0a14 55%, #06060f 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div className="sunrise-admin" style={{position:'fixed',inset:0,zIndex:9999,background:'radial-gradient(120% 80% at 50% -10%, rgba(20,24,42,.55) 0%, rgba(2,8,17,.45) 55%, rgba(2,8,17,.35) 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
       <div style={{maxWidth:480,width:'100%',textAlign:'center'}}>
         <img src={LOGO_SRC} alt="SRC" style={{width:78,height:78,objectFit:'contain',marginBottom:18,filter:'drop-shadow(0 0 20px rgba(249,115,22,.3))'}}/>
         <div style={{...BB,fontSize:34,letterSpacing:3,color:'#F5F0EB',marginBottom:6}}>SUNRISE</div>
@@ -2377,177 +2377,178 @@ function PreConControls({onExit, portalUser}){
   const clientCounts = clients.map(c=>({...c,count:projects.filter(p=>!p.archived && (p.params.clientName||'').trim().toLowerCase()===c.name.toLowerCase()).length}));
   const archivedCount = projects.filter(p=>p.archived).length;
 
-  if(loading) return <div className="app" style={{position:"fixed",inset:0,zIndex:2000}}><div className="loading">Loading bids…</div></div>;
+  var precMob = typeof window !== 'undefined' && window.innerWidth < 768;
+  var precFrame = {position:"fixed",top:precMob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:'var(--tabbar-h, 0px)',zIndex:2000,overflow:"hidden"};
+  if(loading) return <div className="app sunrise-admin" style={precFrame}><div className="loading">Loading bids…</div></div>;
 
   return (
-    <div className="app precon-app" style={{position:"fixed",inset:0,zIndex:2000,overflow:"hidden"}}>
+    <div className="app precon-app sunrise-admin" style={precFrame}>
       <style>{`
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
-.app{font-family:'Barlow Condensed',sans-serif;background:#f5f4f0;color:#333;min-height:100vh;}
-.loading{display:flex;align-items:center;justify-content:center;height:100vh;font-size:16px;color:#888;}
+.app{font-family:'Barlow',sans-serif;background:linear-gradient(180deg, rgba(2,8,17,.55) 0%, rgba(2,8,17,.35) 100%);color:#f6f3ec;min-height:100vh;}
+.loading{display:flex;align-items:center;justify-content:center;height:100vh;font-size:16px;color:#aab3c0;}
 
 /* DASHBOARD */
 .dash{max-width:1200px;margin:0 auto;padding:20px;}
 .dash-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
-.dash-head h1{font-family:'Bebas Neue',sans-serif;font-size:28px;font-weight:400;color:#1a1a2e;letter-spacing:2px;text-transform:uppercase;}
-.dash-sub{font-size:13px;color:#888;margin-top:2px;letter-spacing:1px;}
-.btn-new{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:10px 20px;border:none;border-radius:4px;background:#F97316;color:#fff;cursor:pointer;transition:all .2s;letter-spacing:1px;text-transform:uppercase;}
-.btn-new:hover{background:#e0650f;box-shadow:0 4px 16px rgba(196,30,46,.25);}
+.dash-head h1{font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:700;color:#f6f3ec;letter-spacing:2px;text-transform:uppercase;}
+.dash-sub{font-size:13px;color:#aab3c0;margin-top:2px;letter-spacing:1px;}
+.btn-new{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:10px 20px;border:none;border-radius:6px;background:#ff6b18;color:#120a04;cursor:pointer;transition:all .2s;letter-spacing:1px;text-transform:uppercase;}
+.btn-new:hover{background:#ff7a21;box-shadow:0 4px 16px rgba(255,107,24,.35);}
 .btn-new.lg{padding:14px 32px;font-size:16px;}
 
 .dash-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px;}
 @media(max-width:700px){.dash-stats{grid-template-columns:repeat(3,1fr);}}
-.ds{background:#fff;border:1px solid #e8e6e0;border-radius:8px;padding:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.ds.accent{border-color:#F97316;background:#fffdf5;}
-.ds-v{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#1a1a1a;}
-.ds.accent .ds-v{color:#F97316;}
-.ds-l{font-size:11px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:1px;}
+.ds{background:#07121e;border:1px solid #2b3949;border-radius:8px;padding:14px;text-align:center;box-shadow:none;}
+.ds.accent{border-color:#ff6b18;background:#0a1826;}
+.ds-v{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:#f6f3ec;}
+.ds.accent .ds-v{color:#ff6b18;}
+.ds-l{font-size:11px;color:#aab3c0;margin-top:2px;text-transform:uppercase;letter-spacing:1px;}
 
 .empty-state{text-align:center;padding:80px 20px;}
 .empty-icon{font-size:48px;margin-bottom:16px;}
-.empty-state h2{font-size:20px;color:#1a1a1a;margin-bottom:6px;}
-.empty-state p{color:#888;margin-bottom:20px;}
+.empty-state h2{font-size:20px;color:#f6f3ec;margin-bottom:6px;}
+.empty-state p{color:#aab3c0;margin-bottom:20px;}
 
 .proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
-.proj-card{background:#fff;border:1px solid #e8e6e0;border-radius:10px;padding:18px;cursor:pointer;transition:all .2s;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.proj-card:hover{border-color:#F97316;transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.08);}
+.proj-card{background:#07121e;border:1px solid #2b3949;border-radius:10px;padding:18px;cursor:pointer;transition:all .2s;position:relative;box-shadow:none;}
+.proj-card:hover{border-color:#ff6b18;transform:translateY(-2px);box-shadow:0 6px 20px #2b3949;}
 .pc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .pc-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1px;}
 .pc-actions{display:flex;gap:4px;}
-.pc-actions button{font-size:14px;background:transparent;border:1px solid #e8e6e0;color:#aaa;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
-.pc-actions button:hover{border-color:#F97316;color:#F97316;}
-.pc-actions button.del:hover{border-color:#F97316;color:#F97316;}
-.pc-name{font-family:'Bebas Neue',sans-serif;font-size:19px;font-weight:400;color:#1a1a2e;margin-bottom:3px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.pc-loc{font-size:12px;color:#888;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.pc-client{font-size:12px;color:#aaa;margin-bottom:12px;}
+.pc-actions button{font-size:14px;background:transparent;border:1px solid #2b3949;color:#717d8d;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.pc-actions button:hover{border-color:#ff6b18;color:#ff6b18;}
+.pc-actions button.del:hover{border-color:#ff6b18;color:#ff6b18;}
+.pc-name{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;color:#f6f3ec;margin-bottom:3px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pc-loc{font-size:12px;color:#aab3c0;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pc-client{font-size:12px;color:#717d8d;margin-bottom:12px;}
 .pc-metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
-.pc-mv{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#333;}
-.pc-ml{font-size:10px;color:#aaa;margin-left:4px;text-transform:uppercase;}
-.pc-price{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#F97316;}
-.pc-watt{font-family:'JetBrains Mono',monospace;font-size:12px;color:#F97316;margin-top:2px;}
-.pc-date{font-size:11px;color:#ccc;margin-top:8px;}
+.pc-mv{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;color:#f6f3ec;}
+.pc-ml{font-size:10px;color:#717d8d;margin-left:4px;text-transform:uppercase;}
+.pc-price{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:#ff6b18;}
+.pc-watt{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:#ff6b18;margin-top:2px;}
+.pc-date{font-size:11px;color:#717d8d;margin-top:8px;}
 
 /* CONFIRM MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;}
-.modal{background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:28px;max-width:380px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.15);}
-.modal h3{font-size:17px;color:#1a1a1a;margin-bottom:8px;letter-spacing:1px;}
-.modal p{font-size:13px;color:#888;margin-bottom:20px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(1,5,11,.72);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:#07121e;border:1px solid #2b3949;border-radius:12px;padding:28px;max-width:380px;width:100%;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.6);}
+.modal h3{font-size:17px;color:#f6f3ec;margin-bottom:8px;letter-spacing:1px;}
+.modal p{font-size:13px;color:#aab3c0;margin-bottom:20px;}
 .modal-btns{display:flex;gap:10px;justify-content:center;}
 .modal-btns button{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:9px 20px;border:none;border-radius:6px;cursor:pointer;letter-spacing:1px;}
-.btn-cancel{background:#f0ede8;color:#666;}
-.btn-danger{background:#F97316;color:#fff;}
-.btn-danger:hover{background:#e0650f;}
-.btn-exit{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;border:1px solid #e0d0d0;border-radius:6px;background:transparent;color:#F97316;cursor:pointer;transition:all .15s;white-space:nowrap;}
-.btn-exit:hover{border-color:#F97316;background:#fef5f5;}
+.btn-cancel{background:transparent;color:#aab3c0;border:1px solid #2b3949 !important;}
+.btn-danger{background:#ff4655;color:#fff;border-radius:6px;}
+.btn-danger:hover{background:#ff5f6b;}
+.btn-exit{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;border:1px solid #2b3949;border-radius:6px;background:transparent;color:#ff6b18;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-exit:hover{border-color:#ff6b18;background:rgba(255,107,24,.12);}
 
 /* EDITOR */
 .editor{min-height:100vh;}
-.ed-top{display:flex;align-items:center;gap:16px;padding:12px 20px;background:#fff;border-bottom:1px solid #e8e6e0;position:sticky;top:0;z-index:100;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.btn-back{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:7px 14px;border:1px solid #e8e6e0;border-radius:6px;background:transparent;color:#888;cursor:pointer;transition:all .15s;white-space:nowrap;}
-.btn-back:hover{border-color:#F97316;color:#1a1a1a;}
+.ed-top{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(7,18,30,.92);border-bottom:1px solid #2b3949;position:sticky;top:0;z-index:100;flex-wrap:wrap;box-shadow:none;}
+.btn-back{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:7px 14px;border:1px solid #2b3949;border-radius:6px;background:transparent;color:#aab3c0;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-back:hover{border-color:#ff6b18;color:#f6f3ec;}
 .ed-title{flex:1;min-width:120px;}
-.ed-title h2{font-family:'Bebas Neue',sans-serif;font-size:20px;font-weight:400;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:1px;}
-.ed-mw{font-family:'JetBrains Mono',monospace;font-size:12px;color:#888;}
+.ed-title h2{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:#f6f3ec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:1px;}
+.ed-mw{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:#aab3c0;}
 .ed-actions{display:flex;align-items:center;gap:12px;}
-.ed-price{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#F97316;}
-.btn-save{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;padding:8px 16px;border:none;border-radius:6px;background:#f0ede8;color:#888;cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:1px;}
-.btn-save.pulse{background:#F97316;color:#fff;animation:pulse-glow 2s infinite;}
-@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 rgba(196,30,46,0);}50%{box-shadow:0 0 12px rgba(196,30,46,.35);}}
+.ed-price{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:#ff6b18;}
+.btn-save{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;padding:8px 16px;border:none;border-radius:6px;background:#0a1826;color:#aab3c0;cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:1px;}
+.btn-save.pulse{background:#ff6b18;color:#120a04;animation:pulse-glow 2s infinite;}
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 rgba(255,107,24,0);}50%{box-shadow:0 0 12px rgba(255,107,24,.45);}}
 
-.tabs{display:flex;gap:2px;padding:6px 14px;background:#faf9f6;overflow-x:auto;border-bottom:1px solid #e8e6e0;-ms-overflow-style:none;scrollbar-width:none;}
+.tabs{display:flex;gap:2px;padding:6px 14px;background:rgba(10,24,38,.85);overflow-x:auto;border-bottom:1px solid #2b3949;-ms-overflow-style:none;scrollbar-width:none;}
 .tabs::-webkit-scrollbar{display:none;}
-.tabs button{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:8px 14px;border:none;border-radius:6px;background:transparent;color:#aaa;cursor:pointer;white-space:nowrap;transition:all .15s;letter-spacing:1px;}
-.tabs button:hover{color:#666;background:#f0ede8;}
-.tabs button.active{color:#1a1a1a;background:#fff;box-shadow:inset 0 -2px 0 #F97316;}
+.tabs button{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:8px 14px;border:none;border-radius:6px;background:transparent;color:#717d8d;cursor:pointer;white-space:nowrap;transition:all .15s;letter-spacing:1px;}
+.tabs button:hover{color:#aab3c0;background:#0a1826;}
+.tabs button.active{color:#ff7a21;background:#0a1826;box-shadow:inset 0 -2px 0 #ff6b18;}
 
 .ed-body{padding:16px;max-width:1100px;margin:0 auto;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .g4{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;}
 @media(max-width:700px){.g2,.g4{grid-template-columns:1fr;}.g4{grid-template-columns:repeat(3,1fr);}}
 
-.card{background:#fff;border:1px solid #e8e6e0;border-top:3px solid #F97316;border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.03);}
-.card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#F97316;margin-bottom:12px;}
+.card{background:#07121e;border:1px solid #2b3949;border-top:3px solid #ff6b18;border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:none;}
+.card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ff6b18;margin-bottom:12px;}
 
-.stat-box{background:#faf9f6;border:1px solid #e8e6e0;border-radius:8px;padding:10px;text-align:center;}
-.stat-box.met{border-color:#2a8a3a;background:#f0faf2;}.stat-box.met .stat-val{color:#1a7a2e;}
-.stat-box.unmet{border-color:#F97316;background:#fef5f5;}.stat-box.unmet .stat-val{color:#F97316;}
-.stat-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#1a1a1a;}
-.stat-lbl{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.stat-box{background:#0a1826;border:1px solid #2b3949;border-radius:8px;padding:10px;text-align:center;}
+.stat-box.met{border-color:#19d47b;background:rgba(25,212,123,.1);}.stat-box.met .stat-val{color:#19d47b;}
+.stat-box.unmet{border-color:#ff6b18;background:rgba(255,107,24,.12);}.stat-box.unmet .stat-val{color:#ff6b18;}
+.stat-val{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:#f6f3ec;}
+.stat-lbl{font-size:10px;color:#717d8d;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
 
 .fld{margin-bottom:8px;}
-.fld label{display:block;font-size:12px;font-weight:600;color:#888;margin-bottom:2px;letter-spacing:.5px;}
-.fld.chk label{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#555;}
-.fld.chk input[type=checkbox]{width:15px;height:15px;accent-color:#F97316;}
-.inp-w{display:flex;align-items:center;background:#faf9f6;border:1px solid #e0ddd6;border-radius:6px;overflow:hidden;transition:border .15s;}
-.inp-w:focus-within{border-color:#F97316;}
-.inp-w .fx{font-size:11px;color:#bbb;padding:0 7px;font-family:'JetBrains Mono',monospace;}
-.inp-w input,select{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#333;background:transparent;border:none;outline:none;padding:7px 9px;width:100%;}
-select{background:#faf9f6;border:1px solid #e0ddd6;border-radius:6px;padding:7px 9px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#333;}
+.fld label{display:block;font-size:12px;font-weight:600;color:#aab3c0;margin-bottom:2px;letter-spacing:.5px;}
+.fld.chk label{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#e8e2d8;}
+.fld.chk input[type=checkbox]{width:15px;height:15px;accent-color:#ff6b18;}
+.inp-w{display:flex;align-items:center;background:#0a1826;border:1px solid #2b3949;border-radius:6px;overflow:hidden;transition:border .15s;}
+.inp-w:focus-within{border-color:#ff6b18;}
+.inp-w .fx{font-size:11px;color:#717d8d;padding:0 7px;font-family:'Barlow Condensed',sans-serif;}
+.inp-w input,select{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#f6f3ec;background:transparent;border:none;outline:none;padding:7px 9px;width:100%;}
+select{background:#0a1826;border:1px solid #2b3949;border-radius:6px;padding:7px 9px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#f6f3ec;}
 input[type=number]::-webkit-inner-spin-button{opacity:.3;}
-input[type=date]{color:#333;}
-input[type=date]::-webkit-calendar-picker-indicator{filter:none;}
+input[type=date]{color:#f6f3ec;color-scheme:dark;}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1) opacity(.7);}
 
-.rrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0ede8;font-size:14px;}
-.rrow.sub{padding-left:12px;}.rrow.sub .rl{color:#ccc;font-size:13px;}
-.rrow .rl{color:#888;}.rrow .rv{font-family:'JetBrains Mono',monospace;font-weight:600;color:#444;font-size:13px;}
-.rrow.hl{background:#fffdf5;border-radius:6px;padding:7px 10px;margin:3px -10px;border:1px solid #f0e8d0;}.rrow.hl .rl{color:#1a1a1a;font-weight:700;}.rrow.hl .rv{color:#F97316;font-size:14px;}
-.rrow.warn .rv{color:#F97316;}
-.div{border:none;border-top:1px solid #f0ede8;margin:10px 0;}
+.rrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #2b3949;font-size:14px;}
+.rrow.sub{padding-left:12px;}.rrow.sub .rl{color:#717d8d;font-size:13px;}
+.rrow .rl{color:#aab3c0;}.rrow .rv{font-family:'Barlow Condensed',sans-serif;font-weight:600;color:#f6f3ec;font-size:13px;}
+.rrow.hl{background:#0a1826;border-radius:6px;padding:7px 10px;margin:3px -10px;border:1px solid #a7461e;}.rrow.hl .rl{color:#f6f3ec;font-weight:700;}.rrow.hl .rv{color:#ff6b18;font-size:14px;}
+.rrow.warn .rv{color:#ff6b18;}
+.div{border:none;border-top:1px solid #2b3949;margin:10px 0;}
 
-.hero{background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:28px;text-align:center;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.04);}
-.hero-label{font-size:11px;color:#F97316;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
-.hero-big{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;color:#F97316;margin:4px 0;}
-.hero-sub{font-family:'JetBrains Mono',monospace;font-size:14px;color:#F97316;margin:2px 0;}
-.hero-bond{font-size:12px;color:#aaa;margin-top:10px;}
-.hero-bond strong{color:#F97316;}
+.hero{background:#07121e;border:1px solid #2b3949;border-radius:12px;padding:28px;text-align:center;margin-bottom:16px;box-shadow:none;}
+.hero-label{font-size:11px;color:#ff6b18;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
+.hero-big{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;color:#ff6b18;margin:4px 0;}
+.hero-sub{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#ff6b18;margin:2px 0;}
+.hero-bond{font-size:12px;color:#717d8d;margin-top:10px;}
+.hero-bond strong{color:#ff6b18;}
 
 .scope-bar{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden;margin:14px 0 6px;}
 .scope-bar div{min-width:3px;transition:width .3s;}
 .scope-leg{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:center;}
-.scope-leg span{font-size:10px;color:#888;display:flex;align-items:center;gap:4px;}
+.scope-leg span{font-size:10px;color:#aab3c0;display:flex;align-items:center;gap:4px;}
 .scope-leg i{width:7px;height:7px;border-radius:2px;display:inline-block;}
 
 /* ── PRECON LAYOUT + SIDEBAR ── */
-.precon-app{display:flex;flex-direction:column;height:100vh;}
+.precon-app{display:flex;flex-direction:column;height:100%;}
 .precon-layout{flex:1;display:flex;min-height:0;}
-.precon-side{width:240px;flex-shrink:0;background:#ffffff;color:#1a1a2e;display:flex;flex-direction:column;overflow-y:auto;border-right:1px solid rgba(0,0,0,.08);}
-.precon-main{flex:1;min-width:0;overflow:auto;background:#f5f2ee;}
-.ps-top{padding:14px 14px 10px;border-bottom:1px solid rgba(0,0,0,.08);}
-.ps-back{width:100%;background:#f0ede8;color:#F97316;border:1px solid rgba(0,0,0,.1);border-radius:4px;padding:8px 10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-bottom:10px;}
-.ps-back:hover{background:#e8e5e0;border-color:#F97316;color:#e0650f;}
-.ps-brand-t{font-family:'Bebas Neue',sans-serif;font-size:22px;font-weight:400;color:#1a1a2e;letter-spacing:2px;text-transform:uppercase;line-height:1;}
-.ps-brand-s{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase;margin-top:3px;}
-.ps-newbid{margin:14px 14px 0;background:#F97316;color:#fff;border:none;border-radius:4px;padding:11px 12px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
-.ps-newbid:hover{background:#e0650f;box-shadow:0 2px 12px rgba(196,30,46,.2);}
-.ps-section{padding:18px 0 6px;border-top:1px solid rgba(0,0,0,.08);margin-top:14px;}
+.precon-side{width:240px;flex-shrink:0;background:rgba(7,18,30,.9);color:#f6f3ec;display:flex;flex-direction:column;overflow-y:auto;border-right:1px solid #2b3949;}
+.precon-main{flex:1;min-width:0;overflow:auto;background:transparent;}
+.ps-top{padding:14px 14px 10px;border-bottom:1px solid #2b3949;}
+.ps-back{width:100%;background:transparent;color:#ff7a21;border:1px solid #e65e20;border-radius:6px;padding:8px 10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-bottom:10px;}
+.ps-back:hover{background:#0f2033;border-color:#ff6b18;color:#ff7a21;}
+.ps-brand-t{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:700;color:#f6f3ec;letter-spacing:2px;text-transform:uppercase;line-height:1;}
+.ps-brand-s{font-size:10px;color:#aab3c0;letter-spacing:1.5px;text-transform:uppercase;margin-top:3px;}
+.ps-newbid{margin:14px 14px 0;background:#ff6b18;color:#120a04;border:none;border-radius:6px;padding:11px 12px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+.ps-newbid:hover{background:#ff7a21;box-shadow:0 2px 12px rgba(255,107,24,.3);}
+.ps-section{padding:18px 0 6px;border-top:1px solid #2b3949;margin-top:14px;}
 .ps-section:first-of-type{border-top:none;margin-top:6px;}
-.ps-h{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#888;font-weight:700;padding:0 14px 6px;}
-.ps-link{width:calc(100% - 8px);margin:1px 4px;background:transparent;color:#1a1a2e;border:none;text-align:left;padding:7px 10px;font-family:'Barlow Condensed',sans-serif;font-size:13px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;transition:all .12s;letter-spacing:.5px;}
-.ps-link:hover{background:#f0ede8;color:#1a1a2e;}
-.ps-link.on{background:#f5f2ee;color:#F97316;border-left:2px solid #F97316;padding-left:8px;}
+.ps-h{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#aab3c0;font-weight:700;padding:0 14px 6px;}
+.ps-link{width:calc(100% - 8px);margin:1px 4px;background:transparent;color:#f6f3ec;border:none;text-align:left;padding:7px 10px;font-family:'Barlow Condensed',sans-serif;font-size:13px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;transition:all .12s;letter-spacing:.5px;}
+.ps-link:hover{background:#0a1826;color:#f6f3ec;}
+.ps-link.on{background:rgba(255,107,24,.12);color:#ff7a21;border-left:2px solid #ff6b18;padding-left:8px;}
 .ps-link.sm{padding:5px 10px;font-size:12px;}
 .ps-link-col{display:flex;flex-direction:column;flex:1;min-width:0;}
 .ps-link-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ps-link-sub{font-size:10px;color:#888;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
-.ps-ico{color:#999;width:14px;flex-shrink:0;text-align:center;font-size:12px;}
-.ps-link.on .ps-ico{color:#F97316;}
-.ps-count{margin-left:auto;background:#f0ede8;color:#888;font-size:10px;padding:1px 7px;border-radius:10px;font-family:'JetBrains Mono',monospace;flex-shrink:0;}
-.ps-link.on .ps-count{background:#F97316;color:#fff;}
-.ps-empty{padding:4px 14px;font-size:11px;color:#999;font-style:italic;}
+.ps-link-sub{font-size:10px;color:#aab3c0;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
+.ps-ico{color:#717d8d;width:14px;flex-shrink:0;text-align:center;font-size:12px;}
+.ps-link.on .ps-ico{color:#ff6b18;}
+.ps-count{margin-left:auto;background:#0a1826;color:#aab3c0;font-size:10px;padding:1px 7px;border-radius:10px;font-family:'Barlow Condensed',sans-serif;flex-shrink:0;}
+.ps-link.on .ps-count{background:#ff6b18;color:#120a04;}
+.ps-empty{padding:4px 14px;font-size:11px;color:#717d8d;font-style:italic;}
 .ps-cli{display:flex;align-items:center;}
 .ps-cli .ps-link{flex:1;}
-.ps-del{background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:4px;transition:all .12s;}
-.ps-del:hover{color:#F97316;background:#f0ede8;}
+.ps-del{background:transparent;border:none;color:#717d8d;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:4px;transition:all .12s;}
+.ps-del:hover{color:#ff6b18;background:#0a1826;}
 .ps-addcli{display:flex;gap:4px;padding:6px 14px 14px;}
-.ps-addcli input{flex:1;min-width:0;background:#f9f7f5;border:1px solid rgba(0,0,0,.12);color:#1a1a2e;padding:6px 9px;border-radius:4px;font-size:12px;font-family:'Barlow Condensed',sans-serif;outline:none;}
-.ps-addcli input:focus{border-color:#F97316;}
-.ps-addcli button{background:#F97316;color:#fff;border:none;border-radius:4px;width:28px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;}
-.ps-addcli button:hover{background:#e0650f;}
+.ps-addcli input{flex:1;min-width:0;background:#091522;border:1px solid #2b3949;color:#f6f3ec;padding:6px 9px;border-radius:4px;font-size:12px;font-family:'Barlow Condensed',sans-serif;outline:none;}
+.ps-addcli input:focus{border-color:#ff6b18;}
+.ps-addcli button{background:#ff6b18;color:#120a04;border:none;border-radius:4px;width:28px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;}
+.ps-addcli button:hover{background:#ff7a21;}
 
-.dash-eyebrow{font-size:11px;color:#F97316;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:4px;}
-.proj-card .pc-actions button.arch:hover{border-color:#F97316;color:#F97316;}
-.proj-card.archived{opacity:.7;background:#fafaf6;}
+.dash-eyebrow{font-size:11px;color:#ff6b18;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:4px;}
+.proj-card .pc-actions button.arch:hover{border-color:#ff6b18;color:#ff6b18;}
+.proj-card.archived{opacity:.7;background:#07121e;}
 .proj-card.archived:hover{opacity:1;}
 
 @media(max-width:760px){
@@ -2643,10 +2644,10 @@ function ComplianceCenter({ onExit }) {
     return function() { window.removeEventListener('resize', onResize); };
   }, []);
 
-  var BB = { fontFamily: "'Bebas Neue',sans-serif" };
+  var BB = { fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 };
   var NB = { fontFamily: "'Barlow Condensed',sans-serif" };
-  var cardBg = '#ffffff';
-  var borderC = 'rgba(0,0,0,.08)';
+  var cardBg = '#07121e';
+  var borderC = '#2b3949';
   var cuid = function() { return 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); };
 
   useEffect(function() {
@@ -2812,26 +2813,26 @@ function ComplianceCenter({ onExit }) {
   var doneItems = items.filter(function(i) { return i.status === 'complete'; }).length;
   var criticalPending = items.filter(function(i) { return i.priority === 'critical' && i.status !== 'complete'; }).length;
 
-  var IST = { width: '100%', background: '#f9f7f5', border: '1px solid rgba(0,0,0,.12)', color: '#1a1a2e', padding: '10px 14px', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none', borderRadius: 0, WebkitAppearance: 'none' };
-  var priColors = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#6b7280' };
+  var IST = { width: '100%', background: '#091522', border: '1px solid #e65e20', color: '#f6f3ec', padding: '10px 14px', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none', borderRadius: 6, WebkitAppearance: 'none' };
+  var priColors = { critical: '#ff4655', high: '#ff6b18', medium: '#f4d457', low: '#717d8d' };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: '#f5f2ee', display: 'flex', fontFamily: "'Barlow',sans-serif" }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: mob ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, display: 'flex', fontFamily: "'Barlow',sans-serif" }}>
       <input type="file" ref={fileRef} style={{ display: 'none' }} accept=".pdf,.txt,.doc,.docx,.png,.jpg,.jpeg" onChange={handleContractUpload} />
 
       {/* SIDEBAR */}
-      <div style={{ width: mob ? (sideOpen ? '100%' : 0) : 280, flexShrink: 0, background: '#ffffff', borderRight: '1px solid ' + borderC, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width .2s' }}>
+      <div style={{ width: mob ? (sideOpen ? '100%' : 0) : 280, flexShrink: 0, background: 'rgba(7,18,30,.92)', borderRight: '1px solid ' + borderC, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width .2s' }}>
         <div style={{ padding: '20px 16px 12px' }}>
-          <div onClick={onExit} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#F97316', marginBottom: 12 }}>← Dashboard</div>
-          <div style={{ ...BB, fontSize: 22, letterSpacing: 2, color: '#1a1a2e' }}>COMPLIANCE CENTER</div>
+          <div onClick={onExit} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff6b18', marginBottom: 12 }}>← Dashboard</div>
+          <div style={{ ...BB, fontSize: 22, letterSpacing: 2, color: '#f6f3ec' }}>COMPLIANCE CENTER</div>
         </div>
         <div style={{ padding: '0 16px 12px' }}>
-          <div onClick={function() { setShowKey(!showKey); }} style={{ cursor: 'pointer', ...NB, fontSize: 11, letterSpacing: '1px', color: apiKey ? '#22c55e' : '#ef4444', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div onClick={function() { setShowKey(!showKey); }} style={{ cursor: 'pointer', ...NB, fontSize: 11, letterSpacing: '1px', color: apiKey ? '#19d47b' : '#ff4655', display: 'flex', alignItems: 'center', gap: 6 }}>
             {apiKey ? '● AI Connected' : '○ Set API Key'} <ChevronDown size={12} style={{ transform: showKey ? 'rotate(180deg)' : '', transition: '.2s' }} />
           </div>
           {showKey && <div style={{ marginTop: 8 }}>
             <input type="password" value={apiKey} onChange={function(e) { saveKey(e.target.value); }} placeholder="Anthropic API Key" style={{ ...IST, fontSize: 12, padding: '8px 10px' }} />
-            <div style={{ ...NB, fontSize: 10, color: '#666', marginTop: 4 }}>Used for AI checklist generation & contract scanning</div>
+            <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginTop: 4 }}>Used for AI checklist generation & contract scanning</div>
           </div>}
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 16px' }}>
@@ -2840,49 +2841,49 @@ function ComplianceCenter({ onExit }) {
             var done = pItems.filter(function(i) { return i.status === 'complete'; }).length;
             var total = pItems.length;
             var active = p.id === selId;
-            return <div key={p.id} onClick={function() { setSelId(p.id); if (mob) setSideOpen(false); }} style={{ padding: '12px 12px', cursor: 'pointer', background: active ? 'rgba(249,115,22,.1)' : 'transparent', borderLeft: active ? '3px solid #F97316' : '3px solid transparent', marginBottom: 2, transition: 'all .15s' }}>
-              <div style={{ ...NB, fontSize: 14, fontWeight: 600, color: active ? '#1a1a2e' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-              <div style={{ ...NB, fontSize: 11, color: '#666', marginTop: 2 }}>{p.state || 'No state set'} {total > 0 ? '• ' + done + '/' + total + ' done' : ''}</div>
+            return <div key={p.id} onClick={function() { setSelId(p.id); if (mob) setSideOpen(false); }} style={{ padding: '12px 12px', cursor: 'pointer', background: active ? 'rgba(255,107,24,.1)' : 'transparent', borderLeft: active ? '3px solid #ff6b18' : '3px solid transparent', marginBottom: 2, transition: 'all .15s' }}>
+              <div style={{ ...NB, fontSize: 14, fontWeight: 600, color: active ? '#f6f3ec' : '#aab3c0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+              <div style={{ ...NB, fontSize: 11, color: '#aab3c0', marginTop: 2 }}>{p.state || 'No state set'} {total > 0 ? '• ' + done + '/' + total + ' done' : ''}</div>
             </div>;
           })}
-          {projects.length === 0 && <div style={{ ...NB, fontSize: 13, color: '#666', padding: 16 }}>No projects yet. Create bids in PreCon to auto-populate.</div>}
+          {projects.length === 0 && <div style={{ ...NB, fontSize: 13, color: '#aab3c0', padding: 16 }}>No projects yet. Create bids in PreCon to auto-populate.</div>}
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div style={{ flex: 1, overflowY: 'auto', padding: mob ? '16px' : '28px 36px 60px' }}>
-        {mob && <div onClick={function() { setSideOpen(true); }} style={{ cursor: 'pointer', ...NB, fontSize: 12, color: '#F97316', marginBottom: 12 }}>☰ Projects</div>}
+        {mob && <div onClick={function() { setSideOpen(true); }} style={{ cursor: 'pointer', ...NB, fontSize: 12, color: '#ff6b18', marginBottom: 12 }}>☰ Projects</div>}
 
         {!proj ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ ...BB, fontSize: 28, color: '#444' }}>SELECT A PROJECT</div>
-              <div style={{ ...NB, fontSize: 14, color: '#666', marginTop: 8 }}>Choose a project from the sidebar to manage compliance items</div>
+              <div style={{ ...BB, fontSize: 28, color: '#e8e2d8' }}>SELECT A PROJECT</div>
+              <div style={{ ...NB, fontSize: 14, color: '#aab3c0', marginTop: 8 }}>Choose a project from the sidebar to manage compliance items</div>
             </div>
           </div>
         ) : (
           <div>
             {/* PROJECT HEADER */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ ...BB, fontSize: mob ? 28 : 36, letterSpacing: 2, color: '#1a1a2e', lineHeight: 1 }}>{proj.name}</div>
-              <div style={{ ...NB, fontSize: 12, color: '#666', marginTop: 4 }}>{proj.systemSizeMW} MW • {(proj.scopes || []).join(', ')}</div>
+              <div style={{ ...BB, fontSize: mob ? 28 : 36, letterSpacing: 2, color: '#f6f3ec', lineHeight: 1 }}>{proj.name}</div>
+              <div style={{ ...NB, fontSize: 12, color: '#aab3c0', marginTop: 4 }}>{proj.systemSizeMW} MW • {(proj.scopes || []).join(', ')}</div>
             </div>
 
             {/* LOCATION FIELDS */}
             <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 24 }}>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>State *</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>State *</div>
                 <select value={proj.state} onChange={function(e) { updateField('state', e.target.value); }} style={{ ...IST }}>
                   <option value="">Select State</option>
                   {US_STATES.map(function(s) { return <option key={s} value={s}>{s}</option>; })}
                 </select>
               </div>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>County</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>County</div>
                 <input value={proj.county || ''} onChange={function(e) { updateField('county', e.target.value); }} placeholder="e.g. Harris County" style={IST} />
               </div>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>Location / City</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>Location / City</div>
                 <input value={proj.location || ''} onChange={function(e) { updateField('location', e.target.value); }} placeholder="e.g. Houston" style={IST} />
               </div>
             </div>
@@ -2890,48 +2891,48 @@ function ComplianceCenter({ onExit }) {
             {/* STATS BAR */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Items</div>
-                <div style={{ ...BB, fontSize: 24, color: '#1a1a2e' }}>{totalItems}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Items</div>
+                <div style={{ ...BB, fontSize: 24, color: '#f6f3ec' }}>{totalItems}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Completed</div>
-                <div style={{ ...BB, fontSize: 24, color: '#22c55e' }}>{doneItems}{totalItems > 0 ? <span style={{ fontSize: 14, color: '#666' }}> / {totalItems}</span> : ''}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Completed</div>
+                <div style={{ ...BB, fontSize: 24, color: '#19d47b' }}>{doneItems}{totalItems > 0 ? <span style={{ fontSize: 14, color: '#aab3c0' }}> / {totalItems}</span> : ''}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Critical Pending</div>
-                <div style={{ ...BB, fontSize: 24, color: criticalPending > 0 ? '#ef4444' : '#22c55e' }}>{criticalPending}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Critical Pending</div>
+                <div style={{ ...BB, fontSize: 24, color: criticalPending > 0 ? '#ff4655' : '#19d47b' }}>{criticalPending}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Progress</div>
-                <div style={{ ...BB, fontSize: 24, color: '#F97316' }}>{totalItems > 0 ? Math.round(doneItems / totalItems * 100) : 0}%</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Progress</div>
+                <div style={{ ...BB, fontSize: 24, color: '#ff6b18' }}>{totalItems > 0 ? Math.round(doneItems / totalItems * 100) : 0}%</div>
               </div>
             </div>
 
             {/* ACTION BUTTONS */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-              <div onClick={generating ? null : generateChecklist} style={{ cursor: generating ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: generating ? 'rgba(249,115,22,.3)' : '#F97316', color: '#fff', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px', transition: 'all .2s' }}>
+              <div onClick={generating ? null : generateChecklist} style={{ cursor: generating ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: generating ? 'rgba(255,107,24,.3)' : '#ff6b18', color: '#f6f3ec', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px', transition: 'all .2s' }}>
                 {generating ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><FlaskConical size={14} /> Generate Compliance Checklist</>}
               </div>
               <div onClick={scanning ? null : function() { fileRef.current && fileRef.current.click(); }} style={{ cursor: scanning ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(99,102,241,.15)', border: '1px solid rgba(99,102,241,.3)', color: '#818cf8', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px' }}>
                 {scanning ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Scanning...</> : <><Upload size={14} /> Upload Contract</>}
               </div>
-              <div onClick={addManualItem} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(0,0,0,.03)', border: '1px solid ' + borderC, color: '#666', ...NB, fontSize: 13, letterSpacing: '1px' }}>
+              <div onClick={addManualItem} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(255,255,255,.04)', border: '1px solid ' + borderC, color: '#aab3c0', ...NB, fontSize: 13, letterSpacing: '1px' }}>
                 <Plus size={14} /> Add Item
               </div>
             </div>
 
             {/* ERROR */}
-            {error && <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#ef4444', ...NB, fontSize: 13, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {error && <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#ff4655', ...NB, fontSize: 13, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {error} <X size={14} style={{ cursor: 'pointer' }} onClick={function() { setError(''); }} />
             </div>}
 
             {/* CONTRACTS */}
             {(proj.contracts || []).length > 0 && <div style={{ marginBottom: 20 }}>
-              <div style={{ ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 8 }}>UPLOADED CONTRACTS</div>
+              <div style={{ ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 8 }}>UPLOADED CONTRACTS</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {(proj.contracts || []).map(function(c) {
                   return <div key={c.id} style={{ padding: '6px 12px', background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.2)', ...NB, fontSize: 12, color: '#818cf8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <FileText size={12} /> {c.name} <span style={{ color: '#666' }}>({c.itemCount || 0} items)</span>
+                    <FileText size={12} /> {c.name} <span style={{ color: '#aab3c0' }}>({c.itemCount || 0} items)</span>
                   </div>;
                 })}
               </div>
@@ -2939,13 +2940,13 @@ function ComplianceCenter({ onExit }) {
 
             {/* FILTERS */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16, alignItems: 'center' }}>
-              <div style={{ ...NB, fontSize: 10, color: '#666', marginRight: 4 }}>STATUS:</div>
+              <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginRight: 4 }}>STATUS:</div>
               {[['all', 'All'], ['pending', 'Pending'], ['in-progress', 'In Progress'], ['complete', 'Complete']].map(function(f) {
                 var active = filter === f[0];
-                return <div key={f[0]} onClick={function() { setFilter(f[0]); }} style={{ cursor: 'pointer', padding: '4px 12px', background: active ? 'rgba(249,115,22,.15)' : 'rgba(0,0,0,.02)', border: '1px solid ' + (active ? 'rgba(249,115,22,.3)' : borderC), color: active ? '#F97316' : '#888', ...NB, fontSize: 11 }}>{f[1]}</div>;
+                return <div key={f[0]} onClick={function() { setFilter(f[0]); }} style={{ cursor: 'pointer', padding: '4px 12px', background: active ? 'rgba(255,107,24,.15)' : 'rgba(255,255,255,.03)', border: '1px solid ' + (active ? 'rgba(255,107,24,.3)' : borderC), color: active ? '#ff6b18' : '#aab3c0', ...NB, fontSize: 11 }}>{f[1]}</div>;
               })}
               <div style={{ width: 1, height: 16, background: borderC, margin: '0 4px' }} />
-              <div style={{ ...NB, fontSize: 10, color: '#666', marginRight: 4 }}>CATEGORY:</div>
+              <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginRight: 4 }}>CATEGORY:</div>
               <select value={catFilter} onChange={function(e) { setCatFilter(e.target.value); }} style={{ ...IST, width: 'auto', padding: '4px 10px', fontSize: 11 }}>
                 <option value="all">All Categories</option>
                 {Object.keys(COMP_CATEGORIES).map(function(c) { return <option key={c} value={c}>{c}</option>; })}
@@ -2955,43 +2956,43 @@ function ComplianceCenter({ onExit }) {
             {/* CHECKLIST */}
             {Object.keys(grouped).length === 0 && totalItems === 0 && (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ ...BB, fontSize: 24, color: '#444' }}>NO COMPLIANCE ITEMS</div>
-                <div style={{ ...NB, fontSize: 14, color: '#666', marginTop: 8 }}>Set the state and click "Generate Compliance Checklist" to auto-populate requirements using AI, or upload a contract to scan for obligations.</div>
+                <div style={{ ...BB, fontSize: 24, color: '#e8e2d8' }}>NO COMPLIANCE ITEMS</div>
+                <div style={{ ...NB, fontSize: 14, color: '#aab3c0', marginTop: 8 }}>Set the state and click "Generate Compliance Checklist" to auto-populate requirements using AI, or upload a contract to scan for obligations.</div>
               </div>
             )}
             {Object.keys(grouped).sort().map(function(cat) {
               var catInfo = COMP_CATEGORIES[cat] || COMP_CATEGORIES.Other;
               return <div key={cat} style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 4, background: catInfo.color, display: 'flex', alignItems: 'center', justifyContent: 'center', ...BB, fontSize: 12, color: '#fff' }}>{catInfo.icon}</div>
+                  <div style={{ width: 22, height: 22, borderRadius: 4, background: catInfo.color, display: 'flex', alignItems: 'center', justifyContent: 'center', ...BB, fontSize: 12, color: '#f6f3ec' }}>{catInfo.icon}</div>
                   <div style={{ ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', color: catInfo.color }}>{cat}</div>
-                  <div style={{ ...NB, fontSize: 11, color: '#666' }}>({grouped[cat].length})</div>
+                  <div style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>({grouped[cat].length})</div>
                 </div>
                 {grouped[cat].map(function(it) {
-                  var priC = priColors[it.priority] || '#6b7280';
+                  var priC = priColors[it.priority] || '#717d8d';
                   var statusIcon = it.status === 'complete' ? '✓' : it.status === 'in-progress' ? '◐' : '○';
-                  var statusColor = it.status === 'complete' ? '#22c55e' : it.status === 'in-progress' ? '#eab308' : '#666';
+                  var statusColor = it.status === 'complete' ? '#19d47b' : it.status === 'in-progress' ? '#f4d457' : '#aab3c0';
                   return <div key={it.id} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 3 }}>
                     <div onClick={function() { toggleStatus(it.id); }} style={{ cursor: 'pointer', fontSize: 18, color: statusColor, flexShrink: 0, width: 24, textAlign: 'center', lineHeight: '24px', userSelect: 'none' }}>{statusIcon}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <input value={it.title} onChange={function(e) { updateItem(it.id, 'title', e.target.value); }} style={{ background: 'transparent', border: 'none', color: it.status === 'complete' ? '#999' : '#1a1a2e', ...NB, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 120, outline: 'none', textDecoration: it.status === 'complete' ? 'line-through' : 'none' }} />
+                        <input value={it.title} onChange={function(e) { updateItem(it.id, 'title', e.target.value); }} style={{ background: 'transparent', border: 'none', color: it.status === 'complete' ? '#717d8d' : '#f6f3ec', ...NB, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 120, outline: 'none', textDecoration: it.status === 'complete' ? 'line-through' : 'none' }} />
                         <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: priC + '22', color: priC, border: '1px solid ' + priC + '44', textTransform: 'uppercase', letterSpacing: '1px', flexShrink: 0 }}>{it.priority}</span>
                         {it.source === 'contract' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(99,102,241,.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,.2)', flexShrink: 0 }}>CONTRACT</span>}
-                        {it.source === 'ai' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(249,115,22,.1)', color: '#F97316', border: '1px solid rgba(249,115,22,.2)', flexShrink: 0 }}>AI</span>}
+                        {it.source === 'ai' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(255,107,24,.1)', color: '#ff6b18', border: '1px solid rgba(255,107,24,.2)', flexShrink: 0 }}>AI</span>}
                       </div>
-                      <textarea value={it.description} onChange={function(e) { updateItem(it.id, 'description', e.target.value); }} rows={2} style={{ ...IST, marginTop: 6, fontSize: 12, color: '#666', resize: 'vertical', minHeight: 36 }} />
+                      <textarea value={it.description} onChange={function(e) { updateItem(it.id, 'description', e.target.value); }} rows={2} style={{ ...IST, marginTop: 6, fontSize: 12, color: '#aab3c0', resize: 'vertical', minHeight: 36 }} />
                       <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {it.agency && <span style={{ ...NB, fontSize: 11, color: '#666' }}>Agency: {it.agency}</span>}
+                        {it.agency && <span style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>Agency: {it.agency}</span>}
                         {it.contractRef && <span style={{ ...NB, fontSize: 11, color: '#818cf8' }}>Ref: {it.contractRef}</span>}
-                        {it.estimatedDays > 0 && <span style={{ ...NB, fontSize: 11, color: '#666' }}>~{it.estimatedDays} business days</span>}
+                        {it.estimatedDays > 0 && <span style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>~{it.estimatedDays} business days</span>}
                         <select value={it.priority} onChange={function(e) { updateItem(it.id, 'priority', e.target.value); }} style={{ ...IST, width: 'auto', padding: '2px 8px', fontSize: 11 }}>
                           <option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
                         </select>
                         <select value={it.category} onChange={function(e) { updateItem(it.id, 'category', e.target.value); }} style={{ ...IST, width: 'auto', padding: '2px 8px', fontSize: 11 }}>
                           {Object.keys(COMP_CATEGORIES).map(function(c) { return <option key={c} value={c}>{c}</option>; })}
                         </select>
-                        <Trash2 size={12} style={{ cursor: 'pointer', color: '#666', marginLeft: 'auto' }} onClick={function() { deleteItem(it.id); }} />
+                        <Trash2 size={12} style={{ cursor: 'pointer', color: '#aab3c0', marginLeft: 'auto' }} onClick={function() { deleteItem(it.id); }} />
                       </div>
                     </div>
                   </div>;
@@ -3029,8 +3030,8 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
   const [editId, setEditId] = useState(null);
   const [draftNotes, setDraftNotes] = useState('');
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.08)';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';
   const userName=(portalUser&&portalUser.name)||'Admin';
 
   useEffect(function(){var h=function(){setMob(window.innerWidth<768)};window.addEventListener('resize',h);return function(){window.removeEventListener('resize',h)}},[]);
@@ -3204,32 +3205,32 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
 
   function clearFilters(){setSearch('');setSortBy('newest');setFStatus('');setFPosition('');setFExperience('');setFRange('');setFStage('')}
 
-  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'14px':'18px 22px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,borderRadius:12,padding:mob?'14px':'18px 22px'};
   var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:4,display:'block'};
-  var selStyle={...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer',outline:'none'};
+  var selStyle={...NB,fontSize:13,padding:'8px 10px',background:'#091522',border:'1px solid #e65e20',borderRadius:6,color:TEXT,cursor:'pointer',outline:'none'};
   var counts={applicants:items.filter(function(x){return x.kind==='career'}).length,partners:items.filter(function(x){return x.kind==='partner'}).length};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:1200,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:20,transition:'opacity .2s'}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:4}}>
           <div style={{...BB,fontSize:mob?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2}}>CRM</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            <button onClick={exportPDF} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:filtered.length?A:'rgba(249,115,22,.3)',color:filtered.length?'#1a1206':'#888',border:'none',cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export PDF</button>
-            <button onClick={exportExcel} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',color:filtered.length?A:'#888',border:'1px solid '+(filtered.length?A:'rgba(0,0,0,.15)'),cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export Excel</button>
+            <button onClick={exportPDF} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:filtered.length?A:'rgba(255,107,24,.3)',color:filtered.length?'#120a04':'#aab3c0',border:'none',cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export PDF</button>
+            <button onClick={exportExcel} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',color:filtered.length?A:'#aab3c0',border:'1px solid '+(filtered.length?A:'#2b3949'),cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export Excel</button>
           </div>
         </div>
         <div style={{...NB,fontSize:13,color:MID,letterSpacing:'1.5px',marginBottom:24}}>Cloud-saved applicant & partner inquiry tracking · auto-sorted most-recent · timestamped activity log</div>
 
         <div style={{display:'flex',gap:0,marginBottom:18,borderBottom:'1px solid '+BORDER}}>
           {[{k:'applicants',l:'Applicants Looking For Work ('+counts.applicants+')'},{k:'partners',l:'Clients Reaching Out ('+counts.partners+')'}].map(function(t){
-            return <button key={t.k} onClick={function(){setTab(t.k);clearFilters();setOpenId(null)}} style={{padding:mob?'9px 12px':'11px 18px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,background:tab===t.k?A:'transparent',color:tab===t.k?'#fff':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>
+            return <button key={t.k} onClick={function(){setTab(t.k);clearFilters();setOpenId(null)}} style={{padding:mob?'9px 12px':'11px 18px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,background:tab===t.k?A:'transparent',color:tab===t.k?'#120a04':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>
           })}
         </div>
 
         <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'minmax(220px,1fr) repeat(auto-fit,minmax(150px,1fr))',gap:10,marginBottom:8}}>
-          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search name, email, phone, company, position…" style={{padding:'10px 14px',background:CARD,border:'1px solid '+BORDER,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
+          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search name, email, phone, company, position…" style={{padding:'10px 14px',background:'#091522',border:'1px solid #e65e20',borderRadius:6,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
           <select value={sortBy} onChange={function(e){setSortBy(e.target.value)}} style={selStyle}>
             <option value="newest">Sort: Most Recent</option>
             <option value="oldest">Sort: Oldest First</option>
@@ -3281,7 +3282,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
           <div style={{display:'grid',gap:12}}>
             {filtered.map(function(x){
               var st=x.status||'New';
-              var stColor=st==='Closed'?DIM:st==='Contacted'?'#3b82f6':st==='In Progress'?'#22c55e':A;
+              var stColor=st==='Closed'?DIM:st==='Contacted'?'#2c7dff':st==='In Progress'?'#19d47b':A;
               var isApp=x.kind==='career';
               var displayName=isApp?(x.name||'—'):((((x.firstName||'')+' '+(x.lastName||'')).trim())||'—');
               return (
@@ -3357,15 +3358,15 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
                       <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
                         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
                           <span style={labelStyle}>Hiring Stage</span>
-                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#16a34a',color:'#fff',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
+                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#19d47b',color:'#03110a',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
                           {hired&&<button onClick={resendInvite} style={{marginLeft:'auto',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'5px 12px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(7px 0%,100% 0%,calc(100% - 7px) 100%,0% 100%)'}}>Resend Onboarding Invite</button>}
-                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
+                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#19d47b',color:hired?'#19d47b':'#03110a',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
                         </div>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {STAGES_DEF.map(function(s){
                             var on=(s.k==='unavailable')?!!x.unavailableUntil:!!sg[s.k];
                             var labelText=s.l+(s.k==='unavailable'&&x.unavailableUntil?(' '+x.unavailableUntil):'');
-                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),background:on?'rgba(249,115,22,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
+                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'#2b3949'),background:on?'rgba(255,107,24,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
                               <input type="checkbox" checked={on} onChange={function(){toggle(s.k)}} style={{accentColor:A,margin:0}}/>{labelText}
                             </label>
                           })}
@@ -3435,8 +3436,8 @@ function scalePhoto(file, maxDim, quality){
 }
 
 function OnboardingPage({ portalUser, onComplete, onExit }){
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';const OK='#16a34a';
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';const OK='#19d47b';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -3498,16 +3499,16 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
   var completedAt = doc && doc.completedAt;
 
   var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:6,display:'block'};
-  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'18px':'24px',marginBottom:14};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,borderRadius:12,padding:mob?'18px':'24px',marginBottom:14};
   var stepHead=function(n,t,done){return (
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
-      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(0,0,0,.06)',color:done?'#fff':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
+      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(255,255,255,.08)',color:done?'#03110a':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
       <div style={{...BB,fontSize:22,letterSpacing:1,color:TEXT}}>{t}</div>
     </div>
   )};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px':'48px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px calc(24px + var(--sab, 0px))':'48px'}}>
       <div style={{maxWidth:780,margin:'0 auto'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18,flexWrap:'wrap',gap:10}}>
           <div>
@@ -3518,7 +3519,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
           {onExit&&<button onClick={onExit} style={{...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',border:'1px solid '+BORDER,color:MID,padding:'8px 14px',cursor:'pointer'}}>Sign Out</button>}
         </div>
 
-        {completedAt&&<div style={{background:'rgba(22,163,74,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
+        {completedAt&&<div style={{background:'rgba(25,212,123,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
         {!completedAt&&<div style={{...NB,fontSize:14,color:MID,marginBottom:18,lineHeight:1.6}}>Please complete the three steps below. Your documents are stored securely and used only for employment verification and HR records.</div>}
 
         <div style={cardStyle}>
@@ -3534,7 +3535,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
               </div>
             </div>
           ):(
-            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(255,107,24,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
               📷 Upload Social Security Card Photo
               <input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/>
             </label>
@@ -3558,7 +3559,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
               </div>
             </div>
           ):(
-            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(255,107,24,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
               📷 Upload {idKind==='license'?"Driver's License":'Passport'} Photo
               <input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/>
             </label>
@@ -3569,7 +3570,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
           {stepHead(3,'Employee Handbook Acknowledgement', hasSig)}
           <div style={{...NB,fontSize:13,color:TEXT,whiteSpace:'pre-wrap',lineHeight:1.6,background:'#fafafa',border:'1px solid '+BORDER,padding:'14px 16px',maxHeight:260,overflowY:'auto',marginBottom:12}}>{HANDBOOK_TEXT}</div>
           {hasSig?(
-            <div style={{padding:'12px 14px',background:'rgba(22,163,74,.08)',border:'1px solid '+OK}}>
+            <div style={{padding:'12px 14px',background:'rgba(25,212,123,.08)',border:'1px solid '+OK}}>
               <div style={{...NB,fontSize:13,color:TEXT}}>Signed by <strong>{doc.handbook.signedName}</strong></div>
               <div style={{...NB,fontSize:11,color:MID}}>on {new Date(doc.handbook.signedAt).toLocaleString()}</div>
             </div>
@@ -3580,7 +3581,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
             </label>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
               <input value={sigName} onChange={function(e){setSigName(e.target.value)}} placeholder="Type your full legal name as signature" style={{flex:1,minWidth:200,...NB,fontSize:15,padding:'10px 12px',background:CARD,border:'1px solid '+BORDER,color:TEXT,outline:'none'}}/>
-              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(249,115,22,.3)',color:agreed&&sigName.trim()?'#1a1206':'#888',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
+              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(255,107,24,.3)',color:agreed&&sigName.trim()?'#120a04':'#aab3c0',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
             </div>
           </>)}
         </div>
@@ -3588,7 +3589,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
         {msg&&<div style={{...NB,fontSize:12,color:msg.indexOf('failed')>=0||msg.indexOf('Try')>=0||msg.indexOf('Could not')>=0||msg.indexOf('Please')>=0||msg.indexOf('Tick')>=0||msg.indexOf('Type')>=0?'#dc2626':MID,marginBottom:10}}>{msg}</div>}
 
         {!completedAt&&!all&&<div style={{...NB,fontSize:13,color:MID,padding:'14px 0',textAlign:'center',fontStyle:'italic'}}>Complete all three steps to finish onboarding. {!hasSSN&&'· Upload SSN '}{!hasID&&'· Upload ID '}{!hasSig&&'· Sign handbook'}</div>}
-        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#1a1206',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
+        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#120a04',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
       </div>
     </div>
   );
@@ -4761,7 +4762,7 @@ function StakeholderReports({ onExit }) {
           id: proj.id,
           name: proj.name,
           company: proj.company || '',
-          color: proj.color || '#1565C0',
+          color: proj.color || '#2c7dff',
           fromPreCon: proj.fromPreCon || false,
           systemSizeMW: proj.systemSizeMW || 0,
           location: proj.location || '',
@@ -4796,10 +4797,10 @@ function StakeholderReports({ onExit }) {
 
   if (!data) return null;
 
-  var BB = { fontFamily: "'Bebas Neue',sans-serif" };
+  var BB = { fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 };
   var NB = { fontFamily: "'Barlow Condensed',sans-serif" };
-  var cardBg = '#ffffff';
-  var borderC = 'rgba(0,0,0,.08)';
+  var cardBg = '#07121e';
+  var borderC = '#2b3949';
 
   var totalRevenue = data.projects.reduce(function(s, p) { return s + p.totalBid; }, 0);
   var totalCost = data.projects.reduce(function(s, p) { return s + p.totalCost; }, 0);
@@ -4830,7 +4831,7 @@ function StakeholderReports({ onExit }) {
     return Math.max(0, Math.min(100, score));
   }
 
-  function healthColor(s) { return s >= 80 ? '#22c55e' : s >= 60 ? '#eab308' : '#ef4444'; }
+  function healthColor(s) { return s >= 80 ? '#19d47b' : s >= 60 ? '#f4d457' : '#ff4655'; }
 
   var tabs = [
     { id: 'overview', label: 'Overview' },
@@ -4841,9 +4842,9 @@ function StakeholderReports({ onExit }) {
 
   function MetricCard({ label, value, sub, color }) {
     return React.createElement('div', { style: { background: cardBg, border: '1px solid ' + borderC, padding: '20px 24px', flex: '1 1 200px', minWidth: 180 } },
-      React.createElement('div', { style: { ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 8 } }, label),
-      React.createElement('div', { style: { ...BB, fontSize: 32, color: color || '#1a1a2e', lineHeight: 1 } }, value),
-      sub ? React.createElement('div', { style: { ...NB, fontSize: 12, color: '#666', marginTop: 6 } }, sub) : null
+      React.createElement('div', { style: { ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 8 } }, label),
+      React.createElement('div', { style: { ...BB, fontSize: 32, color: color || '#f6f3ec', lineHeight: 1 } }, value),
+      sub ? React.createElement('div', { style: { ...NB, fontSize: 12, color: '#aab3c0', marginTop: 6 } }, sub) : null
     );
   }
 
@@ -4853,21 +4854,21 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 6 } },
       React.createElement('div', { style: { width: 10, height: 10, borderRadius: '50%', background: healthColor(hs), flexShrink: 0 } }),
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-        React.createElement('div', { style: { ...NB, fontSize: 15, fontWeight: 600, color: '#1a1a2e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, p.company + (p.location ? ' • ' + p.location : '') + (p.systemSizeMW ? ' • ' + p.systemSizeMW + ' MW' : ''))
+        React.createElement('div', { style: { ...NB, fontSize: 15, fontWeight: 600, color: '#f6f3ec', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, p.company + (p.location ? ' • ' + p.location : '') + (p.systemSizeMW ? ' • ' + p.systemSizeMW + ' MW' : ''))
       ),
       React.createElement('div', { style: { textAlign: 'right', minWidth: 80 } },
-        React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, fmt$(p.totalBid)),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: p.profitMargin > 15 ? '#22c55e' : p.profitMargin > 8 ? '#eab308' : '#ef4444' } }, p.profitMargin.toFixed(1) + '% margin')
+        React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, fmt$(p.totalBid)),
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: p.profitMargin > 15 ? '#19d47b' : p.profitMargin > 8 ? '#f4d457' : '#ff4655' } }, p.profitMargin.toFixed(1) + '% margin')
       ),
       React.createElement('div', { style: { textAlign: 'center', minWidth: 70 } },
         React.createElement('div', { style: { ...BB, fontSize: 20, color: healthColor(hs) } }, hs),
-        React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666' } }, 'HEALTH')
+        React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0' } }, 'HEALTH')
       ),
-      React.createElement('div', { style: { width: 100, height: 6, background: '#fff', borderRadius: 3, overflow: 'hidden' } },
-        React.createElement('div', { style: { width: pct + '%', height: '100%', background: 'linear-gradient(90deg, #F97316, #EAB308)', borderRadius: 3 } })
+      React.createElement('div', { style: { width: 100, height: 6, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden' } },
+        React.createElement('div', { style: { width: pct + '%', height: '100%', background: 'linear-gradient(90deg, #ff6b18, #f4d457)', borderRadius: 3 } })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666', minWidth: 40, textAlign: 'right' } }, pct + '%')
+      React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0', minWidth: 40, textAlign: 'right' } }, pct + '%')
     );
   }
 
@@ -4876,20 +4877,20 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Active Projects', value: data.projects.length, sub: totalMW.toFixed(1) + ' MW total capacity' }),
-        React.createElement(MetricCard, { label: 'Total Revenue', value: fmt$(totalRevenue), color: '#22c55e', sub: fmt$(totalProfit) + ' projected profit' }),
-        React.createElement(MetricCard, { label: 'Avg Margin', value: avgMargin.toFixed(1) + '%', color: avgMargin > 15 ? '#22c55e' : '#eab308' }),
+        React.createElement(MetricCard, { label: 'Total Revenue', value: fmt$(totalRevenue), color: '#19d47b', sub: fmt$(totalProfit) + ' projected profit' }),
+        React.createElement(MetricCard, { label: 'Avg Margin', value: avgMargin.toFixed(1) + '%', color: avgMargin > 15 ? '#19d47b' : '#f4d457' }),
         React.createElement(MetricCard, { label: 'Man-Hours', value: fmtN(totalMH), sub: fmtN(weekActivity) + ' entries this week' }),
-        React.createElement(MetricCard, { label: 'Site Completion', value: ttk.overall.toFixed(1) + '%', color: '#F97316', sub: ttk.total.toLocaleString() + ' piles · Task Tracker' })
+        React.createElement(MetricCard, { label: 'Site Completion', value: ttk.overall.toFixed(1) + '%', color: '#ff6b18', sub: ttk.total.toLocaleString() + ' piles · Task Tracker' })
       ),
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
-        React.createElement(MetricCard, { label: 'Tasks In Progress', value: allInProgress, color: '#F97316' }),
-        React.createElement(MetricCard, { label: 'Tasks Completed', value: allCompleted, color: '#22c55e' }),
+        React.createElement(MetricCard, { label: 'Tasks In Progress', value: allInProgress, color: '#ff6b18' }),
+        React.createElement(MetricCard, { label: 'Tasks Completed', value: allCompleted, color: '#19d47b' }),
         React.createElement(MetricCard, { label: 'Active Bids', value: data.bids.length, sub: 'in PreCon pipeline' }),
         React.createElement(MetricCard, { label: 'Quarter Activity', value: quarterActivity, sub: 'reports filed this quarter' })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PROJECT HEALTH'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PROJECT HEALTH'),
       data.projects.length === 0
-        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#666', padding: 20 } }, 'No projects yet. Create bids in PreCon or projects in Field Reporting.')
+        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#aab3c0', padding: 20 } }, 'No projects yet. Create bids in PreCon or projects in Field Reporting.')
         : data.projects.map(function(p) { return React.createElement(ProjectRow, { key: p.id, p: p }); })
     );
   }
@@ -4902,8 +4903,8 @@ function StakeholderReports({ onExit }) {
         return React.createElement('div', { key: p.id, style: { background: cardBg, border: '1px solid ' + borderC, padding: 24, marginBottom: 16 } },
           React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 } },
             React.createElement('div', null,
-              React.createElement('div', { style: { ...BB, fontSize: 24, color: '#1a1a2e' } }, p.name),
-              React.createElement('div', { style: { ...NB, fontSize: 12, color: '#666' } }, [p.company, p.location, p.systemSizeMW ? p.systemSizeMW + ' MW' : ''].filter(Boolean).join(' • '))
+              React.createElement('div', { style: { ...BB, fontSize: 24, color: '#f6f3ec' } }, p.name),
+              React.createElement('div', { style: { ...NB, fontSize: 12, color: '#aab3c0' } }, [p.company, p.location, p.systemSizeMW ? p.systemSizeMW + ' MW' : ''].filter(Boolean).join(' • '))
             ),
             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
               React.createElement('div', { style: { width: 12, height: 12, borderRadius: '50%', background: healthColor(hs) } }),
@@ -4911,45 +4912,45 @@ function StakeholderReports({ onExit }) {
             )
           ),
           React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 } },
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Contract'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, fmt$(p.totalBid))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Contract'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, fmt$(p.totalBid))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Profit'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#22c55e' } }, fmt$(p.projectedProfit))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Profit'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#19d47b' } }, fmt$(p.projectedProfit))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Man-Hours'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, fmtN(p.totalManHours))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Man-Hours'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, fmtN(p.totalManHours))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Duration'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, p.workingDays + ' days')
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Duration'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, p.workingDays + ' days')
             )
           ),
           ev ? React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 } },
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'SPI'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.spi || 1) >= 0.95 ? '#22c55e' : '#ef4444' } }, (ev.spi || 1).toFixed(2))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'SPI'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.spi || 1) >= 0.95 ? '#19d47b' : '#ff4655' } }, (ev.spi || 1).toFixed(2))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'CPI'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.cpi || 1) >= 0.95 ? '#22c55e' : '#ef4444' } }, (ev.cpi || 1).toFixed(2))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'CPI'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.cpi || 1) >= 0.95 ? '#19d47b' : '#ff4655' } }, (ev.cpi || 1).toFixed(2))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'EV'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#1a1a2e' } }, fmt$(ev.ev || 0))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'EV'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#f6f3ec' } }, fmt$(ev.ev || 0))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'EAC'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#1a1a2e' } }, fmt$(ev.eac || 0))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'EAC'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#f6f3ec' } }, fmt$(ev.eac || 0))
             )
           ) : null,
           React.createElement('div', { style: { display: 'flex', gap: 16, marginTop: 14, ...NB, fontSize: 12 } },
-            React.createElement('span', { style: { color: '#666' } }, p.totalEntries + ' total reports'),
-            React.createElement('span', { style: { color: p.thisWeekEntries > 0 ? '#22c55e' : '#ef4444' } }, p.thisWeekEntries + ' this week'),
-            React.createElement('span', { style: { color: '#666' } }, p.inProgressTasks + ' in-progress / ' + p.completedTasks + ' done')
+            React.createElement('span', { style: { color: '#aab3c0' } }, p.totalEntries + ' total reports'),
+            React.createElement('span', { style: { color: p.thisWeekEntries > 0 ? '#19d47b' : '#ff4655' } }, p.thisWeekEntries + ' this week'),
+            React.createElement('span', { style: { color: '#aab3c0' } }, p.inProgressTasks + ' in-progress / ' + p.completedTasks + ' done')
           )
         );
       })
@@ -4960,13 +4961,13 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Total Pipeline', value: fmt$(totalRevenue + data.bids.reduce(function(s, b) { var r = computeAll(b.params || {}); return s + (r.preBondTotal || 0); }, 0)), color: '#818cf8' }),
-        React.createElement(MetricCard, { label: 'Awarded Revenue', value: fmt$(totalRevenue), color: '#22c55e' }),
-        React.createElement(MetricCard, { label: 'Total Costs', value: fmt$(totalCost), color: '#ef4444' }),
-        React.createElement(MetricCard, { label: 'Net Profit', value: fmt$(totalProfit), color: totalProfit > 0 ? '#22c55e' : '#ef4444' })
+        React.createElement(MetricCard, { label: 'Awarded Revenue', value: fmt$(totalRevenue), color: '#19d47b' }),
+        React.createElement(MetricCard, { label: 'Total Costs', value: fmt$(totalCost), color: '#ff4655' }),
+        React.createElement(MetricCard, { label: 'Net Profit', value: fmt$(totalProfit), color: totalProfit > 0 ? '#19d47b' : '#ff4655' })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PROJECT FINANCIALS'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PROJECT FINANCIALS'),
       React.createElement('div', { style: { background: cardBg, border: '1px solid ' + borderC, overflow: 'hidden' } },
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '10px 16px', background: 'rgba(255,255,255,.03)', borderBottom: '1px solid ' + borderC, ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } },
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '10px 16px', background: 'rgba(255,255,255,.03)', borderBottom: '1px solid ' + borderC, ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } },
           React.createElement('div', null, 'Project'),
           React.createElement('div', { style: { textAlign: 'right' } }, 'Revenue'),
           React.createElement('div', { style: { textAlign: 'right' } }, 'Cost'),
@@ -4975,30 +4976,30 @@ function StakeholderReports({ onExit }) {
         ),
         data.projects.map(function(p) {
           return React.createElement('div', { key: p.id, style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', borderBottom: '1px solid ' + borderC } },
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', textAlign: 'right' } }, fmt$(p.totalBid)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#ef4444', textAlign: 'right' } }, fmt$(p.totalCost)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#22c55e', textAlign: 'right' } }, fmt$(p.projectedProfit)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: p.profitMargin > 15 ? '#22c55e' : '#eab308', textAlign: 'right' } }, p.profitMargin.toFixed(1) + '%')
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', textAlign: 'right' } }, fmt$(p.totalBid)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#ff4655', textAlign: 'right' } }, fmt$(p.totalCost)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#19d47b', textAlign: 'right' } }, fmt$(p.projectedProfit)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: p.profitMargin > 15 ? '#19d47b' : '#f4d457', textAlign: 'right' } }, p.profitMargin.toFixed(1) + '%')
           );
         }),
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', background: 'rgba(249,115,22,.05)', ...NB, fontSize: 13, fontWeight: 700 } },
-          React.createElement('div', { style: { color: '#F97316' } }, 'TOTAL'),
-          React.createElement('div', { style: { textAlign: 'right', color: '#1a1a2e' } }, fmt$(totalRevenue)),
-          React.createElement('div', { style: { textAlign: 'right', color: '#ef4444' } }, fmt$(totalCost)),
-          React.createElement('div', { style: { textAlign: 'right', color: '#22c55e' } }, fmt$(totalProfit)),
-          React.createElement('div', { style: { textAlign: 'right', color: avgMargin > 15 ? '#22c55e' : '#eab308' } }, avgMargin.toFixed(1) + '%')
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', background: 'rgba(255,107,24,.05)', ...NB, fontSize: 13, fontWeight: 700 } },
+          React.createElement('div', { style: { color: '#ff6b18' } }, 'TOTAL'),
+          React.createElement('div', { style: { textAlign: 'right', color: '#f6f3ec' } }, fmt$(totalRevenue)),
+          React.createElement('div', { style: { textAlign: 'right', color: '#ff4655' } }, fmt$(totalCost)),
+          React.createElement('div', { style: { textAlign: 'right', color: '#19d47b' } }, fmt$(totalProfit)),
+          React.createElement('div', { style: { textAlign: 'right', color: avgMargin > 15 ? '#19d47b' : '#f4d457' } }, avgMargin.toFixed(1) + '%')
         )
       ),
       data.bids.length > 0 ? React.createElement('div', { style: { marginTop: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PIPELINE — ACTIVE BIDS'),
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PIPELINE — ACTIVE BIDS'),
         data.bids.map(function(b) {
           var p = b.params || {};
           var r = computeAll(p);
           return React.createElement('div', { key: b.id, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 4 } },
             React.createElement('div', null,
-              React.createElement('div', { style: { ...NB, fontSize: 14, color: '#1a1a2e' } }, p.projectName || 'Untitled'),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, [p.clientName, p.systemSizeMW ? p.systemSizeMW + ' MW' : '', p.status || 'Draft'].filter(Boolean).join(' • '))
+              React.createElement('div', { style: { ...NB, fontSize: 14, color: '#f6f3ec' } }, p.projectName || 'Untitled'),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, [p.clientName, p.systemSizeMW ? p.systemSizeMW + ' MW' : '', p.status || 'Draft'].filter(Boolean).join(' • '))
             ),
             React.createElement('div', { style: { ...BB, fontSize: 18, color: '#818cf8' } }, fmt$(r.preBondTotal || 0))
           );
@@ -5039,54 +5040,54 @@ function StakeholderReports({ onExit }) {
 
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
-        React.createElement(MetricCard, { label: 'Active Tasks', value: active.length, color: '#F97316' }),
-        React.createElement(MetricCard, { label: 'Completed', value: done.length, color: '#22c55e' }),
-        React.createElement(MetricCard, { label: 'Stale (5+ days)', value: stale.length, color: stale.length > 0 ? '#ef4444' : '#22c55e' }),
+        React.createElement(MetricCard, { label: 'Active Tasks', value: active.length, color: '#ff6b18' }),
+        React.createElement(MetricCard, { label: 'Completed', value: done.length, color: '#19d47b' }),
+        React.createElement(MetricCard, { label: 'Stale (5+ days)', value: stale.length, color: stale.length > 0 ? '#ff4655' : '#19d47b' }),
         React.createElement(MetricCard, { label: 'Week Reports', value: weekActivity })
       ),
       stale.length > 0 ? React.createElement('div', { style: { marginBottom: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ef4444', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } },
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff4655', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } },
           React.createElement(AlertTriangle, { size: 14 }), 'ENGAGEMENT ALERTS — NO ACTIVITY 5+ DAYS'
         ),
         stale.map(function(t, i) {
-          return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.2)', marginBottom: 4 } },
-            React.createElement('div', { style: { width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 2s infinite' } }),
+          return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'rgba(255,70,85,.06)', border: '1px solid rgba(255,70,85,.2)', marginBottom: 4 } },
+            React.createElement('div', { style: { width: 8, height: 8, borderRadius: '50%', background: '#ff4655', animation: 'pulse 2s infinite' } }),
             React.createElement('div', { style: { flex: 1 } },
-              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, t.task),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project)
+              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, t.task),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project)
             ),
-            React.createElement('div', { style: { ...NB, fontSize: 12, color: '#ef4444' } }, t.daysSince + ' days idle'),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.pct + '% complete')
+            React.createElement('div', { style: { ...NB, fontSize: 12, color: '#ff4655' } }, t.daysSince + ' days idle'),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.pct + '% complete')
           );
         })
       ) : null,
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'ALL IN-PROGRESS TASKS'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'ALL IN-PROGRESS TASKS'),
       active.length === 0
-        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#666', padding: 20 } }, 'No tasks currently in progress.')
+        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#aab3c0', padding: 20 } }, 'No tasks currently in progress.')
         : active.map(function(t, i) {
           return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 4 } },
-            React.createElement('div', { style: { width: 4, height: 28, background: t.taskColor || '#F97316', borderRadius: 2 } }),
+            React.createElement('div', { style: { width: 4, height: 28, background: t.taskColor || '#ff6b18', borderRadius: 2 } }),
             React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, t.task),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project)
+              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, t.task),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project)
             ),
-            React.createElement('div', { style: { width: 80, height: 5, background: '#fff', borderRadius: 3, overflow: 'hidden' } },
-              React.createElement('div', { style: { width: t.pct + '%', height: '100%', background: t.taskColor || '#F97316', borderRadius: 3 } })
+            React.createElement('div', { style: { width: 80, height: 5, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden' } },
+              React.createElement('div', { style: { width: t.pct + '%', height: '100%', background: t.taskColor || '#ff6b18', borderRadius: 3 } })
             ),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666', minWidth: 55, textAlign: 'right' } }, t.pct + '% • ' + Math.round(t.worked) + 'h'),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0', minWidth: 55, textAlign: 'right' } }, t.pct + '% • ' + Math.round(t.worked) + 'h'),
             t.weekEntries === 0 && t.daysSince !== null && t.daysSince >= 3
-              ? React.createElement(AlertTriangle, { size: 12, color: '#eab308', style: { flexShrink: 0 } })
+              ? React.createElement(AlertTriangle, { size: 12, color: '#f4d457', style: { flexShrink: 0 } })
               : null
           );
         }),
       done.length > 0 ? React.createElement('div', { style: { marginTop: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#22c55e', marginBottom: 12 } }, 'COMPLETED THIS QUARTER (' + done.length + ')'),
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#19d47b', marginBottom: 12 } }, 'COMPLETED THIS QUARTER (' + done.length + ')'),
         done.slice(0, 20).map(function(t, i) {
           return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 3, opacity: 0.7 } },
-            React.createElement(Check, { size: 14, color: '#22c55e' }),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', flex: 1 } }, t.task),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#22c55e' } }, Math.round(t.worked) + 'h')
+            React.createElement(Check, { size: 14, color: '#19d47b' }),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', flex: 1 } }, t.task),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#19d47b' } }, Math.round(t.worked) + 'h')
           );
         })
       ) : null
@@ -5099,19 +5100,19 @@ function StakeholderReports({ onExit }) {
   else if (tab === 'financial') content = React.createElement(FinancialTab, null);
   else content = React.createElement(ActivityTab, null);
 
-  return React.createElement('div', { style: { position: 'fixed', inset: 0, zIndex: 2000, background: '#f5f2ee', overflow: 'auto', fontFamily: "'Barlow',sans-serif" } },
-    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px clamp(14px,4vw,32px) 60px' } },
+  return React.createElement('div', { className: 'sunrise-admin', style: { position: 'fixed', top: (typeof window !== 'undefined' && window.innerWidth < 768) ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 0, zIndex: 2000, overflow: 'auto', fontFamily: "'Barlow',sans-serif" } },
+    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px clamp(14px,4vw,32px) calc(60px + var(--tabbar-h, 0px))' } },
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 32 } },
         React.createElement('div', null,
-          React.createElement('div', { onClick: onExit, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#F97316', marginBottom: 12, transition: 'opacity .2s' }, onMouseEnter: function(e){e.currentTarget.style.opacity='.7'}, onMouseLeave: function(e){e.currentTarget.style.opacity='1'} }, '← Back to Dashboard'),
-          React.createElement('div', { style: { ...BB, fontSize: 'clamp(32px,5vw,52px)', letterSpacing: 2, color: '#1a1a2e', lineHeight: 1 } }, 'STAKEHOLDER REPORTS')
+          React.createElement('div', { onClick: onExit, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff6b18', marginBottom: 12, transition: 'opacity .2s' }, onMouseEnter: function(e){e.currentTarget.style.opacity='.7'}, onMouseLeave: function(e){e.currentTarget.style.opacity='1'} }, '← Back to Dashboard'),
+          React.createElement('div', { style: { ...BB, fontSize: 'clamp(32px,5vw,52px)', letterSpacing: 2, color: '#f6f3ec', lineHeight: 1 } }, 'STAKEHOLDER REPORTS')
         ),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, 'Last refreshed: ' + new Date().toLocaleTimeString())
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, 'Last refreshed: ' + new Date().toLocaleTimeString())
       ),
       React.createElement('div', { style: { display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid ' + borderC, overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
         tabs.map(function(t) {
           var active = t.id === tab;
-          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 20px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#F97316' : '#888', borderBottom: active ? '2px solid #F97316' : '2px solid transparent', transition: 'all .2s' } }, t.label);
+          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 20px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#ff6b18' : '#aab3c0', borderBottom: active ? '2px solid #ff6b18' : '2px solid transparent', transition: 'all .2s' } }, t.label);
         })
       ),
       content
@@ -5539,9 +5540,9 @@ export default function App(){
   const overallP2=phases2.reduce((s,p)=>s+(p.pileP+p.tubeP+p.panelP)/3,0)/phases2.length
   const phLabel2=overallP2<0.15?'SITE PREP':overallP2<0.35?'PILE INSTALL':overallP2<0.55?'RACKING':overallP2<0.75?'MODULES':'OPERATIONAL'
 
-  const IST={width:'100%',background:'#f9f7f5',border:'1px solid rgba(0,0,0,.12)',color:'#1a1a2e',padding:'12px 16px',fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',borderRadius:0,WebkitAppearance:'none'}
-  const fIn=e=>{e.target.style.borderColor='rgba(249,115,22,.5)';e.target.style.boxShadow='0 0 0 3px rgba(249,115,22,.08)'}
-  const fOut=e=>{e.target.style.borderColor='rgba(0,0,0,.12)';e.target.style.boxShadow=''}
+  const IST={width:'100%',background:'#091522',border:'1px solid #e65e20',color:'#f6f3ec',padding:'12px 16px',fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',borderRadius:6,WebkitAppearance:'none',minHeight:48}
+  const fIn=e=>{e.target.style.borderColor='#ff7a21';e.target.style.boxShadow='0 0 0 3px rgba(255,107,24,.18)'}
+  const fOut=e=>{e.target.style.borderColor='#e65e20';e.target.style.boxShadow=''}
 
   // A signing link is self-contained: no login, no language gate, nothing else.
   if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
@@ -5618,14 +5619,14 @@ export default function App(){
             LOGIN PAGE
             ══════════════════════════════════════════════ */}
         {page==='login'&&(
-          <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',zIndex:10,padding:m?'80px 16px 40px':'120px 48px',background:'#f5f2ee'}}>
-            <div style={{width:m?'100%':420,maxWidth:'95vw',background:'#ffffff',border:'1px solid rgba(0,0,0,.1)',boxShadow:'0 4px 24px rgba(0,0,0,.08)',padding:m?'36px 28px':'48px 40px'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',zIndex:10,padding:m?'calc(80px + var(--sat, 0px)) 16px 40px':'120px 48px'}}>
+            <div className="sr-card" style={{width:m?'100%':420,maxWidth:'95vw',padding:m?'36px 28px':'48px 40px',boxShadow:'0 18px 50px rgba(0,0,0,.5)'}}>
               <div style={{textAlign:'center',marginBottom:32}}>
-                <img src={LOGO_SRC} alt="SRC&D" style={{width:72,height:72,objectFit:'contain',marginBottom:16}}/>
-                <div style={{...BB,fontSize:28,letterSpacing:'4px',color:'#1a1a2e'}}>{ siteSettings.portalTitle}</div>
+                <img src={LOGO_SRC} alt="SRC&D" style={{width:72,height:72,objectFit:'contain',marginBottom:16,filter:'drop-shadow(0 0 18px rgba(255,107,24,.35))'}}/>
+                <div style={{...BB,fontSize:28,letterSpacing:'4px',color:'#f6f3ec'}}>{ siteSettings.portalTitle}</div>
                 <div style={{...NB,fontSize:12,letterSpacing:'3px',color:A,textTransform:'uppercase',marginTop:4}}>Sunrise Construction & Development</div>
               </div>
-              {loginErr&&<div style={{background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.3)',color:'#EF4444',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
+              {loginErr&&<div style={{background:'rgba(255,70,85,.12)',border:'1px solid rgba(255,70,85,.45)',borderRadius:6,color:'#ff4655',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
               <div style={{marginBottom:16}}>
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_email')}</div>
                 <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_email_ph')} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-email-noautofill" data-lpignore="true" data-form-type="other"/>
@@ -5634,13 +5635,13 @@ export default function App(){
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_password')}</div>
                 <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_password_ph')} onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}} autoComplete="new-password" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-pass-noautofill" data-lpignore="true" data-form-type="other"/>
               </div>
-              <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#FB923C'}} onMouseLeave={function(e){e.target.style.background=A}}>
+              <div style={{cursor:'pointer',background:'#ff6b18',color:'#120a04',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48,borderRadius:6,transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#ff7a21'}} onMouseLeave={function(e){e.target.style.background='#ff6b18'}}>
                 {T('login_signin')}
               </div>
-              {window._pendingInvite&&<div style={{cursor:'pointer',background:'#22c55e',color:'#fff',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',marginTop:12,transition:'background .2s'}} onClick={function(){doInviteSignup(window._pendingInvite);window._pendingInvite=null}}>
+              {window._pendingInvite&&<div style={{cursor:'pointer',background:'#19d47b',color:'#03110a',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48,borderRadius:6,marginTop:12,transition:'background .2s'}} onClick={function(){doInviteSignup(window._pendingInvite);window._pendingInvite=null}}>
                 {T('login_accept_invite')}
               </div>}
-              <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#555'}}>
+              <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#aab3c0'}}>
                 {T('login_invite_only')}
               </div>
             </div>
@@ -5650,18 +5651,18 @@ export default function App(){
         {page==='dashboard'&&showPw&&(function(){return (
           <>
               {showPw&&(
-                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
-                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
-                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Change Password</div>
-                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>Set a strong password for {user?user.email:'your account'}</div>
+                <div className="sunrise-admin" style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(1,5,11,.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
+                  <div onClick={function(e){e.stopPropagation()}} className="sr-card" style={{width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 18px 50px rgba(0,0,0,.6)'}}>
+                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#f6f3ec'}}>Change Password</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',marginTop:2,marginBottom:18}}>Set a strong password for {user?user.email:'your account'}</div>
                     <input type="password" value={pwOld} onChange={function(e){setPwOld(e.target.value)}} placeholder="Current password" style={{...IST,marginBottom:10}}/>
                     <input type="password" value={pwNew} onChange={function(e){setPwNew(e.target.value)}} placeholder="New password (min 8 characters)" style={{...IST,marginBottom:10}}/>
                     <input type="password" value={pwConf} onChange={function(e){setPwConf(e.target.value)}} placeholder="Confirm new password" onKeyDown={function(e){if(e.key==='Enter')changePassword()}} style={{...IST}}/>
-                    {pwMsg&&pwMsg!=='ok'&&<div style={{...NB,fontSize:12,color:'#dc2626',marginTop:12}}>{pwMsg}</div>}
-                    {pwMsg==='ok'&&<div style={{...NB,fontSize:12,color:'#16a34a',marginTop:12}}>Password updated. Save it in your password manager.</div>}
+                    {pwMsg&&pwMsg!=='ok'&&<div style={{...NB,fontSize:12,color:'#ff4655',marginTop:12}}>{pwMsg}</div>}
+                    {pwMsg==='ok'&&<div style={{...NB,fontSize:12,color:'#19d47b',marginTop:12}}>Password updated. Save it in your password manager.</div>}
                     <div style={{display:'flex',gap:10,marginTop:20}}>
-                      <button onClick={changePassword} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Update Password</button>
-                      <button onClick={function(){setShowPw(false)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                      <button onClick={changePassword} className="sr-button sr-button--primary" style={{flex:1}}>Update Password</button>
+                      <button onClick={function(){setShowPw(false)}} className="sr-button sr-button--outline" style={{flex:1}}>Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -5672,37 +5673,37 @@ export default function App(){
           onOpen={function(tile){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}}
           onOpenPage={setPage} onChangePassword={openChangePw} onSignOut={function(){setUser(null);setPage(isNative?'login':'landing')}}/>}
         {page==='dashboard'&&!m&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:'120px 48px 80px',background:'#f5f2ee'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
               <div style={{marginBottom:m?28:40}}>
                 <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:22,height:1,background:A}}/>Welcome back
                 </div>
-                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none'}}>
+                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#f6f3ec',textShadow:'none'}}>
                   {user ? user.name.toUpperCase() : 'OPERATOR'}
                 </div>
-                <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
+                <div style={{...NB,fontSize:13,color:'#aab3c0',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
                 <div onClick={openChangePw} style={{display:'inline-block',marginTop:12,cursor:'pointer',...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,borderBottom:'1px solid '+A,paddingBottom:2}}>Change Password</div>
               </div>
               {hasTool('pileplan')&&(function(){
                 var ttk=getTaskTrackerKPI();
                 return (
-                  <div onClick={function(){setPage('pileplan')}} style={{background:'#fff',border:'1px solid rgba(0,0,0,.08)',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:m?'18px':'24px 28px',marginBottom:m?14:20,cursor:'pointer',transition:'all .25s'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.transform='translateY(-2px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.transform='translateY(0)'}}>
+                  <div onClick={function(){setPage('pileplan')}} className="sr-card" style={{padding:m?'18px':'24px 28px',marginBottom:m?14:20,cursor:'pointer',transition:'all .25s'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-2px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
                     <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:1,background:A}}/>Live Site Progress · Task Tracker</div>
                     <div style={{display:'flex',alignItems:'flex-end',gap:18,flexWrap:'wrap'}}>
-                      <div style={{...BB,fontSize:m?44:62,color:'#1a1a2e',lineHeight:.85}}>{ttk.overall.toFixed(1)}<span style={{fontSize:'.45em',color:A,marginLeft:2}}>%</span></div>
+                      <div style={{...BB,fontSize:m?44:62,color:'#f6f3ec',lineHeight:.85}}>{ttk.overall.toFixed(1)}<span style={{fontSize:'.45em',color:A,marginLeft:2}}>%</span></div>
                       <div style={{flex:1,minWidth:180}}>
-                        <div style={{height:10,background:'#eceae6',borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:ttk.overall+'%',background:'linear-gradient(90deg,#F97316,#EAB308)',transition:'width .3s'}}/></div>
-                        <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px',marginTop:7}}>{ttk.total.toLocaleString()} piles · {ttk.lastModified?'updated '+new Date(ttk.lastModified).toLocaleDateString():'no edits yet'}</div>
+                        <div style={{height:10,background:'rgba(255,255,255,.1)',borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:ttk.overall+'%',background:'linear-gradient(90deg,#ff6b18,#f4d457)',transition:'width .3s'}}/></div>
+                        <div style={{...NB,fontSize:11,color:'#aab3c0',letterSpacing:'1px',marginTop:7}}>{ttk.total.toLocaleString()} piles · {ttk.lastModified?'updated '+new Date(ttk.lastModified).toLocaleDateString():'no edits yet'}</div>
                       </div>
                     </div>
                     <div style={{display:'flex',gap:m?12:18,flexWrap:'wrap',marginTop:14}}>
                       {ttk.tasks.map(function(t,i){return (
                         <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
                           <span style={{width:12,height:12,borderRadius:3,background:t.color,flexShrink:0,outline:t.done?'2px solid rgba(34,197,94,.5)':'none'}}/>
-                          <span style={{...NB,fontSize:13,color:'#444',letterSpacing:'.5px'}}>{t.name} <strong style={{color:'#1a1a2e'}}>{t.pct.toFixed(0)}%</strong> <span style={{color:'#999'}}>({t.count.toLocaleString()})</span></span>
+                          <span style={{...NB,fontSize:13,color:'#e8e2d8',letterSpacing:'.5px'}}>{t.name} <strong style={{color:'#f6f3ec'}}>{t.pct.toFixed(0)}%</strong> <span style={{color:'#717d8d'}}>({t.count.toLocaleString()})</span></span>
                         </div>
                       )})}
                     </div>
@@ -5712,18 +5713,16 @@ export default function App(){
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
                 {dashTiles.map(function(tile){
                   return (
-                    <div key={tile.key} onClick={function(){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} style={{
-                      background:'#ffffff',backdropFilter:'blur(12px)',
-                      border:'1px solid rgba(0,0,0,.08)',
+                    <div key={tile.key} onClick={function(){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} className="sr-card" style={{
                       padding:m?'24px 18px':'32px 28px',
-                      cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,.06)'
+                      cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'
                     }}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.background='rgba(249,115,22,.06)';e.currentTarget.style.transform='translateY(-4px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.background='#ffffff';e.currentTarget.style.transform='translateY(0)'}}>
-                      <div style={{...BB,fontSize:m?36:48,color:A,opacity:.18,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>{tile.icon}</div>
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-4px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
+                      <div style={{...BB,fontSize:m?36:48,color:A,opacity:.22,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>{tile.icon}</div>
                       <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:8}}>MODULE</div>
-                      <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>{tile.label.toUpperCase()}</div>
-                      <div style={{...NB,fontSize:12,color:'#666',letterSpacing:'1px',lineHeight:1.5}}>{tile.desc}</div>
+                      <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>{tile.label.toUpperCase()}</div>
+                      <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>{tile.desc}</div>
                       <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,display:'flex',alignItems:'center',gap:6}}>
                         {tile.href?'Open':'Launch'} <span style={{fontSize:14}}>{tile.href?'\u2197':'\u2192'}</span>
                       </div>
@@ -5731,30 +5730,30 @@ export default function App(){
                   )
                 })}
                 {isPortalAdmin&&(
-                  <div onClick={function(){setPage('admin')}} style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.background='rgba(249,115,22,.06)';e.currentTarget.style.transform='translateY(-4px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.background='#ffffff';e.currentTarget.style.transform='translateY(0)'}}>
-                    <div style={{...BB,fontSize:m?36:48,color:A,opacity:.18,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>&#9881;</div>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#EF4444',marginBottom:8}}>ADMIN</div>
-                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>ADMIN DASHBOARD</div>
-                    <div style={{...NB,fontSize:12,color:'#888',letterSpacing:'1px',lineHeight:1.5}}>Users, invites, access & site editor</div>
-                    <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#EF4444',display:'flex',alignItems:'center',gap:6}}>
+                  <div onClick={function(){setPage('admin')}} className="sr-card" style={{padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-4px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
+                    <div style={{...BB,fontSize:m?36:48,color:A,opacity:.22,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>&#9881;</div>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#ff4655',marginBottom:8}}>ADMIN</div>
+                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>ADMIN DASHBOARD</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>Users, invites, access & site editor</div>
+                    <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ff4655',display:'flex',alignItems:'center',gap:6}}>
                       Manage <span style={{fontSize:14}}>&#8594;</span>
                     </div>
                   </div>
                 )}
                 {!isPortalAdmin&&(
-                  <div onClick={function(){setPage('request')}} style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px dashed rgba(249,115,22,.25)',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.25)'}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#888',marginBottom:8}}>NEED ACCESS?</div>
-                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>REQUEST ACCESS</div>
-                    <div style={{...NB,fontSize:12,color:'#888',letterSpacing:'1px',lineHeight:1.5}}>Request access to additional tools</div>
+                  <div onClick={function(){setPage('request')}} className="sr-card" style={{border:'1px dashed #a7461e',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='#a7461e'}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#aab3c0',marginBottom:8}}>NEED ACCESS?</div>
+                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>REQUEST ACCESS</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>Request access to additional tools</div>
                   </div>
                 )}
               </div>
               <div style={{marginTop:m?28:40,textAlign:'center'}}>
-                <div style={{display:'inline-block',cursor:'pointer',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#777',transition:'color .2s'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={function(e){e.target.style.color=A}} onMouseLeave={function(e){e.target.style.color='#777'}}>
+                <div style={{display:'inline-block',cursor:'pointer',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#aab3c0',transition:'color .2s'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={function(e){e.target.style.color=A}} onMouseLeave={function(e){e.target.style.color='#aab3c0'}}>
                   &#8592; Sign Out & Return to Site
                 </div>
               </div>
@@ -5926,32 +5925,32 @@ export default function App(){
 
         {/* ══ REQUEST ACCESS ══ */}
         {page==='request'&&!isPortalAdmin&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(76px + var(--sat, 0px)) 14px calc(32px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
             <div style={{maxWidth:600,margin:'0 auto'}}>
               <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back</div>
-              <div style={{...BB,fontSize:m?28:40,letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>REQUEST ACCESS</div>
-              <div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
+              <div style={{...BB,fontSize:m?28:40,letterSpacing:2,color:'#f6f3ec',textShadow:'none',marginBottom:24}}>REQUEST ACCESS</div>
+              <div className="sr-card" style={{padding:m?24:32}}>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>SELECT TOOL</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                     {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).map(function(tk){return (
-                      <div key={tk} onClick={function(){setReqTool(tk)}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:reqTool===tk?'rgba(249,115,22,.15)':'transparent',color:reqTool===tk?A:'#666',border:'1px solid '+(reqTool===tk?A:'#444')}}>{TOOL_LABELS[tk]}</div>
+                      <div key={tk} onClick={function(){setReqTool(tk)}} style={{padding:'8px 14px',minHeight:40,display:'flex',alignItems:'center',borderRadius:6,...NB,fontSize:12,letterSpacing:'1px',cursor:'pointer',background:reqTool===tk?'rgba(255,107,24,.15)':'transparent',color:reqTool===tk?'#ff7a21':'#aab3c0',border:'1px solid '+(reqTool===tk?'#ff7a21':'#2b3949')}}>{TOOL_LABELS[tk]}</div>
                     )})}
                   </div>
-                  {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).length===0&&<div style={{...NB,fontSize:13,color:'#22c55e'}}>You have access to all tools!</div>}
+                  {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).length===0&&<div style={{...NB,fontSize:13,color:'#19d47b'}}>You have access to all tools!</div>}
                 </div>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>REASON</div>
                   <textarea value={reqReason} onChange={function(e){setReqReason(e.target.value)}} rows={3} style={{...IST,resize:'vertical'}} placeholder="Why do you need access to this tool?"/>
                 </div>
-                <div style={{cursor:'pointer',background:reqTool&&reqReason.trim()?A:'#444',color:reqTool&&reqReason.trim()?'#1a1206':'#888',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={function(){if(reqTool&&reqReason.trim()){submitAccessReq()}}}>SUBMIT REQUEST</div>
+                <div style={{cursor:'pointer',background:reqTool&&reqReason.trim()?'#ff6b18':'#0a1826',color:reqTool&&reqReason.trim()?'#120a04':'#717d8d',border:'1px solid '+(reqTool&&reqReason.trim()?'#ff6b18':'#2b3949'),borderRadius:6,textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48}} onClick={function(){if(reqTool&&reqReason.trim()){submitAccessReq()}}}>SUBMIT REQUEST</div>
               </div>
               {accessReqs.filter(function(r){return r.userId===(user?user.id:'')}).length>0&&<div style={{marginTop:20}}>
-                <div style={{...NB,fontSize:12,letterSpacing:'2px',color:'#888',marginBottom:8}}>YOUR REQUESTS</div>
+                <div style={{...NB,fontSize:12,letterSpacing:'2px',color:'#aab3c0',marginBottom:8}}>YOUR REQUESTS</div>
                 {accessReqs.filter(function(r){return r.userId===(user?user.id:'')}).map(function(r){return (
-                  <div key={r.id} style={{background:'rgba(8,8,20,.5)',padding:'10px 14px',marginBottom:6,display:'flex',justifyContent:'space-between',...NB,fontSize:12}}>
-                    <span style={{color:'#F5F0EB'}}>{TOOL_LABELS[r.tool]||r.tool}</span>
-                    <span style={{color:r.status==='approved'?'#22c55e':r.status==='denied'?'#ef4444':'#eab308'}}>{r.status.toUpperCase()}</span>
+                  <div key={r.id} style={{background:'#07121e',border:'1px solid #2b3949',borderRadius:8,padding:'10px 14px',marginBottom:6,display:'flex',justifyContent:'space-between',...NB,fontSize:12}}>
+                    <span style={{color:'#f6f3ec'}}>{TOOL_LABELS[r.tool]||r.tool}</span>
+                    <span style={{color:r.status==='approved'?'#19d47b':r.status==='denied'?'#ff4655':'#f4d457'}}>{r.status.toUpperCase()}</span>
                   </div>
                 )})}
               </div>}
@@ -5972,7 +5971,7 @@ export default function App(){
             <iframe src={src} style={{width:'100%',height:'100%',border:'none'}} allow="camera;microphone;fullscreen" title="Field Reporting"/>
           </div>;
         })()}
-        {page==='hr'&&<div style={{position:'fixed',inset:0,zIndex:2000,background:'#f5f2ee',overflow:'auto'}}><ScreeningSolutions onExit={function(){setPage('dashboard')}} portalUser={user||null}/></div>}
+        {page==='hr'&&<div className="sunrise-admin" style={{position:'fixed',top:m?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflow:'auto'}}><ScreeningSolutions onExit={function(){setPage('dashboard')}} portalUser={user||null}/></div>}
         {page==='stakeholders'&&<StakeholderReports onExit={function(){setPage('dashboard')}}/>}
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
         {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
@@ -5988,22 +5987,22 @@ export default function App(){
         {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
         {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
         {['hse'].includes(page)&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(76px + var(--sat, 0px)) 14px calc(32px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
               <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28,transition:'opacity .2s'}} onClick={()=>setPage('dashboard')} onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
                 ← Back to Dashboard
               </div>
-              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:16}}>
+              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#f6f3ec',textShadow:'none',marginBottom:16}}>
                 HS&E
               </div>
-              <div style={{...NB,fontSize:14,color:'#666',letterSpacing:'1.5px'}}>Module content coming soon.</div>
+              <div style={{...NB,fontSize:14,color:'#aab3c0',letterSpacing:'1.5px'}}>Module content coming soon.</div>
             </div>
           </div>
         )}
 
         {/* ── APPLY FOR WORK PAGE ── */}
         {page==='apply'&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'82px 16px 60px':'120px 48px 80px'}}>
+          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(82px + var(--sat, 0px)) 16px calc(60px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
             <div style={{maxWidth:960,margin:'0 auto'}}>
               <div onClick={function(){setPage('landing');try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:m?14:22}}>{T('apply_back')}</div>
               <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:10,display:'flex',alignItems:'center',gap:12}}>

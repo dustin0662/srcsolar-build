@@ -538,7 +538,7 @@ export function ClientPortal({ user, onExit }) {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'radial-gradient(120% 80% at 50% -10%, rgba(20,24,42,.5) 0%, rgba(2,8,17,.45) 55%, rgba(2,8,17,.35) 100%)', display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto', paddingBottom: 'var(--tabbar-h, 0px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE, position: 'sticky', top: 0, zIndex: 5 }}>
         {onExit && <button onClick={onExit} style={backBtn} title="Sign out">&#8592;</button>}
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 38, height: mob ? 30 : 38, objectFit: 'contain', borderRadius: 4 }} />

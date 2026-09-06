@@ -55,18 +55,24 @@ async function declineInvite(){ return; }
 async function removeProfileMember(){ return; }
 async function getProfileMembers(){ return []; }
 
+// SUNRISE dark skin tokens (see src/admin-skin.css). The root stays translucent so the
+// shared AmbientBackground canvas shows through wherever no card sits on top.
 const T = {
-  bg:'#f2f2ee', panel:'#ffffff', card:'#ffffff',
-  border:'#ddddd5', borderL:'#ccccC0',
-  gold:'#F97316', goldL:'#fb923c', goldD:'#e0650f',
-  text:'#0f0f0f', sub:'#2a2a2a', muted:'#666660',
-  open:'#1a6fdb', prog:'#d97706', done:'#16a34a', warn:'#dc2626',
-  nav:'#ffffff', navText:'#1a1a2e', navMuted:'#888880',
-  shadow:'rgba(0,0,0,0.08)',
-  pass:'#16a34a', fail:'#dc2626', pending:'#d97706', exempt:'#7c3aed',
+  bg:'rgba(2,8,17,.35)', panel:'#07121e', card:'#07121e',
+  raised:'#0a1826', input:'#091522',
+  border:'#2b3949', borderL:'#e65e20', keyline:'#a7461e',
+  gold:'#ff6b18', goldL:'#ff7a21', goldD:'#ff7a21', onGold:'#120a04',
+  text:'#f6f3ec', sub:'#aab3c0', muted:'#717d8d',
+  open:'#2c7dff', prog:'#f4d457', done:'#19d47b', warn:'#ff4655',
+  nav:'#0a1826', navText:'#f6f3ec', navMuted:'#aab3c0',
+  shadow:'rgba(0,0,0,.45)',
+  pass:'#19d47b', fail:'#ff4655', pending:'#f4d457', exempt:'#8b3dff',
 };
-const FONT_HEAD = "'Bebas Neue', sans-serif";
-const FONT_BODY = "'Barlow Condensed', sans-serif";
+const CARD_BG = 'linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))';
+const ACCENT_BG = 'linear-gradient(135deg, #ff6b18, #ff7a21)';
+const PAPER = '#f6f3ec'; // signature ink is stored black, so the pad + preview stay paper-toned
+const FONT_HEAD = "'Barlow Condensed', 'Roboto Condensed', 'Arial Narrow', sans-serif";
+const FONT_BODY = "'Barlow', Roboto, system-ui, sans-serif";
 
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -169,29 +175,29 @@ async function sendEmail(cfg,to,employee,pickedAt,isAuto){
 
 // ─── COMMON UI ────────────────────────────────────────────────────────────
 function Btn({children,onClick,v='primary',size='md',style={},disabled=false,full=false}){
-  const vars={primary:{background:T.gold,color:'#000',border:'2px solid '+T.goldD},secondary:{background:'#fff',color:T.text,border:'2px solid '+T.border},ghost:{background:'transparent',color:T.muted,border:'1px solid '+T.border},danger:{background:'#fff0f0',color:T.warn,border:'2px solid '+T.warn},success:{background:'#f0fff4',color:T.done,border:'2px solid '+T.done},warn:{background:'#fffbf0',color:T.prog,border:'2px solid '+T.prog},dark:{background:T.nav,color:T.gold,border:'2px solid '+T.gold},exempt:{background:'#f5f3ff',color:'#7c3aed',border:'2px solid #7c3aed'}};
-  return <button onClick={disabled?undefined:onClick} style={{...vars[v],borderRadius:6,cursor:disabled?'not-allowed':'pointer',fontFamily:FONT_BODY,fontWeight:700,opacity:disabled?0.45:1,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:6,width:full?'100%':undefined,transition:'all 0.15s',letterSpacing:'0.05em',textTransform:'uppercase',padding:size==='sm'?'5px 12px':size==='lg'?'12px 28px':'7px 16px',fontSize:size==='sm'?11:size==='lg'?14:12,...style}}>{children}</button>;
+  const vars={primary:{background:ACCENT_BG,color:T.onGold,border:'1px solid '+T.goldL},secondary:{background:'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))',color:T.text,border:'1px solid '+T.borderL},ghost:{background:'transparent',color:T.sub,border:'1px solid '+T.keyline},danger:{background:'rgba(88,16,27,.32)',color:'#ff8a94',border:'1px solid '+T.warn},success:{background:'rgba(25,212,123,.12)',color:'#4fe3a1',border:'1px solid '+T.done},warn:{background:'rgba(244,212,87,.12)',color:T.prog,border:'1px solid '+T.prog},dark:{background:ACCENT_BG,color:T.onGold,border:'1px solid '+T.goldL},exempt:{background:'rgba(139,61,255,.12)',color:'#b48cff',border:'1px solid '+T.exempt}};
+  return <button onClick={disabled?undefined:onClick} style={{...vars[v],borderRadius:6,cursor:disabled?'not-allowed':'pointer',fontFamily:FONT_HEAD,fontWeight:700,opacity:disabled?0.45:1,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:6,width:full?'100%':undefined,transition:'background-color 180ms ease, border-color 180ms ease, transform 120ms ease',letterSpacing:'0.1em',textTransform:'uppercase',minHeight:size==='sm'?36:44,padding:size==='sm'?'6px 12px':size==='lg'?'12px 28px':'8px 16px',fontSize:size==='sm'?12:size==='lg'?15:13,...style}}>{children}</button>;
 }
 
 function Toggle({checked,onChange,label}){
   return <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
-    <div onClick={onChange} style={{width:44,height:24,borderRadius:12,background:checked?T.gold:T.border,position:'relative',transition:'background 0.2s',flexShrink:0,border:'2px solid '+(checked?T.goldD:T.borderL)}}>
-      <div style={{width:16,height:16,borderRadius:'50%',background:checked?'#000':'#fff',position:'absolute',top:2,left:checked?22:2,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.3)'}}/>
+    <div onClick={onChange} style={{width:44,height:24,borderRadius:12,background:checked?ACCENT_BG:T.raised,position:'relative',transition:'background 0.2s',flexShrink:0,border:'2px solid '+(checked?T.goldL:T.border)}}>
+      <div style={{width:16,height:16,borderRadius:'50%',background:checked?T.onGold:T.sub,position:'absolute',top:2,left:checked?22:2,transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,.5)'}}/>
     </div>
     {label&&<span style={{fontSize:13,color:T.text,fontFamily:FONT_BODY,fontWeight:600}}>{label}</span>}
   </label>;
 }
 
 function Badge({status}){
-  const c={open:{bg:'#eff6ff',color:'#1d4ed8',b:'#bfdbfe',l:'Open'},in_progress:{bg:'#fffbeb',color:'#92400e',b:'#fde68a',l:'In Progress'},completed:{bg:'#f0fdf4',color:'#166534',b:'#bbf7d0',l:'Completed'},pass:{bg:'#f0fdf4',color:'#166534',b:'#bbf7d0',l:'PASS'},fail:{bg:'#fef2f2',color:'#dc2626',b:'#fecaca',l:'FAIL'},pending:{bg:'#fffbeb',color:'#92400e',b:'#fde68a',l:'Pending'},scheduled:{bg:'#eff6ff',color:'#1d4ed8',b:'#bfdbfe',l:'Scheduled'},exempt:{bg:'#f5f3ff',color:'#7c3aed',b:'#ddd6fe',l:'Exempt'}}[status]||{bg:'#f3f4f6',color:'#6b7280',b:'#e5e7eb',l:status||'—'};
-  return <span style={{background:c.bg,color:c.color,border:'1px solid '+c.b,borderRadius:4,padding:'2px 8px',fontSize:10,fontWeight:800,letterSpacing:'0.08em',fontFamily:FONT_BODY,textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.l}</span>;
+  const c={open:{bg:'rgba(44,125,255,.12)',color:'#65a8ff',b:'rgba(44,125,255,.6)',l:'Open'},in_progress:{bg:'rgba(244,212,87,.12)',color:T.prog,b:'rgba(244,212,87,.6)',l:'In Progress'},completed:{bg:'rgba(25,212,123,.12)',color:'#4fe3a1',b:'rgba(25,212,123,.6)',l:'Completed'},pass:{bg:'rgba(25,212,123,.12)',color:'#4fe3a1',b:'rgba(25,212,123,.6)',l:'PASS'},fail:{bg:'rgba(255,70,85,.12)',color:'#ff8a94',b:'rgba(255,70,85,.6)',l:'FAIL'},pending:{bg:'rgba(244,212,87,.12)',color:T.prog,b:'rgba(244,212,87,.6)',l:'Pending'},scheduled:{bg:'rgba(44,125,255,.12)',color:'#65a8ff',b:'rgba(44,125,255,.6)',l:'Scheduled'},exempt:{bg:'rgba(139,61,255,.12)',color:'#b48cff',b:'rgba(139,61,255,.6)',l:'Exempt'}}[status]||{bg:'rgba(255,255,255,.04)',color:T.sub,b:T.border,l:status||'—'};
+  return <span style={{background:c.bg,color:c.color,border:'1px solid '+c.b,borderRadius:4,padding:'3px 8px',fontSize:10,fontWeight:700,letterSpacing:'0.1em',fontFamily:FONT_HEAD,textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.l}</span>;
 }
 
 function Modal({children,onClose,title,isMobile,width}){
-  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',zIndex:2000,padding:isMobile?0:20}}>
-    <div style={{background:'#fff',border:'2px solid '+T.border,borderRadius:isMobile?'16px 16px 0 0':'12px',width:'100%',maxWidth:isMobile?'100%':width||580,maxHeight:isMobile?'92vh':'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
-      <div style={{padding:'14px 20px',borderBottom:'2px solid '+T.border,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:T.nav,zIndex:1}}>
-        <h3 style={{margin:0,color:T.gold,fontFamily:FONT_HEAD,fontSize:16,letterSpacing:'0.05em'}}>{title}</h3>
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(1,5,11,.72)',backdropFilter:'blur(4px)',display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',zIndex:2000,padding:isMobile?0:20,paddingBottom:isMobile?'var(--tabbar-h, 0px)':20}}>
+    <div style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:isMobile?'16px 16px 0 0':'12px',width:'100%',maxWidth:isMobile?'100%':width||580,maxHeight:isMobile?'92vh':'90vh',overflow:'auto',boxShadow:'0 18px 45px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.025)'}}>
+      <div style={{padding:'14px 20px',borderBottom:'1px solid '+T.keyline,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,background:T.nav,zIndex:1}}>
+        <h3 style={{margin:0,color:T.gold,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:16,letterSpacing:'0.05em'}}>{title}</h3>
         <button onClick={onClose} style={{background:'none',border:'none',color:T.navMuted,cursor:'pointer',padding:4,display:'flex'}}><X size={18}/></button>
       </div>
       <div style={{padding:20}}>{children}</div>
@@ -199,33 +205,33 @@ function Modal({children,onClose,title,isMobile,width}){
   </div>;
 }
 
-function Card({children,style={}}){return <div style={{background:'#fff',border:'1px solid '+T.border,borderRadius:10,padding:16,boxShadow:'0 1px 4px '+T.shadow,...style}}>{children}</div>;}
+function Card({children,style={}}){return <div style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,padding:16,boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)',...style}}>{children}</div>;}
 
 function SectionTitle({icon:Icon,children}){
-  return <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,borderBottom:'3px solid '+T.gold,paddingBottom:10}}>
-    <Icon size={20} color={T.goldD}/>
-    <h2 style={{margin:0,fontFamily:FONT_HEAD,fontSize:22,color:T.text,letterSpacing:'0.05em'}}>{children}</h2>
+  return <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:18,borderBottom:'1px solid '+T.keyline,paddingBottom:10}}>
+    <Icon size={20} color={T.goldL}/>
+    <h2 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,fontSize:26,lineHeight:1,color:T.text,letterSpacing:'0.03em',textTransform:'uppercase'}}>{children}</h2>
   </div>;
 }
 
 function FieldInput({label,...props}){
   return <div style={{marginBottom:14}}>
-    {label&&<label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>{label}</label>}
-    <input {...props} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',...props.style}}/>
+    {label&&<label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>{label}</label>}
+    <input {...props} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none',...props.style}}/>
   </div>;
 }
 
 function FieldSelect({label,children,...props}){
   return <div style={{marginBottom:14}}>
-    {label&&<label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>{label}</label>}
-    <select {...props} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',...props.style}}>{children}</select>
+    {label&&<label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>{label}</label>}
+    <select {...props} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none',...props.style}}>{children}</select>
   </div>;
 }
 
 function FieldTextarea({label,...props}){
   return <div style={{marginBottom:14}}>
-    {label&&<label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>{label}</label>}
-    <textarea {...props} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',resize:'vertical',minHeight:80,...props.style}}/>
+    {label&&<label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>{label}</label>}
+    <textarea {...props} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none',resize:'vertical',minHeight:80,...props.style}}/>
   </div>;
 }
 
@@ -238,14 +244,14 @@ function MobileRow({label,value}){
 
 // ─── DISCLAIMER ───────────────────────────────────────────────────────────
 function DisclaimerModal({onAccept}){
-  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
-    <div style={{background:'#fff',borderRadius:12,maxWidth:560,width:'100%',overflow:'hidden',boxShadow:'0 40px 80px rgba(0,0,0,0.5)',border:'3px solid '+T.gold}}>
+  return <div style={{position:'fixed',inset:0,background:'rgba(1,5,11,.85)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+    <div style={{background:CARD_BG,borderRadius:12,maxWidth:560,width:'100%',overflow:'hidden',boxShadow:'0 40px 80px rgba(0,0,0,.6)',border:'1px solid '+T.borderL}}>
       <div style={{background:T.nav,padding:'20px 24px',display:'flex',alignItems:'center',gap:12}}>
         <AlertTriangle size={28} color={T.gold}/>
-        <h2 style={{margin:0,fontFamily:FONT_HEAD,fontSize:22,color:T.gold,letterSpacing:'0.08em'}}>DEVELOPMENT NOTICE</h2>
+        <h2 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:22,color:T.gold,letterSpacing:'0.08em'}}>DEVELOPMENT NOTICE</h2>
       </div>
       <div style={{padding:24}}>
-        <div style={{background:'#fffbeb',border:'2px solid '+T.gold,borderRadius:8,padding:16,marginBottom:18}}>
+        <div style={{background:'rgba(244,212,87,.12)',border:'1px solid rgba(244,212,87,.6)',borderRadius:8,padding:16,marginBottom:18}}>
           <p style={{margin:'0 0 12px',fontFamily:FONT_BODY,fontSize:14,color:T.text,fontWeight:700,lineHeight:1.6}}>⚠ THIS APPLICATION IS CURRENTLY IN ACTIVE DEVELOPMENT AND BETA TESTING.</p>
           <p style={{margin:'0 0 10px',fontFamily:FONT_BODY,fontSize:13,color:T.sub,lineHeight:1.7}}>Not all features are complete or fully functional. You may encounter bugs, errors, data loss, or unexpected behavior. This software should <strong>not</strong> be used as the sole compliance mechanism for any regulated drug testing program.</p>
           <p style={{margin:0,fontFamily:FONT_BODY,fontSize:13,color:T.sub,lineHeight:1.7}}>Always verify all compliance activities with qualified legal counsel, certified Substance Abuse Professionals (SAPs), and licensed Medical Review Officers (MROs).</p>
@@ -258,19 +264,19 @@ function DisclaimerModal({onAccept}){
 
 function TCModal({onClose,isMobile}){
   return <Modal title="TERMS & CONDITIONS — SCREENING SOLUTIONS" onClose={onClose} isMobile={isMobile} width={700}>
-    <div style={{background:'#fffbeb',border:'1px solid '+T.gold,borderRadius:6,padding:'10px 14px',marginBottom:16}}>
-      <p style={{margin:0,fontSize:12,fontFamily:FONT_BODY,color:T.sub,fontWeight:700}}>Screening Solutions — Beta Software · Not a Final Product</p>
+    <div style={{background:'rgba(244,212,87,.12)',border:'1px solid rgba(244,212,87,.6)',borderRadius:6,padding:'10px 14px',marginBottom:16}}>
+      <p style={{margin:0,fontSize:12,fontFamily:FONT_BODY,color:T.prog,fontWeight:700}}>Screening Solutions — Beta Software · Not a Final Product</p>
     </div>
     <div style={{fontFamily:FONT_BODY,fontSize:11,color:T.sub,lineHeight:1.8,maxHeight:'65vh',overflow:'auto',padding:'0 4px'}}>
       {TC_SECTIONS.map((sec,i)=>(
         <div key={i} style={{marginBottom:24}}>
-          <h4 style={{fontFamily:FONT_HEAD,fontSize:13,color:T.text,letterSpacing:'0.05em',margin:'0 0 10px',borderBottom:'2px solid '+T.gold,paddingBottom:6}}>{sec.title}</h4>
+          <h4 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:13,color:T.text,letterSpacing:'0.05em',margin:'0 0 10px',borderBottom:'2px solid '+T.goldL,paddingBottom:6}}>{sec.title}</h4>
           {sec.body.split('\n\n').map((para,j)=>(
-            <p key={j} style={{margin:'0 0 10px',fontSize:10.5,lineHeight:1.75,color:'#444'}}>{para}</p>
+            <p key={j} style={{margin:'0 0 10px',fontSize:10.5,lineHeight:1.75,color:T.sub}}>{para}</p>
           ))}
         </div>
       ))}
-      <div style={{borderTop:'2px solid '+T.gold,paddingTop:14,marginTop:10}}>
+      <div style={{borderTop:'2px solid '+T.goldL,paddingTop:14,marginTop:10}}>
         <p style={{fontSize:10,color:T.muted,textAlign:'center',fontStyle:'italic'}}>Screening Solutions — Version: BETA — Development Build. Not for use as the sole compliance mechanism in regulated drug testing programs.</p>
       </div>
     </div>
@@ -288,7 +294,7 @@ function SignaturePad({onSave,onCancel}){
   const clear=()=>{const ctx=cvs.current.getContext('2d');ctx.clearRect(0,0,cvs.current.width,cvs.current.height);};
   return <div>
     <p style={{fontSize:12,color:T.muted,marginBottom:8,fontFamily:FONT_BODY}}>Draw your signature:</p>
-    <canvas ref={cvs} width={500} height={120} style={{background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,cursor:'crosshair',display:'block',width:'100%',touchAction:'none'}}
+    <canvas ref={cvs} width={500} height={120} style={{background:PAPER,border:'1px solid '+T.borderL,borderRadius:6,cursor:'crosshair',display:'block',width:'100%',touchAction:'none'}}
       onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end} onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
     <div style={{display:'flex',gap:8,marginTop:10}}>
       <Btn onClick={clear} v="ghost" size="sm">Clear</Btn>
@@ -303,11 +309,11 @@ function SignaturePad({onSave,onCancel}){
 function TutorialOverlay({onFinish,setView}){
   const[step,setStep]=useState(0);const isMobile=useIsMobile();const cur=TUTORIAL[step];const isLast=step===TUTORIAL.length-1;
   const goNext=()=>isLast?onFinish():setStep(s=>s+1);const goPrev=()=>{if(step>0)setStep(s=>s-1);};
-  return <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9000,padding:16}}>
-    <div style={{width:'100%',maxWidth:500,background:'#fff',border:'3px solid '+T.gold,borderRadius:16,overflow:'hidden',boxShadow:'0 40px 100px rgba(0,0,0,0.5)',maxHeight:'95vh',display:'flex',flexDirection:'column'}}>
-      <div style={{height:4,background:T.border,flexShrink:0}}><div style={{height:'100%',background:T.gold,width:((step+1)/TUTORIAL.length*100)+'%',transition:'width 0.4s'}}/></div>
+  return <div style={{position:'fixed',inset:0,background:'rgba(1,5,11,.85)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9000,padding:16}}>
+    <div style={{width:'100%',maxWidth:500,background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,overflow:'hidden',boxShadow:'0 40px 100px rgba(0,0,0,.6)',maxHeight:'95vh',display:'flex',flexDirection:'column'}}>
+      <div style={{height:4,background:T.raised,flexShrink:0}}><div style={{height:'100%',background:T.gold,width:((step+1)/TUTORIAL.length*100)+'%',transition:'width 0.4s'}}/></div>
       <div style={{background:T.nav,padding:'12px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
-        <span style={{fontFamily:FONT_HEAD,fontSize:12,color:T.gold,letterSpacing:'0.1em'}}>STEP {step+1} OF {TUTORIAL.length}</span>
+        <span style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:12,color:T.gold,letterSpacing:'0.1em'}}>STEP {step+1} OF {TUTORIAL.length}</span>
         <button onClick={onFinish} style={{background:'none',border:'none',color:T.navMuted,cursor:'pointer',fontFamily:FONT_BODY,fontSize:12}}>Skip</button>
       </div>
       <div style={{padding:isMobile?'20px 18px':'28px 36px',overflow:'auto',flex:1}}>
@@ -316,7 +322,7 @@ function TutorialOverlay({onFinish,setView}){
         </div>
         <div style={{textAlign:'center',marginBottom:20}}>
           <div style={{fontSize:48,marginBottom:10}}>{cur.icon}</div>
-          <h2 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:isMobile?18:22,color:T.text,letterSpacing:'0.05em'}}>{cur.title}</h2>
+          <h2 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:isMobile?18:22,color:T.text,letterSpacing:'0.05em'}}>{cur.title}</h2>
           <p style={{margin:0,fontSize:isMobile?13:14,color:T.sub,lineHeight:1.7,fontFamily:FONT_BODY}}>{cur.desc}</p>
         </div>
         {cur.nav&&<div style={{textAlign:'center',marginBottom:14}}><Btn onClick={()=>{setView(cur.nav);onFinish();}} v="dark" size="sm"><Zap size={12}/>Go to this section</Btn></div>}
@@ -333,16 +339,16 @@ function TutorialOverlay({onFinish,setView}){
 function LoginView({allUsers,onLogin,onGoSetup}){
   const[email,setEmail]=useState('');const[pass,setPass]=useState('');const[show,setShow]=useState(false);const[err,setErr]=useState('');
   const submit=()=>{const u=allUsers.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pass);if(!u){setErr('Invalid email or password.');return;}onLogin(u);};
-  return <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,padding:16}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,color:T.text,padding:16}}>
     <div style={{width:'100%',maxWidth:400}}>
       <div style={{textAlign:'center',marginBottom:32}}>
-        <div style={{width:64,height:64,borderRadius:12,background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',border:'3px solid '+T.gold}}><span style={{fontSize:28}}>⚖</span></div>
-        <h1 style={{fontFamily:FONT_HEAD,fontSize:28,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
+        <div style={{width:64,height:64,borderRadius:12,background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',border:'2px solid '+T.goldL}}><span style={{fontSize:28}}>⚖</span></div>
+        <h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:28,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
         <p style={{color:T.muted,fontSize:13,margin:0}}>Drug Screening Management Platform</p>
-        <div style={{display:'inline-block',marginTop:8,background:'#fffbeb',border:'1px solid '+T.gold,borderRadius:4,padding:'3px 10px'}}><span style={{fontSize:10,fontWeight:700,color:T.prog,letterSpacing:'0.08em'}}>⚠ BETA — DEVELOPMENT BUILD</span></div>
+        <div style={{display:'inline-block',marginTop:8,background:'rgba(244,212,87,.12)',border:'1px solid rgba(244,212,87,.6)',borderRadius:4,padding:'3px 10px'}}><span style={{fontSize:10,fontWeight:700,color:T.prog,letterSpacing:'0.08em'}}>⚠ BETA — DEVELOPMENT BUILD</span></div>
       </div>
       <Card style={{padding:24}}>
-        <h3 style={{margin:'0 0 18px',color:T.text,fontFamily:FONT_HEAD,fontSize:18,letterSpacing:'0.05em'}}>SIGN IN</h3>
+        <h3 style={{margin:'0 0 18px',color:T.text,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,letterSpacing:'0.05em'}}>SIGN IN</h3>
         <FieldInput label="Email" type="email" placeholder="you@company.com" value={email} onChange={e=>setEmail(e.target.value)}/>
         <div style={{position:'relative'}}>
           <FieldInput label="Password" type={show?'text':'password'} placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)}/>
@@ -369,13 +375,13 @@ function SetupView({allUsers,onSave,onBack}){
     if(allUsers.find(u=>u.email.toLowerCase()===form.email.toLowerCase())){setErr('Email already registered.');return;}
     onSave({...form,id:uid(),confirm:undefined,tutorialSeen:false});
   };
-  return <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,padding:16}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,color:T.text,padding:16}}>
     {showTC&&<TCModal onClose={()=>setShowTC(false)} isMobile={isMobile}/>}
     <div style={{width:'100%',maxWidth:460}}>
-      <div style={{textAlign:'center',marginBottom:20}}><h1 style={{fontFamily:FONT_HEAD,fontSize:24,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE PROFILE</h1><p style={{color:T.muted,fontSize:13,margin:0}}>Set up your HR administrator account</p></div>
+      <div style={{textAlign:'center',marginBottom:20}}><h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:24,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE PROFILE</h1><p style={{color:T.muted,fontSize:13,margin:0}}>Set up your HR administrator account</p></div>
       <Card style={{padding:24}}>
         <div style={{textAlign:'center',marginBottom:18}}>
-          <div onClick={()=>document.getElementById('picInput').click()} style={{width:72,height:72,borderRadius:'50%',background:T.bg,border:'3px solid '+T.border,cursor:'pointer',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto'}}>
+          <div onClick={()=>document.getElementById('picInput').click()} style={{width:72,height:72,borderRadius:'50%',background:T.input,border:'1px solid '+T.border,cursor:'pointer',overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto'}}>
             {form.profilePic?<img src={form.profilePic} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="profile"/>:<UserCircle size={32} color={T.muted}/>}
           </div>
           <input id="picInput" type="file" accept="image/*" onChange={handlePic} style={{display:'none'}}/>
@@ -388,7 +394,7 @@ function SetupView({allUsers,onSave,onBack}){
           <button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:28,background:'none',border:'none',color:T.muted,cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button>
         </div>
         <FieldInput label="Confirm Password" type="password" placeholder="••••••••" value={form.confirm} onChange={e=>set('confirm',e.target.value)}/>
-        <div style={{background:'#fafafa',border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
+        <div style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
           <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer'}}>
             <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{width:16,height:16,marginTop:2,accentColor:T.goldD,flexShrink:0}}/>
             <span style={{fontSize:12,color:T.sub,lineHeight:1.6}}>I agree to the Terms & Conditions</span>
@@ -423,32 +429,32 @@ const NAV=[
 const BOTTOM_NAV=['dashboard','picker','drugtests','screenings'];
 
 function Sidebar({view,setView,user,onLogout,onExit,schedulerOn,companyLogo,companyName}){
-  return <div style={{width:215,background:T.nav,display:'flex',flexDirection:'column',padding:'18px 0',flexShrink:0}}>
-    <div style={{padding:'0 14px 16px',borderBottom:'1px solid rgba(0,0,0,.08)'}}>
-      {onExit&&<div onClick={onExit} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,fontFamily:FONT_BODY,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:'#F97316',marginBottom:12,transition:'opacity .2s'}} onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>← Dashboard</div>}
+  return <div style={{width:215,background:'rgba(4,14,26,.94)',borderRight:'1px solid '+T.keyline,display:'flex',flexDirection:'column',padding:'18px 0',flexShrink:0}}>
+    <div style={{padding:'0 14px 16px',borderBottom:'1px solid '+T.border}}>
+      {onExit&&<div onClick={onExit} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:6,fontFamily:FONT_HEAD,fontWeight:600,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:T.goldL,marginBottom:12,transition:'opacity .2s'}} onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>← Dashboard</div>}
       {companyLogo?<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <img src={companyLogo} style={{width:36,height:36,borderRadius:6,objectFit:'contain',background:'#fff',padding:2}} alt="logo"/>
-        <span style={{fontFamily:FONT_HEAD,fontSize:12,color:T.gold,letterSpacing:'0.05em'}}>{companyName||'YOUR COMPANY'}</span>
+        <img src={companyLogo} style={{width:36,height:36,borderRadius:6,objectFit:'contain',background:PAPER,padding:2}} alt="logo"/>
+        <span style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:12,color:T.gold,letterSpacing:'0.05em'}}>{companyName||'YOUR COMPANY'}</span>
       </div>:<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <div style={{width:36,height:36,borderRadius:6,background:'transparent',border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>⚖</div>
-        <div><div style={{fontFamily:FONT_HEAD,fontSize:13,color:T.gold,letterSpacing:'0.05em'}}>SCREENING</div><div style={{fontSize:9,color:T.navMuted}}>HR COMPLIANCE</div></div>
+        <div style={{width:36,height:36,borderRadius:6,background:'transparent',border:'2px solid '+T.goldL,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>⚖</div>
+        <div><div style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:13,color:T.gold,letterSpacing:'0.05em'}}>SCREENING</div><div style={{fontSize:9,color:T.navMuted}}>HR COMPLIANCE</div></div>
       </div>}
-      {schedulerOn&&<div style={{display:'flex',alignItems:'center',gap:5,background:'rgba(249,115,22,0.1)',border:'1px solid rgba(249,115,22,0.3)',borderRadius:4,padding:'3px 7px'}}>
+      {schedulerOn&&<div style={{display:'flex',alignItems:'center',gap:5,background:'rgba(255,107,24,.1)',border:'1px solid rgba(255,107,24,.35)',borderRadius:4,padding:'3px 7px'}}>
         <div style={{width:6,height:6,borderRadius:'50%',background:T.gold,animation:'pulse 2s infinite'}}/><span style={{fontSize:9,color:T.gold,fontWeight:700,fontFamily:FONT_BODY,letterSpacing:'0.08em'}}>SCHEDULER ACTIVE</span>
       </div>}
     </div>
     <nav style={{flex:1,padding:'10px 6px',overflow:'auto'}}>
-      {NAV.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>setView(v)} style={{display:'flex',alignItems:'center',gap:9,padding:'8px 10px',borderRadius:6,cursor:'pointer',marginBottom:1,background:active?T.gold:'transparent',color:active?'#000':T.navMuted,transition:'all 0.15s'}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background='rgba(249,115,22,0.12)';e.currentTarget.style.color=T.gold;}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color=T.navMuted;}}}>
+      {NAV.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>setView(v)} style={{display:'flex',alignItems:'center',gap:9,padding:'8px 10px',minHeight:40,borderRadius:6,cursor:'pointer',marginBottom:1,background:active?ACCENT_BG:'transparent',color:active?T.onGold:T.navMuted,transition:'all 0.15s'}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background='rgba(255,107,24,.12)';e.currentTarget.style.color=T.goldL;}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color=T.navMuted;}}}>
         <Icon size={14}/><span style={{fontSize:12,fontWeight:700,fontFamily:FONT_BODY,letterSpacing:'0.05em',textTransform:'uppercase'}}>{label}</span>
         {v==='settings'&&schedulerOn&&!active&&<div style={{width:5,height:5,borderRadius:'50%',background:T.gold,marginLeft:'auto'}}/>}
       </div>;})}
     </nav>
-    <div style={{padding:'10px 6px',borderTop:'1px solid rgba(0,0,0,.08)'}}>
+    <div style={{padding:'10px 6px',borderTop:'1px solid '+T.border}}>
       <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',marginBottom:2}}>
-        {user.profilePic?<img src={user.profilePic} style={{width:26,height:26,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.gold}} alt="user"/>:<UserCircle size={26} color={T.navMuted}/>}
+        {user.profilePic?<img src={user.profilePic} style={{width:26,height:26,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.goldL}} alt="user"/>:<UserCircle size={26} color={T.navMuted}/>}
         <div style={{overflow:'hidden',flex:1}}><div style={{fontSize:11,fontWeight:700,color:T.navText,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontFamily:FONT_BODY}}>{user.username}</div><div style={{fontSize:9,color:T.navMuted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontFamily:FONT_BODY}}>{user.email}</div></div>
       </div>
-      <div onClick={onLogout} style={{display:'flex',alignItems:'center',gap:7,padding:'6px 10px',borderRadius:6,cursor:'pointer',color:T.navMuted,fontFamily:FONT_BODY,fontSize:11,fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase'}} onMouseEnter={e=>e.currentTarget.style.color='#f87171'} onMouseLeave={e=>e.currentTarget.style.color=T.navMuted}>
+      <div onClick={onLogout} style={{display:'flex',alignItems:'center',gap:7,padding:'6px 10px',borderRadius:6,cursor:'pointer',color:T.navMuted,fontFamily:FONT_BODY,fontSize:11,fontWeight:700,letterSpacing:'0.05em',textTransform:'uppercase'}} onMouseEnter={e=>e.currentTarget.style.color='#ff8a94'} onMouseLeave={e=>e.currentTarget.style.color=T.navMuted}>
         <LogOut size={13}/>Sign Out
       </div>
     </div>
@@ -456,14 +462,14 @@ function Sidebar({view,setView,user,onLogout,onExit,schedulerOn,companyLogo,comp
 }
 
 function MobileTopBar({view,user,onMenu,schedulerOn,companyLogo}){
-  return <div style={{background:T.nav,borderBottom:'2px solid '+T.gold,padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:100}}>
+  return <div style={{background:'rgba(1,12,23,.98)',borderBottom:'1px solid '+T.keyline,padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,position:'sticky',top:0,zIndex:100}}>
     <div style={{display:'flex',alignItems:'center',gap:10}}>
-      {companyLogo?<img src={companyLogo} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#fff',padding:2}} alt="logo"/>:<div style={{width:28,height:28,borderRadius:4,border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12}}>⚖</div>}
-      <h2 style={{margin:0,fontFamily:FONT_HEAD,fontSize:15,color:T.gold,letterSpacing:'0.08em'}}>{NAV.find(n=>n.v===view)?.label?.toUpperCase()||'DASHBOARD'}</h2>
+      {companyLogo?<img src={companyLogo} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:PAPER,padding:2}} alt="logo"/>:<div style={{width:28,height:28,borderRadius:4,border:'2px solid '+T.goldL,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12}}>⚖</div>}
+      <h2 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:15,color:T.gold,letterSpacing:'0.08em'}}>{NAV.find(n=>n.v===view)?.label?.toUpperCase()||'DASHBOARD'}</h2>
       {schedulerOn&&<div style={{width:6,height:6,borderRadius:'50%',background:T.gold,animation:'pulse 2s infinite'}}/>}
     </div>
     <div style={{display:'flex',alignItems:'center',gap:8}}>
-      {user.profilePic?<img src={user.profilePic} style={{width:26,height:26,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.gold}} alt="user"/>:<UserCircle size={26} color={T.navMuted}/>}
+      {user.profilePic?<img src={user.profilePic} style={{width:26,height:26,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.goldL}} alt="user"/>:<UserCircle size={26} color={T.navMuted}/>}
       <button onClick={onMenu} style={{background:'none',border:'none',color:T.gold,cursor:'pointer',display:'flex',padding:4}}><Menu size={22}/></button>
     </div>
   </div>;
@@ -471,29 +477,29 @@ function MobileTopBar({view,user,onMenu,schedulerOn,companyLogo}){
 
 function MobileBottomNav({view,setView,onMore}){
   const items=BOTTOM_NAV.map(v=>NAV.find(n=>n.v===v));
-  return <div style={{background:T.nav,borderTop:'2px solid '+T.gold,display:'flex',alignItems:'stretch',flexShrink:0,position:'sticky',bottom:0,zIndex:100}}>
-    {items.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>setView(v)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'8px 4px',cursor:'pointer',color:active?T.gold:T.navMuted,borderTop:active?'3px solid '+T.gold:'3px solid transparent',background:active?'rgba(249,115,22,0.08)':'transparent'}}>
-      <Icon size={18}/><span style={{fontSize:8,marginTop:2,fontWeight:800,fontFamily:FONT_BODY,letterSpacing:'0.08em',textTransform:'uppercase'}}>{label}</span>
+  return <div style={{background:'rgba(1,12,23,.98)',borderTop:'1px solid #a7461e',display:'flex',alignItems:'stretch',flexShrink:0,position:'sticky',bottom:0,zIndex:100,paddingBottom:'var(--tabbar-h, 0px)'}}>
+    {items.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>setView(v)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:52,padding:'8px 4px',cursor:'pointer',color:active?'#ff7a21':'#c3cbd7',borderTop:active?'3px solid #ff7a21':'3px solid transparent',background:active?'rgba(255,107,24,.1)':'transparent'}}>
+      <Icon size={18}/><span style={{fontSize:9,marginTop:2,fontWeight:700,fontFamily:FONT_HEAD,letterSpacing:'0.1em',textTransform:'uppercase'}}>{label}</span>
     </div>;})}
-    <div onClick={onMore} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'8px 4px',cursor:'pointer',color:T.navMuted,borderTop:'3px solid transparent'}}>
-      <Menu size={18}/><span style={{fontSize:8,marginTop:2,fontWeight:800,fontFamily:FONT_BODY,letterSpacing:'0.08em'}}>MORE</span>
+    <div onClick={onMore} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:52,padding:'8px 4px',cursor:'pointer',color:'#c3cbd7',borderTop:'3px solid transparent'}}>
+      <Menu size={18}/><span style={{fontSize:9,marginTop:2,fontWeight:700,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.1em'}}>MORE</span>
     </div>
   </div>;
 }
 
 function MobileDrawer({view,setView,user,onLogout,onExit,onClose,schedulerOn,companyLogo,companyName}){
-  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:500,display:'flex',alignItems:'flex-end'}}>
-    <div style={{background:T.nav,borderTop:'3px solid '+T.gold,width:'100%',padding:20,maxHeight:'85vh',overflow:'auto',borderRadius:'16px 16px 0 0'}}>
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(1,5,11,.78)',backdropFilter:'blur(4px)',zIndex:500,display:'flex',alignItems:'flex-end',paddingBottom:'var(--tabbar-h, 0px)'}}>
+    <div style={{background:'rgba(1,12,23,.98)',borderTop:'1px solid '+T.keyline,width:'100%',padding:20,maxHeight:'85vh',overflow:'auto',borderRadius:'16px 16px 0 0'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          {user.profilePic?<img src={user.profilePic} style={{width:34,height:34,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.gold}} alt="user"/>:<UserCircle size={34} color={T.navMuted}/>}
+          {user.profilePic?<img src={user.profilePic} style={{width:34,height:34,borderRadius:'50%',objectFit:'cover',border:'2px solid '+T.goldL}} alt="user"/>:<UserCircle size={34} color={T.navMuted}/>}
           <div><div style={{fontSize:13,fontWeight:700,color:T.navText,fontFamily:FONT_BODY}}>{user.username}</div><div style={{fontSize:10,color:T.navMuted,fontFamily:FONT_BODY}}>{user.email}</div></div>
         </div>
         <button onClick={onClose} style={{background:'none',border:'none',color:T.navMuted,cursor:'pointer'}}><X size={20}/></button>
       </div>
-      {onExit&&<div onClick={()=>{onClose();onExit();}} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:6,fontFamily:FONT_BODY,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#F97316',marginBottom:14,padding:'8px 12px',background:'rgba(249,115,22,.06)',borderRadius:8,border:'1px solid rgba(249,115,22,.15)'}}>← Back to Dashboard</div>}
+      {onExit&&<div onClick={()=>{onClose();onExit();}} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:6,fontFamily:FONT_HEAD,fontWeight:600,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:T.goldL,marginBottom:14,padding:'10px 12px',minHeight:44,background:'rgba(255,107,24,.1)',borderRadius:6,border:'1px solid rgba(255,107,24,.35)'}}>← Back to Dashboard</div>}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
-        {NAV.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>{setView(v);onClose();}} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:8,cursor:'pointer',background:active?T.gold:'rgba(0,0,0,0.03)',color:active?'#000':T.navMuted,border:'1px solid '+(active?T.gold:'rgba(0,0,0,.1)')}}>
+        {NAV.map(({v,icon:Icon,label})=>{const active=view===v;return <div key={v} onClick={()=>{setView(v);onClose();}} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',minHeight:44,borderRadius:6,cursor:'pointer',background:active?ACCENT_BG:T.raised,color:active?T.onGold:T.navMuted,border:'1px solid '+(active?T.goldL:T.border)}}>
           <Icon size={14}/><span style={{fontSize:12,fontWeight:700,fontFamily:FONT_BODY,textTransform:'uppercase'}}>{label}</span>
         </div>;})}
       </div>
@@ -512,19 +518,19 @@ function EmployeeDetailModal({employee,screenings,onClose,onSave,isMobile}){
     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:16}}>
       {[['Name',employee.name],['Employee ID',employee.id],['Position',employee.position||'—'],['Title',employee.title||'—'],['Department',employee.department||'—'],['Classification',employee.isManagement?'Management':'Staff']].map(([l,v])=><MobileRow key={l} label={l} value={v}/>)}
     </div>
-    {employee.isExempt&&<div style={{background:'#f5f3ff',border:'2px solid #7c3aed',borderRadius:6,padding:'8px 12px',marginBottom:14,display:'flex',gap:8,alignItems:'center'}}>
-      <Ban size={14} color="#7c3aed"/><span style={{fontSize:12,fontWeight:700,color:'#7c3aed',fontFamily:FONT_BODY}}>EXEMPT FROM RANDOM SCREENINGS</span>
+    {employee.isExempt&&<div style={{background:'rgba(139,61,255,.12)',border:'1px solid '+T.exempt,borderRadius:6,padding:'8px 12px',marginBottom:14,display:'flex',gap:8,alignItems:'center'}}>
+      <Ban size={14} color={T.exempt}/><span style={{fontSize:12,fontWeight:700,color:'#b48cff',fontFamily:FONT_BODY}}>EXEMPT FROM RANDOM SCREENINGS</span>
     </div>}
-    <div style={{borderTop:'2px solid '+T.gold,paddingTop:14,marginBottom:14}}>
-      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:14,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><Pill size={14} color={T.goldD}/>PRESCRIPTIONS & MEDICAL EXEMPTIONS</h4>
+    <div style={{borderTop:'2px solid '+T.goldL,paddingTop:14,marginBottom:14}}>
+      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:14,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><Pill size={14} color={T.goldD}/>PRESCRIPTIONS & MEDICAL EXEMPTIONS</h4>
       <FieldTextarea label="Prescriptions / Medical Notes (confidential)" placeholder="Enter any relevant prescription medications, medical exemptions, or MRO notes..." value={form.prescriptions} onChange={e=>setForm(f=>({...f,prescriptions:e.target.value}))} style={{minHeight:90}}/>
     </div>
     <div style={{marginBottom:14}}>
-      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:14,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><FileText size={14} color={T.goldD}/>GENERAL NOTES</h4>
+      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:14,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><FileText size={14} color={T.goldD}/>GENERAL NOTES</h4>
       <FieldTextarea label="Employee Notes" placeholder="Enter general HR notes for this employee..." value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} style={{minHeight:70}}/>
     </div>
     <div style={{borderTop:'1px solid '+T.border,paddingTop:14}}>
-      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:14,color:T.text,letterSpacing:'0.05em'}}>SCREENING HISTORY ({empScreenings.length})</h4>
+      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:14,color:T.text,letterSpacing:'0.05em'}}>SCREENING HISTORY ({empScreenings.length})</h4>
       {empScreenings.length===0?<p style={{color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No screenings on record.</p>:
         <div style={{maxHeight:180,overflow:'auto'}}>
           {empScreenings.map(s=><div key={s.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid '+T.border}}>
@@ -562,10 +568,10 @@ function AddEmployeeModal({onSave,onClose,isMobile,existing}){
         {POSITIONS.map(p=><option key={p} value={p}>{p}</option>)}
       </FieldSelect>
     </div>
-    <div style={{background:'#fafafa',border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
+    <div style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
       <div style={{marginBottom:10}}><Toggle checked={form.isManagement} onChange={()=>set('isManagement',!form.isManagement)} label="Management Classification"/></div>
       <Toggle checked={form.isExempt} onChange={()=>set('isExempt',!form.isExempt)} label="Exempt from Random Screening"/>
-      {form.isExempt&&<p style={{fontSize:11,color:'#7c3aed',margin:'8px 0 0',fontFamily:FONT_BODY,fontWeight:700}}>⚠ Exempt employees are excluded from all random picks. Verify compliance with applicable regulations.</p>}
+      {form.isExempt&&<p style={{fontSize:11,color:'#b48cff',margin:'8px 0 0',fontFamily:FONT_BODY,fontWeight:700}}>⚠ Exempt employees are excluded from all random picks. Verify compliance with applicable regulations.</p>}
     </div>
     <FieldTextarea label="Notes (optional)" placeholder="HR notes..." value={form.notes} onChange={e=>set('notes',e.target.value)} style={{minHeight:60}}/>
     <FieldTextarea label="Prescriptions / Medical (optional)" placeholder="Prescription medications or medical exemptions..." value={form.prescriptions} onChange={e=>set('prescriptions',e.target.value)} style={{minHeight:60}}/>
@@ -599,10 +605,10 @@ function EditEmployeeModal({employee,onSave,onClose,isMobile,existing}){
         {POSITIONS.map(p=><option key={p} value={p}>{p}</option>)}
       </FieldSelect>
     </div>
-    <div style={{background:'#fafafa',border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
+    <div style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
       <div style={{marginBottom:10}}><Toggle checked={!!form.isManagement} onChange={()=>set('isManagement',!form.isManagement)} label="Management Classification"/></div>
       <Toggle checked={!!form.isExempt} onChange={()=>set('isExempt',!form.isExempt)} label="Exempt from Random Screening"/>
-      {form.isExempt&&<p style={{fontSize:11,color:'#7c3aed',margin:'8px 0 0',fontFamily:FONT_BODY,fontWeight:700}}>⚠ Exempt employees are excluded from all random picks.</p>}
+      {form.isExempt&&<p style={{fontSize:11,color:'#b48cff',margin:'8px 0 0',fontFamily:FONT_BODY,fontWeight:700}}>⚠ Exempt employees are excluded from all random picks.</p>}
     </div>
     <FieldTextarea label="Notes" value={form.notes||''} onChange={e=>set('notes',e.target.value)} style={{minHeight:60}}/>
     <FieldTextarea label="Prescriptions / Medical" value={form.prescriptions||''} onChange={e=>set('prescriptions',e.target.value)} style={{minHeight:60}}/>
@@ -631,26 +637,26 @@ function ColMapModal({data,onImport,onClose,isMobile}){
   const submit=()=>{if(!idCol){setErr('ID column is required.');return;}if(nameMode==='single'&&!nameCol){setErr('Name column is required.');return;}if(nameMode==='split'&&!firstCol&&!lastCol){setErr('Select at least one name column.');return;}if(nameMode==='single')onImport(rows,nameCol,idCol,posCol||null,titleCol||null,deptCol||null,null,null);else onImport(rows,null,idCol,posCol||null,titleCol||null,deptCol||null,firstCol||null,lastCol||null);};
   const starCols=nameMode==='single'?[nameCol,idCol]:[firstCol,lastCol,idCol];
   return <Modal title="MAP EXCEL COLUMNS" onClose={onClose} isMobile={isMobile} width={600}>
-    <div style={{background:'#fffbeb',border:'1px solid '+T.gold,borderRadius:6,padding:'10px 14px',marginBottom:16}}><p style={{margin:0,fontSize:12,fontFamily:FONT_BODY,color:T.sub,fontWeight:700}}>{rows.length} rows · {cols.length} columns. Map your columns to Screening Solutions fields.</p></div>
+    <div style={{background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,borderRadius:6,padding:'10px 14px',marginBottom:16}}><p style={{margin:0,fontSize:12,fontFamily:FONT_BODY,color:T.text,fontWeight:700}}>{rows.length} rows · {cols.length} columns. Map your columns to Screening Solutions fields.</p></div>
     <div style={{marginBottom:14}}>
-      <label style={{display:'block',fontSize:11,fontWeight:700,color:T.warn,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8,fontFamily:FONT_BODY}}>Employee Name * (required)</label>
+      <label style={{display:'block',fontSize:11,fontWeight:600,color:T.warn,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:8,fontFamily:FONT_HEAD}}>Employee Name * (required)</label>
       <div style={{display:'flex',gap:8,marginBottom:8}}>
         <Btn onClick={()=>setNameMode('single')} v={nameMode==='single'?'dark':'ghost'} size="sm">Single Name Column</Btn>
         <Btn onClick={()=>setNameMode('split')} v={nameMode==='split'?'dark':'ghost'} size="sm">First + Last Name Columns</Btn>
       </div>
-      {nameMode==='single'?<select value={nameCol} onChange={e=>setNameCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.warn,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Select Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>:
+      {nameMode==='single'?<select value={nameCol} onChange={e=>setNameCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'2px solid '+T.warn,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Select Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>:
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-        <select value={firstCol} onChange={e=>setFirstCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.warn,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— First Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>
-        <select value={lastCol} onChange={e=>setLastCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.warn,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Last Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>
+        <select value={firstCol} onChange={e=>setFirstCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'2px solid '+T.warn,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— First Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>
+        <select value={lastCol} onChange={e=>setLastCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'2px solid '+T.warn,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Last Name column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select>
       </div>}
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 16px'}}>
-      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:T.warn,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Employee ID * (required)</label><select value={idCol} onChange={e=>setIdCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.warn,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Select ID column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Job Title (optional)</label><select value={titleCol} onChange={e=>setTitleCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Department (optional)</label><select value={deptCol} onChange={e=>setDeptCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Position / Level (optional)</label><select value={posCol} onChange={e=>setPosCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.warn,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Employee ID * (required)</label><select value={idCol} onChange={e=>setIdCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'2px solid '+T.warn,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Select ID column —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Job Title (optional)</label><select value={titleCol} onChange={e=>setTitleCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Department (optional)</label><select value={deptCol} onChange={e=>setDeptCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+      <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Position / Level (optional)</label><select value={posCol} onChange={e=>setPosCol(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}><option value="">— Skip —</option>{cols.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
     </div>
-    {preview.length>0&&<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:T.sub,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6,fontFamily:FONT_BODY}}>Preview (first {preview.length} rows)</div><div style={{overflowX:'auto',border:'1px solid '+T.border,borderRadius:6}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:11,fontFamily:FONT_BODY}}><thead><tr style={{background:'#fafafa'}}>{cols.slice(0,6).map(c=><th key={c} style={{padding:'6px 10px',textAlign:'left',color:T.muted,fontWeight:700,borderBottom:'1px solid '+T.border,whiteSpace:'nowrap'}}>{c}{starCols.includes(c)&&<span style={{color:T.goldD,marginLeft:4}}>★</span>}</th>)}</tr></thead><tbody>{preview.map((r,i)=><tr key={i} style={{borderBottom:'1px solid '+T.border}}>{cols.slice(0,6).map(c=><td key={c} style={{padding:'5px 10px',color:T.text,whiteSpace:'nowrap',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis'}}>{String(r[c]||'')}</td>)}</tr>)}</tbody></table></div></div>}
+    {preview.length>0&&<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:T.sub,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6,fontFamily:FONT_BODY}}>Preview (first {preview.length} rows)</div><div style={{overflowX:'auto',border:'1px solid '+T.border,borderRadius:6}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:11,fontFamily:FONT_BODY}}><thead><tr style={{background:T.raised}}>{cols.slice(0,6).map(c=><th key={c} style={{padding:'6px 10px',textAlign:'left',color:T.muted,fontWeight:700,borderBottom:'1px solid '+T.border,whiteSpace:'nowrap'}}>{c}{starCols.includes(c)&&<span style={{color:T.goldD,marginLeft:4}}>★</span>}</th>)}</tr></thead><tbody>{preview.map((r,i)=><tr key={i} style={{borderBottom:'1px solid '+T.border}}>{cols.slice(0,6).map(c=><td key={c} style={{padding:'5px 10px',color:T.text,whiteSpace:'nowrap',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis'}}>{String(r[c]||'')}</td>)}</tr>)}</tbody></table></div></div>}
     {err&&<p style={{color:T.warn,fontSize:12,fontWeight:700,margin:'0 0 12px',fontFamily:FONT_BODY}}>{err}</p>}
     <div style={{display:'flex',gap:8}}><Btn onClick={submit} v="dark" style={{flex:1}}><Upload size={14}/>Import {rows.length} Rows</Btn><Btn onClick={onClose} v="secondary">Cancel</Btn></div>
   </Modal>;
@@ -759,7 +765,7 @@ function EmployeesView({employees,saveEmployees,screenings,notify}){
       <Btn onClick={()=>setShowAdd(true)} v="dark" size="sm"><Plus size={13}/>Add Employee</Btn>
       <Btn onClick={()=>fileRef.current.click()} v="secondary" size="sm"><Upload size={13}/>Import Excel</Btn>
       <Btn onClick={dlTemplate} v="ghost" size="sm"><Download size={13}/>Template</Btn>
-      <select value={filterExempt} onChange={e=>setFilterExempt(e.target.value)} style={{background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'5px 10px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+      <select value={filterExempt} onChange={e=>setFilterExempt(e.target.value)} style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,minHeight:36,padding:'5px 10px',fontSize:12,fontFamily:FONT_HEAD,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.05em'}}>
         <option value="all">All ({employees.length})</option>
         <option value="active">Active Pool ({employees.filter(e=>!e.isExempt).length})</option>
         <option value="exempt">Exempt ({employees.filter(e=>e.isExempt).length})</option>
@@ -800,7 +806,7 @@ function EmployeesView({employees,saveEmployees,screenings,notify}){
           <thead><tr style={{background:T.nav}}>{['ID','Name','Title','Dept','Level','Status','Actions'].map(h=><th key={h} style={{padding:'10px 12px',textAlign:'left',fontSize:10,fontWeight:800,color:T.gold,letterSpacing:'0.08em',textTransform:'uppercase',fontFamily:FONT_BODY,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
           <tbody>
             {filtered.length===0?<tr><td colSpan={7} style={{padding:'36px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>{employees.length===0?'Add employees manually or upload an Excel file.':'No results.'}</td></tr>:
-              filtered.map(e=><tr key={e.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={ev=>ev.currentTarget.style.background='#fffbeb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
+              filtered.map(e=><tr key={e.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={ev=>ev.currentTarget.style.background='rgba(255,107,24,.08)'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
                 <td style={{padding:'9px 12px',fontFamily:'monospace',fontSize:11,color:T.goldD,fontWeight:700}}>{e.id}</td>
                 <td style={{padding:'9px 12px'}}><span onClick={()=>setDetailEmp(e)} style={{fontSize:13,fontWeight:800,color:T.open,fontFamily:FONT_BODY,cursor:'pointer',textDecoration:'underline'}}>{e.name}</span>{(e.notes||e.prescriptions)&&<span style={{marginLeft:6,fontSize:10,color:T.prog}} title="Has notes/prescriptions">📝</span>}</td>
                 <td style={{padding:'9px 12px',fontSize:12,color:T.muted,fontFamily:FONT_BODY}}>{e.title||'—'}</td>
@@ -824,7 +830,7 @@ function EmployeesView({employees,saveEmployees,screenings,notify}){
               </tr>)}
           </tbody>
         </table>
-        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:'#fafafa',display:'flex',gap:16}}>
+        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:T.raised,display:'flex',gap:16}}>
           <span>{filtered.length} of {employees.length} employees</span>
           <span>· Active pool: {employees.filter(e=>!e.isExempt).length}</span>
           <span>· Exempt: {employees.filter(e=>e.isExempt).length}</span>
@@ -859,12 +865,12 @@ function PickerView({employees,screenings,saveScreenings,notify,emailConfig,sche
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
       <div>
         <Card style={{textAlign:'center',padding:'28px 20px',marginBottom:16}}>
-          <div style={{width:72,height:72,borderRadius:'50%',background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',border:'3px solid '+T.gold}}><Shuffle size={32} color={T.gold}/></div>
-          <h3 style={{fontFamily:FONT_HEAD,fontSize:20,color:T.text,margin:'0 0 8px',letterSpacing:'0.05em'}}>CRYPTOGRAPHIC RANDOM SELECTION</h3>
-          <p style={{color:T.muted,fontSize:13,marginBottom:18,lineHeight:1.6,fontFamily:FONT_BODY}}>Uses <code style={{background:'#f0f0f0',padding:'1px 5px',borderRadius:3,color:T.goldD}}>crypto.getRandomValues()</code> — ID-only, exempt employees excluded.</p>
+          <div style={{width:72,height:72,borderRadius:'50%',background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',border:'2px solid '+T.goldL}}><Shuffle size={32} color={T.gold}/></div>
+          <h3 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:20,color:T.text,margin:'0 0 8px',letterSpacing:'0.05em'}}>CRYPTOGRAPHIC RANDOM SELECTION</h3>
+          <p style={{color:T.muted,fontSize:13,marginBottom:18,lineHeight:1.6,fontFamily:FONT_BODY}}>Uses <code style={{background:T.raised,padding:'1px 5px',borderRadius:3,color:T.goldL}}>crypto.getRandomValues()</code> — ID-only, exempt employees excluded.</p>
           <div style={{display:'flex',alignItems:'center',gap:10,justifyContent:'center',marginBottom:18}}>
             <label style={{fontSize:13,color:T.sub,fontFamily:FONT_BODY,fontWeight:700}}>Pick</label>
-            <input type="number" min={1} max={pool.length||1} value={count} onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))} style={{width:60,background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'7px 10px',color:T.text,fontSize:14,textAlign:'center',fontFamily:FONT_BODY}}/>
+            <input type="number" min={1} max={pool.length||1} value={count} onChange={e=>setCount(Math.max(1,parseInt(e.target.value)||1))} style={{width:64,background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:44,padding:'7px 10px',color:T.text,fontSize:15,textAlign:'center',fontFamily:FONT_BODY,outline:'none'}}/>
             <label style={{fontSize:13,color:T.sub,fontFamily:FONT_BODY,fontWeight:700}}>employee(s)</label>
           </div>
           <Btn onClick={pick} size="lg" v="dark" disabled={picking||pool.length===0} style={{minWidth:200}}>
@@ -872,19 +878,19 @@ function PickerView({employees,screenings,saveScreenings,notify,emailConfig,sche
           </Btn>
           <p style={{fontSize:11,color:T.muted,marginTop:8,fontFamily:FONT_BODY}}>Eligible pool: <strong>{pool.length}</strong> of {employees.length} employees · {employees.filter(e=>e.isExempt).length} exempt</p>
         </Card>
-        {warning&&<Card style={{background:'#fffbeb',border:'2px solid '+T.gold,marginBottom:16,padding:'12px 14px'}}><div style={{display:'flex',gap:8}}><AlertTriangle size={16} color={T.goldD} style={{flexShrink:0,marginTop:1}}/><p style={{margin:0,fontSize:13,color:T.sub,lineHeight:1.6,fontFamily:FONT_BODY,fontWeight:600}}>{warning}</p></div></Card>}
-        {result&&<Card style={{padding:0,overflow:'hidden',marginBottom:16,border:'2px solid '+T.done}}>
-          <div style={{padding:'10px 14px',borderBottom:'1px solid '+T.border,background:'#f0fdf4',display:'flex',alignItems:'center',gap:7}}><CheckCircle2 size={14} color={T.done}/><span style={{fontSize:13,fontWeight:800,color:T.done,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>SELECTION RESULT</span></div>
+        {warning&&<Card style={{background:'rgba(244,212,87,.12)',border:'1px solid rgba(244,212,87,.6)',marginBottom:16,padding:'12px 14px'}}><div style={{display:'flex',gap:8}}><AlertTriangle size={16} color={T.prog} style={{flexShrink:0,marginTop:1}}/><p style={{margin:0,fontSize:13,color:T.sub,lineHeight:1.6,fontFamily:FONT_BODY,fontWeight:600}}>{warning}</p></div></Card>}
+        {result&&<Card style={{padding:0,overflow:'hidden',marginBottom:16,border:'1px solid '+T.done}}>
+          <div style={{padding:'10px 14px',borderBottom:'1px solid '+T.border,background:'rgba(25,212,123,.12)',display:'flex',alignItems:'center',gap:7}}><CheckCircle2 size={14} color={T.done}/><span style={{fontSize:13,fontWeight:800,color:T.done,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>SELECTION RESULT</span></div>
           {result.map((p,i)=><div key={i} style={{padding:'12px 14px',borderBottom:'1px solid '+T.border,display:'flex',alignItems:'center',gap:8}}>
             <div style={{flex:1}}><div style={{fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_BODY}}>{p.name}</div><div style={{fontSize:11,color:T.muted}}>{p.title&&p.title+' · '} ID: <span style={{color:T.goldD,fontFamily:'monospace',fontWeight:700}}>{p.id}</span></div><div style={{fontSize:10,color:T.done,marginTop:3,fontFamily:FONT_BODY,fontWeight:700}}>✓ Pending drug test auto-created in Drug Tests tab</div></div>
-            {p.warn&&<span style={{background:'#fffbeb',color:T.prog,border:'1px solid '+T.gold,borderRadius:4,padding:'2px 7px',fontSize:10,fontWeight:800,fontFamily:FONT_BODY}}>⚠ RECENT</span>}
+            {p.warn&&<span style={{background:'rgba(244,212,87,.12)',color:T.prog,border:'1px solid rgba(244,212,87,.6)',borderRadius:4,padding:'2px 7px',fontSize:10,fontWeight:800,fontFamily:FONT_BODY}}>⚠ RECENT</span>}
             <Badge status="open"/>
           </div>)}
         </Card>}
       </div>
       <div>
         <Card style={{marginBottom:14}}>
-          <h3 style={{margin:'0 0 14px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>RECENT RANDOM LOG</h3>
+          <h3 style={{margin:'0 0 14px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>RECENT RANDOM LOG</h3>
           {recent.length===0?<p style={{color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No random picks yet.</p>:recent.map(s=><div key={s.id} style={{padding:'8px 0',borderBottom:'1px solid '+T.border,display:'flex',alignItems:'center',gap:8}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:T.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:FONT_BODY}}>{s.employeeName}</div><div style={{fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{s.employeeId} · {fmtDT(s.pickedAt)}</div></div>
             {s.recentWarn&&<AlertTriangle size={12} color={T.prog}/>}
@@ -892,8 +898,8 @@ function PickerView({employees,screenings,saveScreenings,notify,emailConfig,sche
             <Badge status={s.status}/>
           </div>)}
         </Card>
-        <Card style={{background:'#f0fdf4',border:'1px solid #bbf7d0'}}>
-          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.done,fontFamily:FONT_HEAD,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><Shield size={14}/>COMPLIANCE</h4>
+        <Card style={{background:'rgba(25,212,123,.08)',border:'1px solid rgba(25,212,123,.45)'}}>
+          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.done,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:6}}><Shield size={14}/>COMPLIANCE</h4>
           {['Cryptographic randomness — NIST-compliant','ID-only — no name or demographic factors','Exempt employees automatically excluded','3-month recency alerts per DOT/SAMHSA','Full auditable log with timestamps'].map(t=><div key={t} style={{fontSize:12,color:T.sub,padding:'4px 0',display:'flex',gap:8,fontFamily:FONT_BODY}}><span style={{color:T.done}}>✓</span>{t}</div>)}
         </Card>
       </div>
@@ -912,20 +918,20 @@ function ResultModal({screening,employees,onSave,onClose,isMobile}){
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
       {[['Employee',emp.name],['Employee ID',emp.id],['Test Type',(screening.type||'random').replace(/-/g,' ').toUpperCase()],['Picked',fmtDate(screening.pickedAt)]].map(([l,v])=><MobileRow key={l} label={l} value={v}/>)}
     </div>
-    {emp.prescriptions&&<div style={{background:'#fffbeb',border:'1px solid '+T.gold,borderRadius:6,padding:'10px 12px',marginBottom:14}}>
+    {emp.prescriptions&&<div style={{background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,borderRadius:6,padding:'10px 12px',marginBottom:14}}>
       <div style={{fontSize:10,color:T.goldD,fontWeight:800,fontFamily:FONT_BODY,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>⚕ Prescriptions on File</div>
       <p style={{margin:0,fontSize:12,color:T.sub,fontFamily:FONT_BODY}}>{emp.prescriptions}</p>
     </div>}
     <div style={{marginBottom:16}}>
-      <label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8,fontFamily:FONT_BODY}}>Test Result</label>
+      <label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:8,fontFamily:FONT_HEAD}}>Test Result</label>
       <div style={{display:'flex',gap:10}}>
-        <div onClick={()=>setResult('pass')} style={{flex:1,padding:'14px',borderRadius:8,border:'3px solid '+(result==='pass'?T.done:T.border),background:result==='pass'?'#f0fdf4':'#fafafa',cursor:'pointer',textAlign:'center',transition:'all 0.15s'}}>
+        <div onClick={()=>setResult('pass')} style={{flex:1,padding:'14px',borderRadius:8,border:'2px solid '+(result==='pass'?T.done:T.border),background:result==='pass'?'rgba(25,212,123,.12)':T.input,cursor:'pointer',textAlign:'center',transition:'all 0.15s'}}>
           <CheckCircle2 size={24} color={result==='pass'?T.done:T.muted} style={{margin:'0 auto 6px',display:'block'}}/>
-          <div style={{fontFamily:FONT_HEAD,fontSize:18,color:result==='pass'?T.done:T.muted,letterSpacing:'0.08em'}}>PASS</div>
+          <div style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,color:result==='pass'?T.done:T.muted,letterSpacing:'0.08em'}}>PASS</div>
         </div>
-        <div onClick={()=>setResult('fail')} style={{flex:1,padding:'14px',borderRadius:8,border:'3px solid '+(result==='fail'?T.warn:T.border),background:result==='fail'?'#fef2f2':'#fafafa',cursor:'pointer',textAlign:'center',transition:'all 0.15s'}}>
+        <div onClick={()=>setResult('fail')} style={{flex:1,padding:'14px',borderRadius:8,border:'2px solid '+(result==='fail'?T.warn:T.border),background:result==='fail'?'rgba(255,70,85,.12)':T.input,cursor:'pointer',textAlign:'center',transition:'all 0.15s'}}>
           <X size={24} color={result==='fail'?T.warn:T.muted} style={{margin:'0 auto 6px',display:'block'}}/>
-          <div style={{fontFamily:FONT_HEAD,fontSize:18,color:result==='fail'?T.warn:T.muted,letterSpacing:'0.08em'}}>FAIL</div>
+          <div style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,color:result==='fail'?T.warn:T.muted,letterSpacing:'0.08em'}}>FAIL</div>
         </div>
       </div>
     </div>
@@ -1009,7 +1015,7 @@ function DrugTestsView({screenings,employees,saveScreenings,notify}){
   return <div>
     <SectionTitle icon={FlaskConical}>Drug Tests</SectionTitle>
     {screenings.some(s=>s.type==='random'&&(s.result==='pending'||!s.result))&&
-    <Card style={{marginBottom:14,background:'#fffbeb',border:'2px solid '+T.gold,padding:'10px 16px'}}>
+    <Card style={{marginBottom:14,background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,padding:'10px 16px'}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}><Shuffle size={14} color={T.goldD}/><p style={{margin:0,fontSize:12,fontFamily:FONT_BODY,color:T.goldD,fontWeight:700}}>Random picks auto-create pending drug tests here. Enter results when the lab reports are ready.</p></div>
     </Card>}
     {showAdd&&<AddTestModal employees={employees} onSave={addTest} onClose={()=>setShowAdd(false)} isMobile={isMobile}/>}
@@ -1017,18 +1023,18 @@ function DrugTestsView({screenings,employees,saveScreenings,notify}){
 
     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
       {[{l:'Pass',v:passCount,c:T.done},{l:'Fail',v:failCount,c:T.warn},{l:'Pending',v:pendingCount,c:T.prog},{l:'Scheduled',v:scheduledCount,c:T.open}].map(s=><Card key={s.l} style={{textAlign:'center',padding:'12px 8px'}}>
-        <div style={{fontSize:26,fontWeight:900,color:s.c,fontFamily:FONT_HEAD}}>{s.v}</div>
+        <div style={{fontSize:26,fontWeight:900,color:s.c,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{s.v}</div>
         <div style={{fontSize:10,color:T.muted,marginTop:3,textTransform:'uppercase',letterSpacing:'0.08em',fontFamily:FONT_BODY}}>{s.l}</div>
       </Card>)}
     </div>
 
     <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
       <Btn onClick={()=>setShowAdd(true)} v="dark" size="sm"><Plus size={13}/>Add Test</Btn>
-      <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'5px 10px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+      <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,minHeight:36,padding:'5px 10px',fontSize:12,fontFamily:FONT_HEAD,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.04em'}}>
         <option value="all">All Types</option>
         {SCREEN_TYPES.map(t=><option key={t} value={t}>{t==='random'?'Random Pick':t.replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</option>)}
       </select>
-      <select value={resultFilter} onChange={e=>setResultFilter(e.target.value)} style={{background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'5px 10px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+      <select value={resultFilter} onChange={e=>setResultFilter(e.target.value)} style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,minHeight:36,padding:'5px 10px',fontSize:12,fontFamily:FONT_HEAD,fontWeight:700,color:T.text,textTransform:'uppercase',letterSpacing:'0.04em'}}>
         <option value="all">All Results</option>
         <option value="pass">Pass</option>
         <option value="fail">Fail</option>
@@ -1044,7 +1050,7 @@ function DrugTestsView({screenings,employees,saveScreenings,notify}){
             const emp=employees.find(e=>e.id===s.employeeId);
             return <Card key={s.id} style={{marginBottom:8,padding:'12px 14px'}}>
               <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
-                <div><div style={{fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</div><div style={{fontSize:11,fontFamily:'monospace',color:T.goldD,fontWeight:700}}>{s.employeeId}</div><div style={{display:'flex',alignItems:'center',gap:5,marginTop:2}}><span style={{fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{s.type==='random'?'Random Pick':(s.type||'').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</span>{s.type==='random'&&<span style={{fontSize:9,background:'#fffbeb',color:T.goldD,border:'1px solid '+T.gold,borderRadius:3,padding:'1px 5px',fontFamily:FONT_BODY,fontWeight:800}}>AUTO-PICKED</span>}</div></div>
+                <div><div style={{fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</div><div style={{fontSize:11,fontFamily:'monospace',color:T.goldD,fontWeight:700}}>{s.employeeId}</div><div style={{display:'flex',alignItems:'center',gap:5,marginTop:2}}><span style={{fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{s.type==='random'?'Random Pick':(s.type||'').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</span>{s.type==='random'&&<span style={{fontSize:9,background:'rgba(255,107,24,.12)',color:T.goldL,border:'1px solid '+T.keyline,borderRadius:3,padding:'1px 5px',fontFamily:FONT_HEAD,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.08em'}}>AUTO-PICKED</span>}</div></div>
                 <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end'}}>{s.result&&<Badge status={s.result}/>}<Badge status={s.status}/></div>
               </div>
               {s.scheduledFor&&s.status==='scheduled'&&<div style={{fontSize:11,color:T.open,fontFamily:FONT_BODY,fontWeight:700,marginBottom:6}}>📅 Scheduled: {fmtDate(s.scheduledFor)}</div>}
@@ -1066,13 +1072,13 @@ function DrugTestsView({screenings,employees,saveScreenings,notify}){
             {filtered.length===0?<tr><td colSpan={8} style={{padding:'36px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No test records. Click Add Test to create one.</td></tr>:
               filtered.map(s=>{
                 const emp=employees.find(e=>e.id===s.employeeId);
-                return <tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={ev=>ev.currentTarget.style.background='#fffbeb'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
+                return <tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={ev=>ev.currentTarget.style.background='rgba(255,107,24,.08)'} onMouseLeave={ev=>ev.currentTarget.style.background='transparent'}>
                   <td style={{padding:'9px 12px'}}>
                     <div style={{fontSize:13,fontWeight:800,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</div>
                     {emp?.prescriptions&&<div style={{fontSize:10,color:T.goldD,fontWeight:700}}>⚕ Rx on file</div>}
                   </td>
                   <td style={{padding:'9px 12px',fontFamily:'monospace',fontSize:11,color:T.goldD,fontWeight:700,whiteSpace:'nowrap'}}>{s.employeeId}</td>
-                  <td style={{padding:'9px 12px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,whiteSpace:'nowrap'}}>{s.type==='random'?<span style={{display:'flex',alignItems:'center',gap:4}}><span>Random Pick</span><span style={{fontSize:9,background:'#fffbeb',color:T.goldD,border:'1px solid '+T.gold,borderRadius:3,padding:'1px 4px',fontFamily:FONT_BODY,fontWeight:800}}>AUTO</span></span>:(s.type||'').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</td>
+                  <td style={{padding:'9px 12px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,whiteSpace:'nowrap'}}>{s.type==='random'?<span style={{display:'flex',alignItems:'center',gap:4}}><span>Random Pick</span><span style={{fontSize:9,background:'rgba(255,107,24,.12)',color:T.goldL,border:'1px solid '+T.keyline,borderRadius:3,padding:'1px 4px',fontFamily:FONT_HEAD,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.08em'}}>AUTO</span></span>:(s.type||'').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</td>
                   <td style={{padding:'9px 12px',fontSize:11,color:T.muted,fontFamily:FONT_BODY,whiteSpace:'nowrap'}}>{fmtDate(s.pickedAt)}</td>
                   <td style={{padding:'9px 12px',fontSize:11,color:T.open,fontFamily:FONT_BODY,whiteSpace:'nowrap'}}>{s.scheduledFor?fmtDate(s.scheduledFor):'—'}</td>
                   <td style={{padding:'9px 12px'}}>{s.result?<Badge status={s.result}/>:'—'}</td>
@@ -1087,7 +1093,7 @@ function DrugTestsView({screenings,employees,saveScreenings,notify}){
               })}
           </tbody>
         </table>
-        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:'#fafafa'}}>{filtered.length} of {allTests.length} records · Pass: {passCount} · Fail: {failCount} · Pending: {pendingCount}</div>
+        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:T.raised}}>{filtered.length} of {allTests.length} records · Pass: {passCount} · Fail: {failCount} · Pending: {pendingCount}</div>
       </Card>
     )}
   </div>;
@@ -1116,7 +1122,7 @@ function ScreeningsView({screenings,saveScreenings,user,notify,employees}){
         filtered.map(s=><Card key={s.id} style={{marginBottom:10}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
             <div><div style={{fontSize:14,fontWeight:800,fontFamily:FONT_BODY,color:T.text}}>{s.employeeName}</div><div style={{fontSize:11,fontFamily:'monospace',color:T.goldD,fontWeight:700}}>{s.employeeId}</div>{s.recentWarn&&<div style={{fontSize:10,color:T.prog,fontWeight:700}}>⚠ Screened recently</div>}</div>
-            <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end'}}>{s.autoScheduled?<span style={{fontSize:9,fontWeight:800,color:T.goldD,fontFamily:FONT_BODY,border:'1px solid '+T.gold,background:'#fffbeb',borderRadius:3,padding:'1px 6px'}}>AUTO</span>:<span style={{fontSize:9,fontWeight:800,color:T.muted,fontFamily:FONT_BODY,border:'1px solid '+T.border,background:'#fafafa',borderRadius:3,padding:'1px 6px'}}>MANUAL</span>}<Badge status={s.status}/></div>
+            <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end'}}>{s.autoScheduled?<span style={{fontSize:9,fontWeight:700,color:T.goldL,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.08em',border:'1px solid '+T.keyline,background:'rgba(255,107,24,.12)',borderRadius:3,padding:'1px 6px'}}>AUTO</span>:<span style={{fontSize:9,fontWeight:700,color:T.sub,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.08em',border:'1px solid '+T.border,background:T.raised,borderRadius:3,padding:'1px 6px'}}>MANUAL</span>}<Badge status={s.status}/></div>
           </div>
           <div style={{fontSize:11,color:T.muted,marginBottom:10,fontFamily:FONT_BODY}}>{fmtDT(s.pickedAt)}</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -1130,7 +1136,7 @@ function ScreeningsView({screenings,saveScreenings,user,notify,employees}){
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr style={{background:T.nav}}>{['Employee','ID','Picked','Type','Result','Status','Actions'].map(h=><th key={h} style={{padding:'10px 12px',textAlign:'left',fontSize:10,color:T.gold,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',fontFamily:FONT_BODY,whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
           <tbody>{filtered.length===0?<tr><td colSpan={7} style={{padding:'36px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No active screenings.</td></tr>:
-            filtered.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='#fffbeb'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            filtered.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,107,24,.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'11px 12px'}}><div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</div>{s.recentWarn&&<div style={{fontSize:10,color:T.prog,fontWeight:700}}>⚠ Recent (3mo)</div>}</td>
               <td style={{padding:'11px 12px',fontFamily:'monospace',fontSize:11,color:T.goldD,fontWeight:700}}>{s.employeeId}</td>
               <td style={{padding:'11px 12px',fontSize:11,color:T.muted,fontFamily:FONT_BODY,whiteSpace:'nowrap'}}>{fmtDT(s.pickedAt)}</td>
@@ -1149,7 +1155,7 @@ function ScreeningsView({screenings,saveScreenings,user,notify,employees}){
     {sigModal&&<Modal title="E-SIGNATURE REQUIRED" onClose={()=>setSigModal(null)} isMobile={isMobile}>
       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,marginBottom:16}}>
         {[['Employee',sigModal.employeeName],['Employee ID',sigModal.employeeId],['Date',sigDate]].map(([l,v])=><div key={l}><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3,fontFamily:FONT_BODY,fontWeight:700}}>{l}</div><div style={{fontSize:13,color:T.text,fontWeight:700,fontFamily:FONT_BODY}}>{v}</div></div>)}
-        <div><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3,fontFamily:FONT_BODY,fontWeight:700}}>Completed By</div><input value={sigName} onChange={e=>setSigName(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'6px 10px',color:T.text,fontSize:13,fontFamily:FONT_BODY,outline:'none'}}/></div>
+        <div><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3,fontFamily:FONT_BODY,fontWeight:700}}>Completed By</div><input value={sigName} onChange={e=>setSigName(e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:44,padding:'6px 10px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/></div>
       </div>
       <SignaturePad onSave={saveSig} onCancel={()=>setSigModal(null)}/>
     </Modal>}
@@ -1181,7 +1187,7 @@ function HistoryView({screenings,employees}){
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr style={{background:T.nav}}>{['Employee','ID','Type','Picked','Completed','Result','By',''].map(h=><th key={h} style={{padding:'10px 12px',textAlign:'left',fontSize:10,color:T.gold,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',fontFamily:FONT_BODY}}>{h}</th>)}</tr></thead>
           <tbody>{filtered.length===0?<tr><td colSpan={8} style={{padding:'36px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No completed screenings yet.</td></tr>:
-            filtered.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='#fffbeb'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            filtered.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,107,24,.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'10px 12px',fontSize:13,fontWeight:700,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</td>
               <td style={{padding:'10px 12px',fontFamily:'monospace',fontSize:11,color:T.goldD,fontWeight:700}}>{s.employeeId}</td>
               <td style={{padding:'10px 12px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text}}>{(s.type||'random').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</td>
@@ -1193,14 +1199,14 @@ function HistoryView({screenings,employees}){
             </tr>)}
           </tbody>
         </table>
-        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:'#fafafa'}}>{filtered.length} completed · Pass: {completed.filter(s=>s.result==='pass').length} · Fail: {completed.filter(s=>s.result==='fail').length}</div>
+        <div style={{padding:'8px 14px',borderTop:'1px solid '+T.border,fontSize:11,color:T.muted,fontFamily:FONT_BODY,background:T.raised}}>{filtered.length} completed · Pass: {completed.filter(s=>s.result==='pass').length} · Fail: {completed.filter(s=>s.result==='fail').length}</div>
       </Card>
     )}
     {detail&&<Modal title="SCREENING RECORD" onClose={()=>setDetail(null)} isMobile={isMobile}>
       {[['Employee',detail.employeeName],['Employee ID',detail.employeeId],['Type',(detail.type||'random').replace(/-/g,' ').toUpperCase()],['Picked',fmtDT(detail.pickedAt)],['Completed',fmtDT(detail.completedAt)],['Result',detail.result||'—'],['Completed By',detail.completedBy||'—'],['E-Sign Date',fmtDT(detail.eSignDate)]].map(([l,v])=><MobileRow key={l} label={l} value={v}/>)}
-      {detail.resultNotes&&<div style={{marginTop:10,padding:'10px',background:'#fafafa',borderRadius:6,border:'1px solid '+T.border}}><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4,fontFamily:FONT_BODY,fontWeight:700}}>Result Notes</div><p style={{margin:0,fontSize:13,color:T.sub,fontFamily:FONT_BODY}}>{detail.resultNotes}</p></div>}
-      {detail.eSignature&&<div style={{marginTop:12}}><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6,fontFamily:FONT_BODY,fontWeight:700}}>E-Signature on File</div><div style={{background:'#fafafa',border:'1px solid '+T.border,borderRadius:6,padding:8,display:'inline-block'}}><img src={detail.eSignature} style={{height:70,display:'block'}} alt="sig"/></div></div>}
-      <div style={{marginTop:14,padding:10,background:'#f0fdf4',border:'2px solid '+T.done,borderRadius:6,display:'flex',gap:8,alignItems:'center'}}><CheckCircle2 size={14} color={T.done}/><span style={{fontSize:12,color:T.done,fontFamily:FONT_BODY,fontWeight:700}}>Completed. Read-only record.</span></div>
+      {detail.resultNotes&&<div style={{marginTop:10,padding:'10px',background:T.raised,borderRadius:6,border:'1px solid '+T.border}}><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4,fontFamily:FONT_BODY,fontWeight:700}}>Result Notes</div><p style={{margin:0,fontSize:13,color:T.sub,fontFamily:FONT_BODY}}>{detail.resultNotes}</p></div>}
+      {detail.eSignature&&<div style={{marginTop:12}}><div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:6,fontFamily:FONT_BODY,fontWeight:700}}>E-Signature on File</div><div style={{background:PAPER,border:'1px solid '+T.borderL,borderRadius:6,padding:8,display:'inline-block'}}><img src={detail.eSignature} style={{height:70,display:'block'}} alt="sig"/></div></div>}
+      <div style={{marginTop:14,padding:10,background:'rgba(25,212,123,.12)',border:'1px solid '+T.done,borderRadius:6,display:'flex',gap:8,alignItems:'center'}}><CheckCircle2 size={14} color={T.done}/><span style={{fontSize:12,color:T.done,fontFamily:FONT_BODY,fontWeight:700}}>Completed. Read-only record.</span></div>
     </Modal>}
   </div>;
 }
@@ -1217,29 +1223,29 @@ function DashboardView({employees,screenings,setView,schedulerConfig,tick,lastBa
   const exemptCount=employees.filter(e=>e.isExempt).length;
   const recent=[...screenings].sort((a,b)=>new Date(b.pickedAt)-new Date(a.pickedAt)).slice(0,5);
   const countdown=schedulerConfig.enabled&&schedulerConfig.nextPickAt?getCountdown(schedulerConfig.nextPickAt):null;
-  const stats=[{label:'Active Pool',v:employees.filter(e=>!e.isExempt).length,c:'#000'},{label:'Exempt',v:exemptCount,c:'#7c3aed'},{label:'Open',v:open,c:T.open},{label:'In Progress',v:prog,c:T.prog},{label:'Pass',v:passCount,c:T.done},{label:'Fail',v:failCount,c:T.warn}];
+  const stats=[{label:'Active Pool',v:employees.filter(e=>!e.isExempt).length,c:T.text},{label:'Exempt',v:exemptCount,c:T.exempt},{label:'Open',v:open,c:T.open},{label:'In Progress',v:prog,c:T.prog},{label:'Pass',v:passCount,c:T.done},{label:'Fail',v:failCount,c:T.warn}];
   return <div>
     <SectionTitle icon={LayoutDashboard}>Dashboard</SectionTitle>
-    {schedulerConfig.enabled&&<Card style={{marginBottom:16,background:'#fffbeb',border:'2px solid '+T.gold,padding:'12px 16px'}}>
+    {schedulerConfig.enabled&&<Card style={{marginBottom:16,background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,padding:'12px 16px'}}>
       <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
         <div style={{width:8,height:8,borderRadius:'50%',background:T.goldD,animation:'pulse 2s infinite',flexShrink:0}}/>
         <div style={{flex:1}}><span style={{fontSize:13,color:T.goldD,fontWeight:800,fontFamily:FONT_BODY,textTransform:'uppercase'}}>Scheduler Active</span>{countdown&&<span style={{fontSize:12,color:T.muted,marginLeft:8,fontFamily:FONT_BODY}}>Next: <strong style={{color:T.goldD}}>{countdown}</strong></span>}</div>
         <Btn onClick={()=>setView('settings')} v="dark" size="sm">Configure</Btn>
       </div>
     </Card>}
-    {lastBackup&&<Card style={{marginBottom:16,background:'#f0fdf4',border:'1px solid #bbf7d0',padding:'10px 16px'}}>
+    {lastBackup&&<Card style={{marginBottom:16,background:'rgba(25,212,123,.08)',border:'1px solid rgba(25,212,123,.45)',padding:'10px 16px'}}>
       <div style={{display:'flex',alignItems:'center',gap:8}}><HardDrive size={14} color={T.done}/><span style={{fontSize:12,color:T.done,fontFamily:FONT_BODY,fontWeight:700}}>Last Drive backup: {fmtDT(lastBackup)}</span></div>
     </Card>}
     <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:20}}>
-      {stats.map(s=><div key={s.label} style={{background:'#fff',border:'1px solid '+T.border,borderRadius:8,padding:'12px 10px',textAlign:'center',boxShadow:'0 1px 4px '+T.shadow}}>
-        <div style={{fontSize:28,fontWeight:900,color:s.c,lineHeight:1,fontFamily:FONT_HEAD}}>{s.v}</div>
+      {stats.map(s=><div key={s.label} style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,padding:'12px 10px',textAlign:'center',boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)'}}>
+        <div style={{fontSize:28,fontWeight:900,color:s.c,lineHeight:1,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{s.v}</div>
         <div style={{fontSize:10,color:T.muted,marginTop:4,textTransform:'uppercase',letterSpacing:'0.08em',fontFamily:FONT_BODY,fontWeight:700}}>{s.label}</div>
       </div>)}
     </div>
     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
       <Card>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-          <h3 style={{margin:0,fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>RECENT ACTIVITY</h3>
+          <h3 style={{margin:0,fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>RECENT ACTIVITY</h3>
           <Btn onClick={()=>setView('screenings')} v="ghost" size="sm">View All</Btn>
         </div>
         {recent.length===0?<p style={{color:T.muted,fontSize:13,textAlign:'center',padding:'16px 0',fontFamily:FONT_BODY}}>No screenings yet</p>:recent.map(s=><div key={s.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid '+T.border}}>
@@ -1249,8 +1255,8 @@ function DashboardView({employees,screenings,setView,schedulerConfig,tick,lastBa
         </div>)}
       </Card>
       <Card>
-        <h3 style={{margin:'0 0 14px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>QUICK ACTIONS</h3>
-        {[{label:'Run Random Pick',icon:Shuffle,v:'picker'},{label:'Add Drug Test',icon:FlaskConical,v:'drugtests'},{label:'Manage Employees',icon:Users,v:'employees'},{label:'Export Reports',icon:BarChart2,v:'reports'}].map(a=><div key={a.v} onClick={()=>setView(a.v)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:6,cursor:'pointer',marginBottom:6,border:'2px solid '+T.border,background:'#fafafa',transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=T.gold;e.currentTarget.style.background='#fffbeb';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background='#fafafa';}}>
+        <h3 style={{margin:'0 0 14px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>QUICK ACTIONS</h3>
+        {[{label:'Run Random Pick',icon:Shuffle,v:'picker'},{label:'Add Drug Test',icon:FlaskConical,v:'drugtests'},{label:'Manage Employees',icon:Users,v:'employees'},{label:'Export Reports',icon:BarChart2,v:'reports'}].map(a=><div key={a.v} onClick={()=>setView(a.v)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',minHeight:44,borderRadius:6,cursor:'pointer',marginBottom:6,border:'1px solid '+T.border,background:T.raised,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=T.goldL;e.currentTarget.style.background='rgba(255,107,24,.1)';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.raised;}}>
           <a.icon size={16} color={T.goldD}/><div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:FONT_BODY}}>{a.label}</div>
         </div>)}
       </Card>
@@ -1273,17 +1279,17 @@ function CalendarView({screenings}){
     <SectionTitle icon={CalendarDays}>Calendar</SectionTitle>
     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 300px',gap:16}}>
       <Card style={{padding:0,overflow:'hidden'}}>
-        <div style={{padding:'12px 16px',borderBottom:'2px solid '+T.border,display:'flex',alignItems:'center',justifyContent:'space-between',background:T.nav}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid '+T.keyline,display:'flex',alignItems:'center',justifyContent:'space-between',background:T.nav}}>
           <button onClick={()=>nav(-1)} style={{background:'none',border:'none',color:T.gold,cursor:'pointer',display:'flex',padding:6}}><ChevronLeft size={18}/></button>
-          <h3 style={{margin:0,fontFamily:FONT_HEAD,fontSize:isMobile?16:18,color:T.gold,letterSpacing:'0.1em'}}>{MONTHS[curM].toUpperCase()} {curY}</h3>
+          <h3 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:isMobile?16:18,color:T.gold,letterSpacing:'0.1em'}}>{MONTHS[curM].toUpperCase()} {curY}</h3>
           <button onClick={()=>nav(1)} style={{background:'none',border:'none',color:T.gold,cursor:'pointer',display:'flex',padding:6}}><ChevronRight size={18}/></button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',padding:'8px 8px 0'}}>{DAYS.map(d=><div key={d} style={{textAlign:'center',fontSize:9,fontWeight:800,color:T.muted,padding:'4px 0',textTransform:'uppercase',fontFamily:FONT_BODY,letterSpacing:'0.1em'}}>{isMobile?d[0]:d}</div>)}</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,padding:'0 8px 8px'}}>
           {Array(fd).fill(null).map((_,i)=><div key={'e'+i} style={{minHeight:isMobile?36:52}}/>)}
-          {Array.from({length:dim},(_,i)=>i+1).map(d=>{const picks=onDay(curY,curM,d);const isToday=d===today.getDate()&&curM===today.getMonth()&&curY===today.getFullYear();return <div key={d} onClick={()=>picks.length>0&&setDayD({d,picks})} style={{minHeight:isMobile?36:52,borderRadius:4,border:'1px solid '+(picks.length?T.gold:T.border),padding:isMobile?3:4,background:picks.length?'#fffbeb':isToday?'#eff6ff':'#fafafa',cursor:picks.length?'pointer':'default',transition:'all 0.15s'}} onMouseEnter={e=>{if(picks.length)e.currentTarget.style.background='#fef3c7';}} onMouseLeave={e=>{if(picks.length)e.currentTarget.style.background='#fffbeb';}}>
+          {Array.from({length:dim},(_,i)=>i+1).map(d=>{const picks=onDay(curY,curM,d);const isToday=d===today.getDate()&&curM===today.getMonth()&&curY===today.getFullYear();return <div key={d} onClick={()=>picks.length>0&&setDayD({d,picks})} style={{minHeight:isMobile?36:52,borderRadius:4,border:'1px solid '+(picks.length?T.gold:T.border),padding:isMobile?3:4,background:picks.length?'rgba(255,107,24,.12)':isToday?'rgba(44,125,255,.14)':T.input,cursor:picks.length?'pointer':'default',transition:'all 0.15s'}} onMouseEnter={e=>{if(picks.length)e.currentTarget.style.background='rgba(255,107,24,.22)';}} onMouseLeave={e=>{if(picks.length)e.currentTarget.style.background='rgba(255,107,24,.12)';}}>
             <div style={{fontSize:isMobile?10:11,fontWeight:isToday?900:600,color:isToday?T.open:T.text,fontFamily:FONT_BODY}}>{d}</div>
-            {!isMobile&&picks.slice(0,1).map(p=><div key={p.id} style={{background:T.goldD,borderRadius:2,padding:'1px 3px',fontSize:8,color:'#fff',fontWeight:800,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:FONT_BODY}}>{p.employeeId}</div>)}
+            {!isMobile&&picks.slice(0,1).map(p=><div key={p.id} style={{background:ACCENT_BG,borderRadius:2,padding:'1px 3px',fontSize:8,color:T.onGold,fontWeight:800,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:FONT_BODY}}>{p.employeeId}</div>)}
             {picks.length>0&&isMobile&&<div style={{width:5,height:5,borderRadius:'50%',background:T.gold,margin:'2px auto 0'}}/>}
             {!isMobile&&picks.length>1&&<div style={{fontSize:8,color:T.goldD,fontFamily:FONT_BODY,fontWeight:700}}>+{picks.length-1}</div>}
           </div>;})}
@@ -1291,17 +1297,17 @@ function CalendarView({screenings}){
       </Card>
       <div>
         <Card style={{marginBottom:14}}>
-          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>EXPORT PDF</h4>
+          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>EXPORT PDF</h4>
           <div style={{maxHeight:160,overflow:'auto',marginBottom:12}}>
-            {allKeys.length===0?<p style={{fontSize:12,color:T.muted,fontFamily:FONT_BODY}}>No screenings on record.</p>:allKeys.map(k=>{const[y,m]=k.split('-');return <div key={k} onClick={()=>toggleSel(k)} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',borderRadius:4,cursor:'pointer',background:sel.includes(k)?'#fffbeb':'transparent',border:'1px solid '+(sel.includes(k)?T.gold:'transparent'),marginBottom:2}}>
-              <div style={{width:14,height:14,borderRadius:2,border:'2px solid '+(sel.includes(k)?T.goldD:T.border),background:sel.includes(k)?T.gold:'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#000',flexShrink:0}}>{sel.includes(k)?'✓':''}</div>
+            {allKeys.length===0?<p style={{fontSize:12,color:T.muted,fontFamily:FONT_BODY}}>No screenings on record.</p>:allKeys.map(k=>{const[y,m]=k.split('-');return <div key={k} onClick={()=>toggleSel(k)} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',borderRadius:4,cursor:'pointer',background:sel.includes(k)?'rgba(255,107,24,.12)':'transparent',border:'1px solid '+(sel.includes(k)?T.keyline:'transparent'),marginBottom:2}}>
+              <div style={{width:14,height:14,borderRadius:2,border:'2px solid '+(sel.includes(k)?T.goldL:T.border),background:sel.includes(k)?T.gold:'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:T.onGold,flexShrink:0}}>{sel.includes(k)?'✓':''}</div>
               <span style={{fontSize:13,color:T.text,fontFamily:FONT_BODY,fontWeight:600}}>{MONTHS[parseInt(m)]} {y}</span>
             </div>;})}
           </div>
           <Btn onClick={exportPDF} full size="sm" v="dark"><Printer size={13}/>Export {sel.length>0?sel.length+' Month(s)':'Current Month'}</Btn>
         </Card>
         <Card>
-          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.text,fontFamily:FONT_HEAD}}>{MONTHS[curM].toUpperCase()} {curY}</h4>
+          <h4 style={{margin:'0 0 10px',fontSize:13,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{MONTHS[curM].toUpperCase()} {curY}</h4>
           {thisMonthPicks.length===0?<p style={{fontSize:12,color:T.muted,fontFamily:FONT_BODY}}>No screenings this month.</p>:thisMonthPicks.map(s=><div key={s.id} style={{padding:'6px 0',borderBottom:'1px solid '+T.border,display:'flex',alignItems:'center',gap:6}}>
             <div style={{flex:1,minWidth:0}}><div style={{color:T.text,fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:FONT_BODY}}>{s.employeeName}</div><div style={{color:T.muted,fontSize:10,fontFamily:FONT_BODY}}>{(s.type||'random').toUpperCase()} · {fmtDate(s.pickedAt)}</div></div>
             {s.result&&s.result!=='pending'&&<Badge status={s.result}/>}
@@ -1311,7 +1317,7 @@ function CalendarView({screenings}){
       </div>
     </div>
     {dayD&&<Modal title={MONTHS[curM]+' '+dayD.d+', '+curY} onClose={()=>setDayD(null)} isMobile={isMobile}>
-      {dayD.picks.map(p=><div key={p.id} style={{padding:12,background:'#fafafa',borderRadius:6,marginBottom:8,border:'1px solid '+T.border}}>
+      {dayD.picks.map(p=><div key={p.id} style={{padding:12,background:T.raised,borderRadius:6,marginBottom:8,border:'1px solid '+T.border}}>
         <div style={{fontWeight:800,color:T.text,marginBottom:4,fontFamily:FONT_BODY}}>{p.employeeName}</div>
         <div style={{fontSize:12,color:T.muted,fontFamily:FONT_BODY,marginBottom:6}}>ID: {p.employeeId} · {(p.type||'random').toUpperCase()} · {fmtDT(p.pickedAt)}</div>
         <div style={{display:'flex',gap:4}}>{p.result&&p.result!=='pending'&&<Badge status={p.result}/>}<Badge status={p.status}/></div>
@@ -1338,21 +1344,21 @@ function ReportsView({screenings,employees}){
       <Btn onClick={exportAll} v="secondary" size="sm"><FileDown size={13}/>Export All</Btn>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:16}}>
-      {[{l:'Total',v:data.length,c:'#000'},{l:'Pass',v:passC,c:T.done},{l:'Fail',v:failC,c:T.warn},{l:'Completed',v:done,c:T.open}].map(s=><Card key={s.l} style={{textAlign:'center',padding:'14px 10px'}}>
-        <div style={{fontSize:32,fontWeight:900,color:s.c,fontFamily:FONT_HEAD}}>{s.v}</div>
+      {[{l:'Total',v:data.length,c:T.text},{l:'Pass',v:passC,c:T.done},{l:'Fail',v:failC,c:T.warn},{l:'Completed',v:done,c:T.open}].map(s=><Card key={s.l} style={{textAlign:'center',padding:'14px 10px'}}>
+        <div style={{fontSize:32,fontWeight:900,color:s.c,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{s.v}</div>
         <div style={{fontSize:10,color:T.muted,marginTop:4,textTransform:'uppercase',letterSpacing:'0.08em',fontFamily:FONT_BODY,fontWeight:700}}>{s.l}</div>
       </Card>)}
     </div>
     <Card style={{marginBottom:16}}>
-      <h4 style={{margin:'0 0 12px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>PERIOD SUMMARY</h4>
+      <h4 style={{margin:'0 0 12px',fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>PERIOD SUMMARY</h4>
       {[['Period',{weekly:'Last 7 Days',monthly:'Last 30 Days',quarterly:'Last 90 Days',annual:'Last 365 Days'}[period]],['Total Employees',employees.length],['Active Pool',employees.filter(e=>!e.isExempt).length],['Screenings',data.length],['Pass',passC],['Fail',failC],['Completion Rate',rate+'%']].map(([l,v])=><MobileRow key={l} label={l} value={String(v)}/>)}
       <div style={{marginTop:12}}>
         <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:T.muted,marginBottom:5,fontFamily:FONT_BODY,fontWeight:700}}><span>Completion Rate</span><span>{rate}%</span></div>
-        <div style={{height:8,background:T.bg,borderRadius:4,overflow:'hidden',border:'1px solid '+T.border}}><div style={{height:'100%',background:T.gold,borderRadius:4,width:rate+'%',transition:'width 0.5s'}}/></div>
+        <div style={{height:8,background:T.input,borderRadius:4,overflow:'hidden',border:'1px solid '+T.border}}><div style={{height:'100%',background:T.gold,borderRadius:4,width:rate+'%',transition:'width 0.5s'}}/></div>
       </div>
     </Card>
     <Card style={{padding:0,overflow:'hidden'}}>
-      <div style={{padding:'10px 14px',borderBottom:'2px solid '+T.border,background:T.nav}}><span style={{fontSize:13,fontWeight:800,color:T.gold,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>SCREENING LOG</span></div>
+      <div style={{padding:'10px 14px',borderBottom:'1px solid '+T.keyline,background:T.nav}}><span style={{fontSize:13,fontWeight:800,color:T.gold,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>SCREENING LOG</span></div>
       {isMobile?(
         <div style={{padding:12}}>{data.length===0?<p style={{color:T.muted,fontSize:13,textAlign:'center',fontFamily:FONT_BODY}}>No screenings in this period.</p>:data.map(s=><div key={s.id} style={{padding:'10px 0',borderBottom:'1px solid '+T.border}}>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:FONT_BODY}}>{s.employeeName}</div><div style={{display:'flex',gap:4}}>{s.result&&s.result!=='pending'&&<Badge status={s.result}/>}<Badge status={s.status}/></div></div>
@@ -1361,8 +1367,8 @@ function ReportsView({screenings,employees}){
       ):(
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr style={{borderBottom:'1px solid '+T.border,background:'#fafafa'}}>{['Employee','ID','Type','Picked','Result','Status','By'].map(h=><th key={h} style={{padding:'9px 12px',textAlign:'left',fontSize:10,color:T.muted,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',fontFamily:FONT_BODY}}>{h}</th>)}</tr></thead>
-            <tbody>{data.length===0?<tr><td colSpan={7} style={{padding:'28px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No screenings in this period.</td></tr>:data.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='#fffbeb'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            <thead><tr style={{borderBottom:'1px solid '+T.border,background:T.raised}}>{['Employee','ID','Type','Picked','Result','Status','By'].map(h=><th key={h} style={{padding:'9px 12px',textAlign:'left',fontSize:10,color:T.muted,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',fontFamily:FONT_BODY}}>{h}</th>)}</tr></thead>
+            <tbody>{data.length===0?<tr><td colSpan={7} style={{padding:'28px',textAlign:'center',color:T.muted,fontSize:13,fontFamily:FONT_BODY}}>No screenings in this period.</td></tr>:data.map(s=><tr key={s.id} style={{borderBottom:'1px solid '+T.border}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,107,24,.08)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
               <td style={{padding:'9px 12px',fontSize:13,color:T.text,fontFamily:FONT_BODY,fontWeight:600}}>{s.employeeName}</td>
               <td style={{padding:'9px 12px',fontFamily:'monospace',fontSize:11,color:T.goldD,fontWeight:700}}>{s.employeeId}</td>
               <td style={{padding:'9px 12px',fontSize:11,fontFamily:FONT_BODY,fontWeight:700,color:T.text,whiteSpace:'nowrap'}}>{(s.type||'random').replace(/-/g,' ').replace(/\b\\w/g,c=>c.toUpperCase())}</td>
@@ -1415,9 +1421,9 @@ function SettingsView({schedulerConfig,saveScheduler,emailConfig,saveEmailConfig
       <div>
         {/* Branding */}
         <Card style={{marginBottom:14}}>
-          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontSize:16,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:8}}><Building2 size={16} color={T.goldD}/>Company Branding</h3>
+          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:16,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:8}}><Building2 size={16} color={T.goldD}/>Company Branding</h3>
           <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:14}}>
-            <div onClick={()=>logoRef.current.click()} style={{width:64,height:64,borderRadius:8,border:'2px dashed '+T.border,background:'#fafafa',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
+            <div onClick={()=>logoRef.current.click()} style={{width:64,height:64,borderRadius:8,border:'2px dashed '+T.keyline,background:T.input,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
               {cs.logo?<img src={cs.logo} style={{width:'100%',height:'100%',objectFit:'contain'}} alt="logo"/>:<Upload size={20} color={T.muted}/>}
             </div>
             <div><p style={{margin:'0 0 6px',fontSize:12,color:T.muted,fontFamily:FONT_BODY}}>Upload company logo for the sidebar.</p><Btn onClick={()=>logoRef.current.click()} v="secondary" size="sm"><Upload size={12}/>Upload</Btn>{cs.logo&&<Btn onClick={()=>setCo('logo','')} v="danger" size="sm" style={{marginLeft:6}}>Remove</Btn>}</div>
@@ -1429,20 +1435,20 @@ function SettingsView({schedulerConfig,saveScheduler,emailConfig,saveEmailConfig
         {/* Auto-Scheduler */}
         <Card>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-            <h3 style={{margin:0,fontFamily:FONT_HEAD,fontSize:16,color:T.text,display:'flex',alignItems:'center',gap:8}}><Timer size={16} color={T.goldD}/>Auto-Scheduler</h3>
+            <h3 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:16,color:T.text,display:'flex',alignItems:'center',gap:8}}><Timer size={16} color={T.goldD}/>Auto-Scheduler</h3>
             <Toggle checked={sc.enabled} onChange={()=>setS('enabled',!sc.enabled)}/>
           </div>
-          {sc.enabled&&countdown&&<div style={{background:'#fffbeb',border:'2px solid '+T.gold,borderRadius:6,padding:'10px 12px',marginBottom:12}}>
+          {sc.enabled&&countdown&&<div style={{background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,borderRadius:6,padding:'10px 12px',marginBottom:12}}>
             <div style={{fontSize:10,color:T.muted,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3,fontFamily:FONT_BODY,fontWeight:700}}>Next Pick In</div>
-            <div style={{fontSize:24,fontWeight:900,color:T.goldD,fontFamily:FONT_HEAD}}>{countdown}</div>
+            <div style={{fontSize:24,fontWeight:900,color:T.goldD,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{countdown}</div>
             <div style={{fontSize:11,color:T.muted,marginTop:2,fontFamily:FONT_BODY}}>{fmtDT(sc.nextPickAt)}</div>
           </div>}
           {sc.lastPickAt&&<div style={{fontSize:11,color:T.muted,marginBottom:10,fontFamily:FONT_BODY}}>Last: {fmtDT(sc.lastPickAt)}</div>}
           <div style={{marginBottom:12}}>
-            <label style={{display:'block',fontSize:11,fontWeight:700,color:T.sub,letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:6,fontFamily:FONT_BODY}}>Pick Interval</label>
+            <label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:6,fontFamily:FONT_HEAD}}>Pick Interval</label>
             <div style={{display:'flex',gap:8}}>
-              <input type="number" min={1} value={sc.intervalValue} onChange={e=>setS('intervalValue',Math.max(1,parseInt(e.target.value)||1))} style={{width:70,background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'8px 10px',color:T.text,fontSize:13,fontFamily:FONT_BODY,outline:'none',fontWeight:700}}/>
-              <select value={sc.intervalUnit} onChange={e=>setS('intervalUnit',e.target.value)} style={{flex:1,background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'8px 10px',color:T.text,fontSize:13,fontFamily:FONT_BODY,outline:'none',fontWeight:700}}>
+              <input type="number" min={1} value={sc.intervalValue} onChange={e=>setS('intervalValue',Math.max(1,parseInt(e.target.value)||1))} style={{width:76,background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:44,padding:'8px 10px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',fontWeight:600}}/>
+              <select value={sc.intervalUnit} onChange={e=>setS('intervalUnit',e.target.value)} style={{flex:1,background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:44,padding:'8px 10px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',fontWeight:600}}>
                 <option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option><option value="weeks">Weeks</option>
               </select>
             </div>
@@ -1458,8 +1464,8 @@ function SettingsView({schedulerConfig,saveScheduler,emailConfig,saveEmailConfig
       <div>
         {/* Local Backup & Export/Import */}
         <Card style={{marginBottom:14}}>
-          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontSize:16,color:T.text,display:'flex',alignItems:'center',gap:8}}><HardDrive size={16} color={T.goldD}/>Data & Backup</h3>
-          <div style={{background:'#f0fdf4',border:'2px solid '+T.done,borderRadius:8,padding:'12px 14px',marginBottom:14}}>
+          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:16,color:T.text,display:'flex',alignItems:'center',gap:8}}><HardDrive size={16} color={T.goldD}/>Data & Backup</h3>
+          <div style={{background:'rgba(25,212,123,.1)',border:'1px solid '+T.done,borderRadius:8,padding:'12px 14px',marginBottom:14}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}><CheckCircle2 size={14} color={T.done}/><span style={{fontSize:12,fontWeight:800,color:T.done,fontFamily:FONT_BODY}}>AUTO-SAVE ACTIVE — Every change saved instantly</span></div>
             <p style={{margin:0,fontSize:11,color:T.sub,fontFamily:FONT_BODY,lineHeight:1.6}}>Rolling backups are written automatically to your AppData folder. Your data is never lost unless you uninstall the app.</p>
           </div>
@@ -1474,7 +1480,7 @@ function SettingsView({schedulerConfig,saveScheduler,emailConfig,saveEmailConfig
           </p>
           <div style={{borderTop:'1px solid '+T.border,paddingTop:12}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-              <h4 style={{margin:0,fontFamily:FONT_HEAD,fontSize:13,color:T.text,letterSpacing:'0.05em'}}>AUTO-BACKUPS ({backupFiles.length})</h4>
+              <h4 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:13,color:T.text,letterSpacing:'0.05em'}}>AUTO-BACKUPS ({backupFiles.length})</h4>
               <div style={{display:'flex',gap:6}}>
                 <Btn onClick={loadBackups} v="ghost" size="sm"><RefreshCw size={11}/>Refresh</Btn>
                 <Btn onClick={()=>window.electronAPI?.backup.openFolder()} v="ghost" size="sm"><FolderOpen size={11}/>Open Folder</Btn>
@@ -1491,7 +1497,7 @@ function SettingsView({schedulerConfig,saveScheduler,emailConfig,saveEmailConfig
         </Card>
         {/* Email Config */}
         <Card>
-          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontSize:16,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:8}}><Mail size={16} color={T.goldD}/>Email Notifications (EmailJS)</h3>
+          <h3 style={{margin:'0 0 14px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:16,color:T.text,letterSpacing:'0.05em',display:'flex',alignItems:'center',gap:8}}><Mail size={16} color={T.goldD}/>Email Notifications (EmailJS)</h3>
           <FieldInput label="Service ID" placeholder="service_xxxxxxx" value={em.serviceId} onChange={e=>setE('serviceId',e.target.value)}/>
           <FieldInput label="Template ID" placeholder="template_xxxxxxx" value={em.templateId} onChange={e=>setE('templateId',e.target.value)}/>
           <FieldInput label="Public Key" placeholder="xxxxxxxxxxxxxxxx" value={em.publicKey} onChange={e=>setE('publicKey',e.target.value)}/>
@@ -1512,10 +1518,10 @@ function ProfileView({user,companySettings,saveCompanySettings,notify}){
     <SectionTitle icon={UserCircle}>Profile</SectionTitle>
     <Card>
       <div style={{textAlign:'center',marginBottom:20}}>
-        <div style={{width:88,height:88,borderRadius:'50%',background:T.nav,border:'3px solid '+T.goldD,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px',fontSize:30}}>👤</div>
-        <div style={{fontSize:16,fontWeight:800,fontFamily:FONT_HEAD,color:T.text,letterSpacing:'0.05em'}}>{user.displayName||user.username||'Admin'}</div>
+        <div style={{width:88,height:88,borderRadius:'50%',background:T.nav,border:'2px solid '+T.goldL,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px',fontSize:30}}>👤</div>
+        <div style={{fontSize:16,fontWeight:800,fontFamily:FONT_HEAD,textTransform:'uppercase',color:T.text,letterSpacing:'0.05em'}}>{user.displayName||user.username||'Admin'}</div>
         <div style={{fontSize:13,color:T.muted,fontFamily:FONT_BODY}}>{user.email}</div>
-        <div style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:6,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:6,padding:'4px 10px'}}>
+        <div style={{marginTop:8,display:'inline-flex',alignItems:'center',gap:6,background:'rgba(25,212,123,.1)',border:'1px solid rgba(25,212,123,.45)',borderRadius:6,padding:'4px 10px'}}>
           <span style={{fontSize:11,color:T.done,fontFamily:FONT_BODY,fontWeight:700}}>✓ Signed in via Google (Preview)</span>
         </div>
       </div>
@@ -1534,38 +1540,38 @@ function HelpBubble({isMobile}){
     try{const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:'You are an experienced HR compliance specialist with deep expertise in workplace drug screening. You specialize in DOT regulations (49 CFR Part 40), SAMHSA guidelines, random selection protocols, SAP programs, MRO processes, chain of custody, and return-to-duty procedures. Be concise and professional.',messages:[...msgs,um]})});const d=await res.json();const txt=d.content?.map(c=>c.text||'').join('')||'Sorry, no response.';setMsgs(m=>[...m,{role:'assistant',content:txt}]);}catch{setMsgs(m=>[...m,{role:'assistant',content:'Connection error.'}]);}setLoading(false);};
   const panelW=isMobile?'calc(100vw - 32px)':340;
   return <>
-    {open&&<div style={{position:'fixed',bottom:isMobile?88:88,right:16,width:panelW,height:isMobile?360:460,background:'#fff',border:'2px solid '+T.goldD,borderRadius:12,display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.15)',zIndex:3000,overflow:'hidden'}}>
-      <div style={{padding:'12px 14px',background:T.nav,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <div><div style={{fontSize:13,fontWeight:800,color:T.gold,fontFamily:FONT_HEAD,letterSpacing:'0.05em'}}>HR COMPLIANCE ASSISTANT</div><div style={{fontSize:10,color:T.navMuted,fontFamily:FONT_BODY}}>Powered by Claude AI</div></div>
+    {open&&<div style={{position:'fixed',bottom:'calc(88px + var(--tabbar-h, 0px))',right:16,width:panelW,height:isMobile?360:460,background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,.5)',zIndex:3000,overflow:'hidden'}}>
+      <div style={{padding:'12px 14px',background:T.nav,borderBottom:'1px solid '+T.keyline,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div><div style={{fontSize:13,fontWeight:800,color:T.gold,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.05em'}}>HR COMPLIANCE ASSISTANT</div><div style={{fontSize:10,color:T.navMuted,fontFamily:FONT_BODY}}>Powered by Claude AI</div></div>
         <button onClick={()=>setOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:T.navMuted,display:'flex'}}><X size={16}/></button>
       </div>
-      <div style={{flex:1,overflow:'auto',padding:12,display:'flex',flexDirection:'column',gap:8,background:'#fafafa'}}>
+      <div style={{flex:1,overflow:'auto',padding:12,display:'flex',flexDirection:'column',gap:8,background:'rgba(2,8,17,.55)'}}>
         {msgs.length===0&&<div style={{textAlign:'center',padding:'16px 8px'}}><div style={{fontSize:24,marginBottom:8}}>⚖</div><div style={{fontSize:13,color:T.muted,lineHeight:1.6,fontFamily:FONT_BODY}}>Ask about DOT regulations, SAMHSA guidelines, or drug screening compliance.</div></div>}
         {msgs.map((m,i)=><div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
-          <div style={{maxWidth:'88%',padding:'8px 12px',borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',background:m.role==='user'?T.nav:'#fff',color:m.role==='user'?T.gold:T.text,fontSize:13,lineHeight:1.6,fontFamily:FONT_BODY,border:m.role==='user'?'none':'1px solid '+T.border,fontWeight:m.role==='user'?700:400}}>{m.content}</div>
+          <div style={{maxWidth:'88%',padding:'8px 12px',borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',background:m.role==='user'?'rgba(255,107,24,.14)':T.raised,color:m.role==='user'?T.goldL:T.text,fontSize:13,lineHeight:1.6,fontFamily:FONT_BODY,border:m.role==='user'?'1px solid '+T.keyline:'1px solid '+T.border,fontWeight:m.role==='user'?600:400}}>{m.content}</div>
         </div>)}
-        {loading&&<div style={{display:'flex'}}><div style={{padding:'8px 12px',borderRadius:'12px 12px 12px 2px',background:'#fff',border:'1px solid '+T.border,fontSize:13,color:T.muted,fontFamily:FONT_BODY}}>Thinking…</div></div>}
+        {loading&&<div style={{display:'flex'}}><div style={{padding:'8px 12px',borderRadius:'12px 12px 12px 2px',background:T.raised,border:'1px solid '+T.border,fontSize:13,color:T.muted,fontFamily:FONT_BODY}}>Thinking…</div></div>}
         <div ref={endRef}/>
       </div>
-      <div style={{padding:'8px 10px',borderTop:'1px solid '+T.border,display:'flex',gap:7,background:'#fff'}}>
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Ask a compliance question…" style={{flex:1,background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'8px 10px',color:T.text,fontSize:13,fontFamily:FONT_BODY,outline:'none',fontWeight:600}}/>
-        <button onClick={send} disabled={!input.trim()||loading} style={{background:input.trim()&&!loading?T.gold:'#fafafa',border:'2px solid '+(input.trim()&&!loading?T.goldD:T.border),borderRadius:6,width:36,height:36,cursor:input.trim()&&!loading?'pointer':'default',color:input.trim()&&!loading?'#000':T.muted,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Send size={14}/></button>
+      <div style={{padding:'8px 10px',borderTop:'1px solid '+T.keyline,display:'flex',gap:7,background:T.card}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Ask a compliance question…" style={{flex:1,background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:40,padding:'8px 10px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none',fontWeight:500}}/>
+        <button onClick={send} disabled={!input.trim()||loading} style={{background:input.trim()&&!loading?ACCENT_BG:T.input,border:'1px solid '+(input.trim()&&!loading?T.goldL:T.border),borderRadius:6,width:40,height:40,cursor:input.trim()&&!loading?'pointer':'default',color:input.trim()&&!loading?T.onGold:T.muted,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Send size={14}/></button>
       </div>
     </div>}
-    <button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:isMobile?72:24,right:16,width:52,height:52,borderRadius:'50%',background:T.nav,border:'3px solid '+T.gold,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(0,0,0,0.2)',zIndex:3001,transition:'transform 0.2s'}} onMouseEnter={e=>e.currentTarget.style.transform='scale(1.1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
-      {open?<X size={20} color={T.gold}/>:<HelpCircle size={20} color={T.gold}/>}
+    <button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:isMobile?'calc(72px + var(--tabbar-h, 0px))':24,right:16,width:52,height:52,borderRadius:'50%',background:T.nav,border:'2px solid '+T.goldL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 16px rgba(0,0,0,.5)',zIndex:3001,transition:'transform 0.2s'}} onMouseEnter={e=>e.currentTarget.style.transform='scale(1.1)'} onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+      {open?<X size={20} color={T.goldL}/>:<HelpCircle size={20} color={T.goldL}/>}
     </button>
   </>;
 }
 
 function Notif({n}){
   if(!n)return null;
-  const c={info:{bg:'#eff6ff',color:'#1d4ed8',b:'#bfdbfe'},error:{bg:'#fef2f2',color:'#dc2626',b:'#fecaca'},warning:{bg:'#fffbeb',color:'#92400e',b:'#fde68a'}}[n.type]||{bg:'#eff6ff',color:'#1d4ed8',b:'#bfdbfe'};
-  return <div style={{position:'fixed',top:16,right:16,left:16,zIndex:9999,background:c.bg,color:c.color,padding:'11px 16px',borderRadius:8,border:'2px solid '+c.b,boxShadow:'0 4px 16px rgba(0,0,0,0.1)',fontSize:13,lineHeight:1.5,animation:'slideIn 0.25s ease',fontFamily:FONT_BODY,fontWeight:700}}>{n.msg}</div>;
+  const c={info:{bg:T.raised,color:'#8dbcff',b:'rgba(44,125,255,.6)'},error:{bg:T.raised,color:'#ff8a94',b:'rgba(255,70,85,.6)'},warning:{bg:T.raised,color:T.prog,b:'rgba(244,212,87,.6)'}}[n.type]||{bg:T.raised,color:'#8dbcff',b:'rgba(44,125,255,.6)'};
+  return <div style={{position:'fixed',top:'calc(16px + var(--sat, 0px))',right:16,left:16,zIndex:9999,background:c.bg,color:c.color,padding:'11px 16px',borderRadius:8,border:'1px solid '+c.b,boxShadow:'0 8px 24px rgba(0,0,0,.5)',fontSize:13,lineHeight:1.5,animation:'slideIn 0.25s ease',fontFamily:FONT_BODY,fontWeight:700}}>{n.msg}</div>;
 }
 
 function FinePrint({onShowTC}){
-  return <div style={{padding:'6px 16px',borderTop:'1px solid '+T.border,background:'#fafafa',flexShrink:0}}>
+  return <div style={{padding:'6px 16px',borderTop:'1px solid '+T.keyline,background:'rgba(1,7,14,.72)',flexShrink:0}}>
     <p style={{margin:0,fontSize:9,color:T.muted,textAlign:'center',lineHeight:1.6,fontFamily:FONT_BODY}}>
       Screening Solutions · <strong style={{color:T.warn}}>BETA SOFTWARE</strong> · Not all features may be functional · Errors likely · Not a final product · Not for use as sole compliance mechanism · Not legal advice ·{' '}
       <span onClick={onShowTC} style={{color:T.goldD,cursor:'pointer',textDecoration:'underline',fontWeight:700}}>Terms &amp; Conditions</span>
@@ -1579,16 +1585,16 @@ function FinePrint({onShowTC}){
 function LocalSignInView({onSignIn,onSetup,users}){
   const[email,setEmail]=useState('');const[pass,setPass]=useState('');const[show,setShow]=useState(false);const[err,setErr]=useState('');
   const submit=()=>{const u=users.find(u=>u.email.toLowerCase()===email.toLowerCase()&&u.password===pass);if(!u){setErr('Invalid email or password.');return;}onSignIn(u);};
-  return <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,padding:16}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,color:T.text,padding:16}}>
     <div style={{width:'100%',maxWidth:420}}>
       <div style={{textAlign:'center',marginBottom:36}}>
-        <div style={{width:72,height:72,borderRadius:14,background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',border:'3px solid '+T.gold}}><span style={{fontSize:30}}>⚖</span></div>
-        <h1 style={{fontFamily:FONT_HEAD,fontSize:30,color:T.text,margin:'0 0 6px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
+        <div style={{width:72,height:72,borderRadius:14,background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',border:'2px solid '+T.goldL}}><span style={{fontSize:30}}>⚖</span></div>
+        <h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:30,color:T.text,margin:'0 0 6px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
         <p style={{color:T.muted,fontSize:14,margin:'0 0 8px',fontFamily:FONT_BODY}}>Drug Screening Management Platform</p>
-        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:4,padding:'3px 12px'}}><span style={{fontSize:10,fontWeight:700,color:T.done,letterSpacing:'0.08em'}}>💾 OFFLINE — DATA SAVED LOCALLY</span></div>
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(25,212,123,.1)',border:'1px solid rgba(25,212,123,.45)',borderRadius:4,padding:'3px 12px'}}><span style={{fontSize:10,fontWeight:700,color:T.done,letterSpacing:'0.08em'}}>💾 OFFLINE — DATA SAVED LOCALLY</span></div>
       </div>
       <Card style={{padding:32}}>
-        <h3 style={{margin:'0 0 18px',fontFamily:FONT_HEAD,fontSize:18,color:T.text,letterSpacing:'0.05em'}}>SIGN IN</h3>
+        <h3 style={{margin:'0 0 18px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,color:T.text,letterSpacing:'0.05em'}}>SIGN IN</h3>
         <FieldInput label="Email" type="email" placeholder="you@company.com" value={email} onChange={e=>setEmail(e.target.value)}/>
         <div style={{position:'relative'}}>
           <FieldInput label="Password" type={show?'text':'password'} placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}/>
@@ -1607,10 +1613,10 @@ function LocalSetupView({onSave,onBack,agreed,setAgreed,showTC,setShowTC,isMobil
   const[show,setShow]=useState(false);const[err,setErr]=useState('');
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=()=>{if(!form.email||!form.username||!form.password){setErr('All fields required.');return;}if(form.password!==form.confirm){setErr('Passwords do not match.');return;}if(!agreed){setErr('You must agree to the Terms & Conditions.');return;}onSave({...form,id:uid(),confirm:undefined});};
-  return <div style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,padding:16}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:FONT_BODY,color:T.text,padding:16}}>
     {showTC&&<TCModal onClose={()=>setShowTC(false)} isMobile={isMobile}/>}
     <div style={{width:'100%',maxWidth:460}}>
-      <div style={{textAlign:'center',marginBottom:20}}><h1 style={{fontFamily:FONT_HEAD,fontSize:24,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE PROFILE</h1><p style={{color:T.muted,fontSize:13,margin:0}}>Set up your local HR administrator account</p></div>
+      <div style={{textAlign:'center',marginBottom:20}}><h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:24,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE PROFILE</h1><p style={{color:T.muted,fontSize:13,margin:0}}>Set up your local HR administrator account</p></div>
       <Card style={{padding:24}}>
         <FieldInput label="Email" type="email" placeholder="you@company.com" value={form.email} onChange={e=>set('email',e.target.value)}/>
         <FieldInput label="Display Name" placeholder="Jane Smith" value={form.username} onChange={e=>set('username',e.target.value)}/>
@@ -1619,7 +1625,7 @@ function LocalSetupView({onSave,onBack,agreed,setAgreed,showTC,setShowTC,isMobil
           <button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:28,background:'none',border:'none',color:T.muted,cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button>
         </div>
         <FieldInput label="Confirm Password" type="password" placeholder="••••••••" value={form.confirm} onChange={e=>set('confirm',e.target.value)}/>
-        <div style={{background:'#fafafa',border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
+        <div style={{background:T.raised,border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:14}}>
           <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer'}}>
             <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{width:16,height:16,marginTop:2,accentColor:T.goldD,flexShrink:0}}/>
             <span style={{fontSize:12,color:T.sub,lineHeight:1.6,fontFamily:FONT_BODY}}>I agree to the Terms & Conditions governing use of Screening Solutions.</span>
@@ -1655,33 +1661,33 @@ function SplashScreen(){
     ];
     return()=>timers.forEach(clearTimeout);
   },[]);
-  return <div style={{position:'fixed',inset:0,background:'#f5f2ee',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',fontFamily:FONT_HEAD,userSelect:'none'}}>
+  return <div className="sunrise-admin" style={{position:'fixed',inset:0,background:'rgba(2,8,17,.55)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',fontFamily:FONT_HEAD,userSelect:'none'}}>
     {[...Array(18)].map((_,i)=>(
       <div key={i} style={{position:'absolute',width:2+Math.sin(i*137)*2+'px',height:2+Math.sin(i*137)*2+'px',borderRadius:'50%',background:T.gold,opacity:phase>=2?0.08+Math.abs(Math.sin(i*0.7))*0.12:0,left:(15+(i*53)%72)+'%',top:(10+(i*37)%80)+'%',transition:`opacity ${0.8+i*0.05}s ease ${i*0.06}s`,animation:phase>=3?`floatDot ${3+i*0.4}s ease-in-out ${i*0.2}s infinite alternate`:undefined}}/>
     ))}
-    <div style={{position:'absolute',width:500,height:500,borderRadius:'50%',border:'1px solid rgba(249,115,22,0.06)',opacity:phase>=1?1:0,transition:'opacity 1s',animation:phase>=3?'spinSlow 12s linear infinite':undefined}}/>
-    <div style={{position:'absolute',width:360,height:360,borderRadius:'50%',border:'1px solid rgba(249,115,22,0.1)',opacity:phase>=1?1:0,transition:'opacity 1s 0.3s',animation:phase>=3?'spinSlow 8s linear infinite reverse':undefined}}/>
-    <div style={{position:'absolute',width:420,height:420,borderRadius:'50%',background:'radial-gradient(circle, rgba(249,115,22,0.1) 0%, transparent 65%)',opacity:phase>=1?1:0,transition:'opacity 1s'}}/>
-    <div style={{width:120,height:120,borderRadius:24,background:'linear-gradient(145deg,#ffffff,#f0ede8)',border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:32,boxShadow:'0 0 60px rgba(249,115,22,0.25)',transform:phase>=0?'scale(1) rotate(0deg)':'scale(0.2) rotate(-15deg)',opacity:phase>=0?1:0,transition:'transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.5s',animation:phase>=5?'iconPulse 3s ease-in-out infinite':undefined}}>
-      <span style={{fontSize:58,lineHeight:1,filter:'drop-shadow(0 0 8px rgba(249,115,22,0.5))'}}>⚖</span>
+    <div style={{position:'absolute',width:500,height:500,borderRadius:'50%',border:'1px solid rgba(255,107,24,.1)',opacity:phase>=1?1:0,transition:'opacity 1s',animation:phase>=3?'spinSlow 12s linear infinite':undefined}}/>
+    <div style={{position:'absolute',width:360,height:360,borderRadius:'50%',border:'1px solid rgba(255,107,24,.16)',opacity:phase>=1?1:0,transition:'opacity 1s 0.3s',animation:phase>=3?'spinSlow 8s linear infinite reverse':undefined}}/>
+    <div style={{position:'absolute',width:420,height:420,borderRadius:'50%',background:'radial-gradient(circle, rgba(255,107,24,.16) 0%, transparent 65%)',opacity:phase>=1?1:0,transition:'opacity 1s'}}/>
+    <div style={{width:120,height:120,borderRadius:24,background:'linear-gradient(145deg,#0a1826,#07121e)',border:'1px solid '+T.borderL,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:32,boxShadow:'0 0 60px rgba(255,107,24,.25)',transform:phase>=0?'scale(1) rotate(0deg)':'scale(0.2) rotate(-15deg)',opacity:phase>=0?1:0,transition:'transform 0.7s cubic-bezier(0.34,1.56,0.64,1), opacity 0.5s',animation:phase>=5?'iconPulse 3s ease-in-out infinite':undefined}}>
+      <span style={{fontSize:58,lineHeight:1,filter:'drop-shadow(0 0 8px rgba(255,107,24,.5))'}}>⚖</span>
     </div>
     <div style={{overflow:'hidden',marginBottom:8,height:60}}>
-      <h1 style={{margin:0,fontFamily:FONT_HEAD,fontSize:46,letterSpacing:'0.14em',textTransform:'uppercase',whiteSpace:'nowrap',transform:phase>=1?'translateY(0)':'translateY(110%)',opacity:phase>=1?1:0,transition:'transform 0.65s cubic-bezier(0.22,1,0.36,1), opacity 0.5s'}}>
-        <span style={{color:'#1a1a2e'}}>Screening</span><span style={{color:T.gold,textShadow:'0 0 20px rgba(249,115,22,0.4)'}}> Solutions</span>
+      <h1 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,fontSize:46,letterSpacing:'0.14em',textTransform:'uppercase',whiteSpace:'nowrap',transform:phase>=1?'translateY(0)':'translateY(110%)',opacity:phase>=1?1:0,transition:'transform 0.65s cubic-bezier(0.22,1,0.36,1), opacity 0.5s'}}>
+        <span style={{color:T.text}}>Screening</span><span style={{color:T.gold,textShadow:'0 0 20px rgba(255,107,24,.4)'}}> Solutions</span>
       </h1>
     </div>
-    <p style={{margin:'0 0 8px',fontFamily:FONT_BODY,fontSize:13,letterSpacing:'0.26em',color:'rgba(26,26,46,0.4)',textTransform:'uppercase',opacity:phase>=2?1:0,transform:phase>=2?'translateY(0)':'translateY(10px)',transition:'opacity 0.7s, transform 0.7s'}}>Drug Screening Management Platform</p>
-    <div style={{width:300,height:2,background:'rgba(249,115,22,0.12)',borderRadius:1,overflow:'hidden',margin:'24px 0'}}>
+    <p style={{margin:'0 0 8px',fontFamily:FONT_BODY,fontSize:13,letterSpacing:'0.26em',color:T.sub,textTransform:'uppercase',opacity:phase>=2?1:0,transform:phase>=2?'translateY(0)':'translateY(10px)',transition:'opacity 0.7s, transform 0.7s'}}>Drug Screening Management Platform</p>
+    <div style={{width:300,height:2,background:'rgba(255,107,24,.16)',borderRadius:1,overflow:'hidden',margin:'24px 0'}}>
       <div style={{height:'100%',borderRadius:1,width:phase>=3?'100%':'0%',transition:'width 1.1s cubic-bezier(0.4,0,0.2,1)',background:'linear-gradient(90deg,transparent,'+T.gold+','+T.goldD+','+T.gold+',transparent)',backgroundSize:'300% 100%',animation:phase>=4?'shimmer 2s linear infinite':undefined}}/>
     </div>
-    <div style={{marginBottom:20,background:'rgba(249,115,22,0.08)',border:'1px solid rgba(249,115,22,0.2)',borderRadius:4,padding:'3px 14px',opacity:phase>=4?1:0,transition:'opacity 0.7s'}}>
-      <span style={{fontSize:9,letterSpacing:'0.2em',color:'rgba(249,115,22,0.7)',textTransform:'uppercase',fontFamily:FONT_BODY,fontWeight:700}}>Beta — Development Build</span>
+    <div style={{marginBottom:20,background:'rgba(255,107,24,.12)',border:'1px solid rgba(255,107,24,.35)',borderRadius:4,padding:'3px 14px',opacity:phase>=4?1:0,transition:'opacity 0.7s'}}>
+      <span style={{fontSize:9,letterSpacing:'0.2em',color:T.goldL,textTransform:'uppercase',fontFamily:FONT_BODY,fontWeight:700}}>Beta — Development Build</span>
     </div>
-    <p style={{margin:0,fontFamily:FONT_BODY,fontSize:12,letterSpacing:'0.2em',textTransform:'uppercase',color:'rgba(26,26,46,0.45)',opacity:phase>=4?1:0,transition:'opacity 0.8s 0.2s'}}>Made by Dustin Hanson</p>
+    <p style={{margin:0,fontFamily:FONT_BODY,fontSize:12,letterSpacing:'0.2em',textTransform:'uppercase',color:T.muted,opacity:phase>=4?1:0,transition:'opacity 0.8s 0.2s'}}>Made by Dustin Hanson</p>
     <style>{`
       @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
       @keyframes spinSlow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-      @keyframes iconPulse{0%,100%{box-shadow:0 0 60px rgba(249,115,22,0.25)}50%{box-shadow:0 0 90px rgba(249,115,22,0.45)}}
+      @keyframes iconPulse{0%,100%{box-shadow:0 0 60px rgba(255,107,24,.25)}50%{box-shadow:0 0 90px rgba(255,107,24,.45)}}
       @keyframes floatDot{from{transform:translateY(0px)}to{transform:translateY(-12px)}}
     `}</style>
   </div>;
@@ -1692,21 +1698,21 @@ function SplashScreen(){
 function LoginScreen({onLogin,onGoRegister}){
   const[email,setEmail]=useState('');const[pass,setPass]=useState('');const[show,setShow]=useState(false);const[err,setErr]=useState('');const[loading,setLoading]=useState(false);
   const submit=async()=>{if(!email||!pass){setErr('Email and password are required.');return;}setLoading(true);setErr('');try{const cred=await loginUser(email,pass);onLogin(cred.user);}catch(e){setErr(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found'?'Invalid email or password.':e.code==='auth/too-many-requests'?'Too many attempts. Try again later.':e.message||'Sign-in failed.');}setLoading(false);};
-  return <div style={{minHeight:'100vh',background:'#f5f2ee',display:'flex',alignItems:'center',justifyContent:'center',padding:20,fontFamily:FONT_BODY}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20,paddingBottom:'calc(20px + var(--tabbar-h, 0px))',fontFamily:FONT_BODY,color:T.text}}>
     <div style={{width:'100%',maxWidth:420}}>
       <div style={{textAlign:'center',marginBottom:36}}>
-        <div style={{width:80,height:80,borderRadius:18,background:'#ffffff',border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',boxShadow:'0 0 40px rgba(249,115,22,0.2)'}}><span style={{fontSize:40}}>⚖</span></div>
-        <h1 style={{fontFamily:FONT_HEAD,fontSize:30,color:'#1a1a2e',margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
-        <p style={{color:'rgba(26,26,46,0.4)',fontSize:12,margin:'0 0 8px',letterSpacing:'0.1em',textTransform:'uppercase'}}>Drug Screening Management Platform</p>
-        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(249,115,22,0.08)',border:'1px solid rgba(249,115,22,0.2)',borderRadius:4,padding:'3px 12px'}}><div style={{width:6,height:6,borderRadius:'50%',background:T.done}}/><span style={{fontSize:10,fontWeight:700,color:T.done,letterSpacing:'0.08em'}}>CLOUD-SYNCED — MULTI-PC</span></div>
+        <div style={{width:80,height:80,borderRadius:18,background:CARD_BG,border:'1px solid '+T.borderL,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',boxShadow:'0 0 40px rgba(255,107,24,.25)'}}><span style={{fontSize:40}}>⚖</span></div>
+        <h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:30,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
+        <p style={{color:T.sub,fontSize:12,margin:'0 0 8px',letterSpacing:'0.1em',textTransform:'uppercase'}}>Drug Screening Management Platform</p>
+        <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(25,212,123,.1)',border:'1px solid rgba(25,212,123,.45)',borderRadius:4,padding:'3px 12px'}}><div style={{width:6,height:6,borderRadius:'50%',background:T.done}}/><span style={{fontSize:10,fontWeight:700,color:T.done,letterSpacing:'0.08em'}}>CLOUD-SYNCED — MULTI-PC</span></div>
       </div>
-      <div style={{background:'#ffffff',border:'1px solid rgba(0,0,0,.08)',borderRadius:12,padding:28}}>
-        <h3 style={{margin:'0 0 20px',fontFamily:FONT_HEAD,fontSize:18,color:'#1a1a2e',letterSpacing:'0.05em'}}>SIGN IN</h3>
-        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'rgba(26,26,46,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Email</label><input type="email" placeholder="you@company.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.1)',borderRadius:8,padding:'10px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/></div>
-        <div style={{marginBottom:20,position:'relative'}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'rgba(26,26,46,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Password</label><input type={show?'text':'password'} placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.1)',borderRadius:8,padding:'10px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/><button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:32,background:'none',border:'none',color:'rgba(26,26,46,0.4)',cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button></div>
-        {err&&<div style={{background:'rgba(220,38,38,0.1)',border:'1px solid rgba(220,38,38,0.3)',borderRadius:6,padding:'8px 12px',marginBottom:14,fontSize:12,color:'#f87171',fontFamily:FONT_BODY,fontWeight:700}}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'12px',borderRadius:8,border:'2px solid '+T.gold,background:T.nav,color:T.gold,cursor:loading?'wait':'pointer',fontFamily:FONT_HEAD,fontSize:14,fontWeight:700,letterSpacing:'0.08em',marginBottom:12,opacity:loading?0.7:1}}>{loading?'SIGNING IN…':'SIGN IN'}</button>
-        <p style={{textAlign:'center',fontSize:12,color:'rgba(26,26,46,0.35)',fontFamily:FONT_BODY,margin:0}}>No account? <span onClick={onGoRegister} style={{color:T.gold,cursor:'pointer',fontWeight:700}}>Create one →</span></p>
+      <div style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,padding:28,boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)'}}>
+        <h3 style={{margin:'0 0 20px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,color:T.text,letterSpacing:'0.05em'}}>SIGN IN</h3>
+        <div style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Email</label><input type="email" placeholder="you@company.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/></div>
+        <div style={{marginBottom:20,position:'relative'}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Password</label><input type={show?'text':'password'} placeholder="••••••••" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/><button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:34,background:'none',border:'none',color:T.muted,cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button></div>
+        {err&&<div style={{background:'rgba(255,70,85,.14)',border:'1px solid rgba(255,70,85,.5)',borderRadius:6,padding:'8px 12px',marginBottom:14,fontSize:12,color:'#ff8a94',fontFamily:FONT_BODY,fontWeight:700}}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{width:'100%',minHeight:48,padding:'12px',borderRadius:6,border:'1px solid '+T.goldL,background:ACCENT_BG,color:T.onGold,cursor:loading?'wait':'pointer',fontFamily:FONT_HEAD,textTransform:'uppercase',fontSize:15,fontWeight:700,letterSpacing:'0.12em',marginBottom:12,opacity:loading?0.7:1}}>{loading?'SIGNING IN…':'SIGN IN'}</button>
+        <p style={{textAlign:'center',fontSize:12,color:T.muted,fontFamily:FONT_BODY,margin:0}}>No account? <span onClick={onGoRegister} style={{color:T.goldL,cursor:'pointer',fontWeight:700}}>Create one →</span></p>
       </div>
     </div>
   </div>;
@@ -1716,23 +1722,23 @@ function LoginScreen({onLogin,onGoRegister}){
 function RegisterScreen({onLogin,onGoLogin}){
   const[form,setForm]=useState({name:'',email:'',pass:'',confirm:''});const[show,setShow]=useState(false);const[err,setErr]=useState('');const[loading,setLoading]=useState(false);const[agreed,setAgreed]=useState(false);const[showTC,setShowTC]=useState(false);const isMobile=useIsMobile();const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async()=>{if(!form.name||!form.email||!form.pass){setErr('All fields are required.');return;}if(form.pass!==form.confirm){setErr('Passwords do not match.');return;}if(form.pass.length<6){setErr('Password must be at least 6 characters.');return;}if(!agreed){setErr('You must agree to the Terms & Conditions.');return;}setLoading(true);setErr('');try{const user=await registerUser(form.email,form.pass,form.name);onLogin(user);}catch(e){setErr(e.code==='auth/email-already-in-use'?'That email is already registered.':e.code==='auth/invalid-email'?'Invalid email address.':e.message||'Registration failed.');}setLoading(false);};
-  return <div style={{minHeight:'100vh',background:'#f5f2ee',display:'flex',alignItems:'center',justifyContent:'center',padding:20,fontFamily:FONT_BODY}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20,paddingBottom:'calc(20px + var(--tabbar-h, 0px))',fontFamily:FONT_BODY,color:T.text}}>
     {showTC&&<TCModal onClose={()=>setShowTC(false)} isMobile={isMobile}/>}
     <div style={{width:'100%',maxWidth:460}}>
-      <div style={{textAlign:'center',marginBottom:28}}><div style={{width:60,height:60,borderRadius:14,background:'#ffffff',border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:26}}>⚖</div><h1 style={{fontFamily:FONT_HEAD,fontSize:24,color:'#1a1a2e',margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE ACCOUNT</h1><p style={{color:'rgba(26,26,46,0.35)',fontSize:12,margin:0}}>Create profiles and share them with your team</p></div>
-      <div style={{background:'#ffffff',border:'1px solid rgba(0,0,0,.08)',borderRadius:12,padding:28}}>
+      <div style={{textAlign:'center',marginBottom:28}}><div style={{width:60,height:60,borderRadius:14,background:CARD_BG,border:'1px solid '+T.borderL,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:26}}>⚖</div><h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:24,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>CREATE ACCOUNT</h1><p style={{color:T.sub,fontSize:12,margin:0}}>Create profiles and share them with your team</p></div>
+      <div style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,padding:28,boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)'}}>
         {[['name','Display Name','Jane Smith','text'],['email','Email','you@company.com','email']].map(([k,label,ph,type])=>(
-          <div key={k} style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'rgba(26,26,46,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>{label}</label><input type={type} placeholder={ph} value={form[k]} onChange={e=>set(k,e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.1)',borderRadius:8,padding:'10px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/></div>
+          <div key={k} style={{marginBottom:14}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>{label}</label><input type={type} placeholder={ph} value={form[k]} onChange={e=>set(k,e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/></div>
         ))}
-        <div style={{marginBottom:14,position:'relative'}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'rgba(26,26,46,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Password</label><input type={show?'text':'password'} placeholder="Min 6 characters" value={form.pass} onChange={e=>set('pass',e.target.value)} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.1)',borderRadius:8,padding:'10px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/><button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:32,background:'none',border:'none',color:'rgba(26,26,46,0.4)',cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button></div>
-        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'rgba(26,26,46,0.5)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_BODY}}>Confirm Password</label><input type="password" placeholder="Re-enter password" value={form.confirm} onChange={e=>set('confirm',e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.1)',borderRadius:8,padding:'10px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/></div>
-        <div style={{background:'rgba(0,0,0,0.02)',border:'1px solid rgba(0,0,0,.08)',borderRadius:8,padding:'12px 14px',marginBottom:16}}>
-          <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer'}}><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{width:16,height:16,marginTop:2,accentColor:T.gold,flexShrink:0}}/><span style={{fontSize:12,color:'rgba(26,26,46,0.5)',lineHeight:1.6,fontFamily:FONT_BODY}}>I agree to the Terms & Conditions</span></label>
-          <p style={{margin:'6px 0 0 26px',fontSize:10,color:'rgba(26,26,46,0.3)',fontFamily:FONT_BODY}}><span onClick={()=>setShowTC(true)} style={{color:T.gold,cursor:'pointer',textDecoration:'underline',fontWeight:700}}>Read Terms & Conditions →</span></p>
+        <div style={{marginBottom:14,position:'relative'}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Password</label><input type={show?'text':'password'} placeholder="Min 6 characters" value={form.pass} onChange={e=>set('pass',e.target.value)} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/><button onClick={()=>setShow(s=>!s)} style={{position:'absolute',right:12,top:34,background:'none',border:'none',color:T.muted,cursor:'pointer'}}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button></div>
+        <div style={{marginBottom:18}}><label style={{display:'block',fontSize:11,fontWeight:600,color:T.goldL,letterSpacing:'0.16em',textTransform:'uppercase',marginBottom:5,fontFamily:FONT_HEAD}}>Confirm Password</label><input type="password" placeholder="Re-enter password" value={form.confirm} onChange={e=>set('confirm',e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'12px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/></div>
+        <div style={{background:T.input,border:'1px solid '+T.border,borderRadius:6,padding:'12px 14px',marginBottom:16}}>
+          <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer'}}><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{width:16,height:16,marginTop:2,accentColor:T.gold,flexShrink:0}}/><span style={{fontSize:12,color:T.sub,lineHeight:1.6,fontFamily:FONT_BODY}}>I agree to the Terms & Conditions</span></label>
+          <p style={{margin:'6px 0 0 26px',fontSize:10,color:T.muted,fontFamily:FONT_BODY}}><span onClick={()=>setShowTC(true)} style={{color:T.goldL,cursor:'pointer',textDecoration:'underline',fontWeight:700}}>Read Terms & Conditions →</span></p>
         </div>
-        {err&&<div style={{background:'rgba(220,38,38,0.1)',border:'1px solid rgba(220,38,38,0.3)',borderRadius:6,padding:'8px 12px',marginBottom:14,fontSize:12,color:'#f87171',fontFamily:FONT_BODY,fontWeight:700}}>{err}</div>}
-        <button onClick={submit} disabled={loading} style={{width:'100%',padding:'12px',borderRadius:8,border:'2px solid '+T.gold,background:T.nav,color:T.gold,cursor:loading?'wait':'pointer',fontFamily:FONT_HEAD,fontSize:14,fontWeight:700,letterSpacing:'0.08em',marginBottom:12,opacity:loading?0.7:1}}>{loading?'CREATING ACCOUNT…':'CREATE ACCOUNT'}</button>
-        <p style={{textAlign:'center',fontSize:12,color:'rgba(26,26,46,0.35)',fontFamily:FONT_BODY,margin:0}}>Already have an account? <span onClick={onGoLogin} style={{color:T.gold,cursor:'pointer',fontWeight:700}}>Sign in →</span></p>
+        {err&&<div style={{background:'rgba(255,70,85,.14)',border:'1px solid rgba(255,70,85,.5)',borderRadius:6,padding:'8px 12px',marginBottom:14,fontSize:12,color:'#ff8a94',fontFamily:FONT_BODY,fontWeight:700}}>{err}</div>}
+        <button onClick={submit} disabled={loading} style={{width:'100%',minHeight:48,padding:'12px',borderRadius:6,border:'1px solid '+T.goldL,background:ACCENT_BG,color:T.onGold,cursor:loading?'wait':'pointer',fontFamily:FONT_HEAD,textTransform:'uppercase',fontSize:15,fontWeight:700,letterSpacing:'0.12em',marginBottom:12,opacity:loading?0.7:1}}>{loading?'CREATING ACCOUNT…':'CREATE ACCOUNT'}</button>
+        <p style={{textAlign:'center',fontSize:12,color:T.muted,fontFamily:FONT_BODY,margin:0}}>Already have an account? <span onClick={onGoLogin} style={{color:T.goldL,cursor:'pointer',fontWeight:700}}>Sign in →</span></p>
       </div>
     </div>
   </div>;
@@ -1763,21 +1769,21 @@ function InviteModal({profile,currentUser,onClose,isMobile}){
   };
   return <Modal title={'SHARE: '+profile.name} onClose={onClose} isMobile={isMobile} width={520}>
     <div style={{marginBottom:18}}>
-      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:14,color:T.text,letterSpacing:'0.05em'}}>INVITE BY EMAIL</h4>
+      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:14,color:T.text,letterSpacing:'0.05em'}}>INVITE BY EMAIL</h4>
       <p style={{fontSize:12,color:T.muted,marginBottom:12,fontFamily:FONT_BODY,lineHeight:1.6}}>The invited person will see the invite when they log in. They must already have a Screening Solutions account, or create one first.</p>
       <div style={{display:'flex',gap:8}}>
-        <input value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="colleague@company.com" style={{flex:1,background:'#fafafa',border:'2px solid '+T.border,borderRadius:6,padding:'10px 12px',color:T.text,fontSize:14,fontFamily:FONT_BODY,outline:'none'}}/>
+        <input value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="colleague@company.com" style={{flex:1,background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'10px 12px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none'}}/>
         <Btn onClick={send} v="dark" disabled={loading}>{loading?<RefreshCw size={13} style={{animation:'spin 0.8s linear infinite'}}/>:<Send size={13}/>} Send Invite</Btn>
       </div>
       {err&&<p style={{color:T.warn,fontSize:12,fontWeight:700,margin:'8px 0 0',fontFamily:FONT_BODY}}>{err}</p>}
       {success&&<p style={{color:T.done,fontSize:12,fontWeight:700,margin:'8px 0 0',fontFamily:FONT_BODY}}>{success}</p>}
     </div>
-    <div style={{borderTop:'2px solid '+T.gold,paddingTop:16}}>
-      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontSize:14,color:T.text,letterSpacing:'0.05em'}}>CURRENT MEMBERS ({members.length})</h4>
+    <div style={{borderTop:'2px solid '+T.goldL,paddingTop:16}}>
+      <h4 style={{margin:'0 0 10px',fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:14,color:T.text,letterSpacing:'0.05em'}}>CURRENT MEMBERS ({members.length})</h4>
       {members.map(m=><div key={m.uid} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid '+T.border}}>
-        <div style={{width:34,height:34,borderRadius:'50%',background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:T.gold,fontWeight:800,fontFamily:FONT_HEAD,flexShrink:0}}>{(m.displayName||m.email)[0].toUpperCase()}</div>
+        <div style={{width:34,height:34,borderRadius:'50%',background:T.nav,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:T.gold,fontWeight:800,fontFamily:FONT_HEAD,textTransform:'uppercase',flexShrink:0}}>{(m.displayName||m.email)[0].toUpperCase()}</div>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:T.text,fontFamily:FONT_BODY,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.displayName||m.email}</div><div style={{fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{m.email} · {m.role}</div></div>
-        {m.role==='owner'?<span style={{fontSize:10,background:'#fffbeb',color:T.goldD,border:'1px solid '+T.gold,borderRadius:4,padding:'2px 8px',fontFamily:FONT_BODY,fontWeight:800}}>OWNER</span>:m.uid!==currentUser.uid&&profile.members?.find(x=>x.uid===currentUser.uid)?.role==='owner'?<Btn onClick={()=>remove(m)} v="danger" size="sm">Remove</Btn>:<span style={{fontSize:10,color:T.muted,fontFamily:FONT_BODY}}>Member</span>}
+        {m.role==='owner'?<span style={{fontSize:10,background:'rgba(255,107,24,.12)',color:T.goldL,border:'1px solid '+T.keyline,borderRadius:4,padding:'2px 8px',fontFamily:FONT_HEAD,textTransform:'uppercase',fontWeight:700,letterSpacing:'0.08em'}}>OWNER</span>:m.uid!==currentUser.uid&&profile.members?.find(x=>x.uid===currentUser.uid)?.role==='owner'?<Btn onClick={()=>remove(m)} v="danger" size="sm">Remove</Btn>:<span style={{fontSize:10,color:T.muted,fontFamily:FONT_BODY}}>Member</span>}
       </div>)}
     </div>
   </Modal>;
@@ -1826,12 +1832,12 @@ function ProfilePicker({firebaseUser,onSelect,onLogout}){
   const initials=name=>name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
   const isOwner=p=>p.ownerId===firebaseUser.uid;
 
-  return <div style={{minHeight:'100vh',background:'#f5f2ee',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,fontFamily:FONT_BODY}}>
-    {confirmDel&&<div onClick={()=>setConfirmDel(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:'#ffffff',border:'2px solid '+T.warn,borderRadius:12,padding:28,maxWidth:380,width:'100%',textAlign:'center'}}>
+  return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,paddingBottom:'calc(24px + var(--tabbar-h, 0px))',fontFamily:FONT_BODY,color:T.text}}>
+    {confirmDel&&<div onClick={()=>setConfirmDel(null)} style={{position:'fixed',inset:0,background:'rgba(1,5,11,.72)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD_BG,border:'1px solid '+T.warn,borderRadius:12,padding:28,maxWidth:380,width:'100%',textAlign:'center',boxShadow:'0 18px 45px rgba(0,0,0,.45)'}}>
         <AlertTriangle size={32} color={T.warn} style={{marginBottom:12}}/>
-        <h3 style={{color:'#1a1a2e',fontFamily:FONT_HEAD,fontSize:18,margin:'0 0 8px'}}>DELETE PROFILE?</h3>
-        <p style={{color:'rgba(26,26,46,0.55)',fontSize:13,lineHeight:1.6,margin:'0 0 20px',fontFamily:FONT_BODY}}>This permanently deletes <strong style={{color:T.gold}}>"{confirmDel.name}"</strong> and all its data. Cannot be undone.</p>
+        <h3 style={{color:T.text,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:18,margin:'0 0 8px'}}>DELETE PROFILE?</h3>
+        <p style={{color:T.sub,fontSize:13,lineHeight:1.6,margin:'0 0 20px',fontFamily:FONT_BODY}}>This permanently deletes <strong style={{color:T.gold}}>"{confirmDel.name}"</strong> and all its data. Cannot be undone.</p>
         <div style={{display:'flex',gap:10,justifyContent:'center'}}>
           <Btn onClick={()=>delProfile(confirmDel)} v="danger">Delete</Btn>
           <Btn onClick={()=>setConfirmDel(null)} v="secondary">Cancel</Btn>
@@ -1843,35 +1849,35 @@ function ProfilePicker({firebaseUser,onSelect,onLogout}){
 
     <div style={{width:'100%',maxWidth:580}}>
       <div style={{textAlign:'center',marginBottom:32}}>
-        <div style={{width:72,height:72,borderRadius:16,background:'#ffffff',border:'2px solid '+T.gold,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',boxShadow:'0 0 40px rgba(249,115,22,0.2)'}}><span style={{fontSize:36}}>⚖</span></div>
-        <h1 style={{fontFamily:FONT_HEAD,fontSize:28,color:'#1a1a2e',margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
-        <p style={{color:'rgba(26,26,46,0.4)',fontSize:12,margin:'0 0 6px',letterSpacing:'0.08em',textTransform:'uppercase'}}>Welcome, {firebaseUser.displayName||firebaseUser.email}</p>
-        <p style={{color:'rgba(26,26,46,0.25)',fontSize:11,margin:0,fontFamily:FONT_BODY}}>Select a profile or create a new one</p>
+        <div style={{width:72,height:72,borderRadius:16,background:CARD_BG,border:'1px solid '+T.borderL,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 14px',boxShadow:'0 0 40px rgba(255,107,24,.25)'}}><span style={{fontSize:36}}>⚖</span></div>
+        <h1 style={{fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:28,color:T.text,margin:'0 0 4px',letterSpacing:'0.08em'}}>SCREENING SOLUTIONS</h1>
+        <p style={{color:T.sub,fontSize:12,margin:'0 0 6px',letterSpacing:'0.08em',textTransform:'uppercase'}}>Welcome, {firebaseUser.displayName||firebaseUser.email}</p>
+        <p style={{color:T.muted,fontSize:11,margin:0,fontFamily:FONT_BODY}}>Select a profile or create a new one</p>
       </div>
 
       {/* Pending invites */}
       {invites.length>0&&<div style={{marginBottom:20}}>
-        <h3 style={{color:T.gold,fontFamily:FONT_HEAD,fontSize:13,letterSpacing:'0.1em',margin:'0 0 10px',textTransform:'uppercase'}}>⏳ Pending Invites ({invites.length})</h3>
-        {invites.map(inv=><div key={inv.id} style={{background:'rgba(249,115,22,0.06)',border:'2px solid rgba(249,115,22,0.25)',borderRadius:10,padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
-          <div style={{width:38,height:38,borderRadius:10,background:inv.profileColor||T.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:900,color:'#000',fontFamily:FONT_HEAD,flexShrink:0}}>{initials(inv.profileName)}</div>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:'#1a1a2e',fontFamily:FONT_BODY}}>{inv.profileName}</div><div style={{fontSize:11,color:'rgba(26,26,46,0.4)',fontFamily:FONT_BODY}}>Invited by {inv.invitedByName}</div></div>
+        <h3 style={{color:T.gold,fontFamily:FONT_HEAD,fontWeight:700,fontSize:13,letterSpacing:'0.1em',margin:'0 0 10px',textTransform:'uppercase'}}>⏳ Pending Invites ({invites.length})</h3>
+        {invites.map(inv=><div key={inv.id} style={{background:'rgba(255,107,24,.1)',border:'1px solid rgba(255,107,24,.4)',borderRadius:12,padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:38,height:38,borderRadius:10,background:inv.profileColor||T.gold,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:900,color:T.onGold,fontFamily:FONT_HEAD,textTransform:'uppercase',flexShrink:0}}>{initials(inv.profileName)}</div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_BODY}}>{inv.profileName}</div><div style={{fontSize:11,color:T.sub,fontFamily:FONT_BODY}}>Invited by {inv.invitedByName}</div></div>
           <div style={{display:'flex',gap:6}}><Btn onClick={()=>acceptInv(inv)} v="success" size="sm"><CheckCircle2 size={12}/>Accept</Btn><Btn onClick={()=>declineInv(inv)} v="danger" size="sm">Decline</Btn></div>
         </div>)}
       </div>}
 
       {/* Profiles */}
-      {loading?<div style={{textAlign:'center',color:'rgba(26,26,46,0.3)',padding:'32px 0',fontSize:13,fontFamily:FONT_BODY}}>Loading profiles…</div>:
+      {loading?<div style={{textAlign:'center',color:T.muted,padding:'32px 0',fontSize:13,fontFamily:FONT_BODY}}>Loading profiles…</div>:
         <div>
-          {profiles.length===0&&!adding&&<div style={{textAlign:'center',padding:'32px 0',color:'rgba(26,26,46,0.3)',fontSize:13,fontFamily:FONT_BODY,lineHeight:1.8}}>No profiles yet.<br/>Create your first profile below.</div>}
+          {profiles.length===0&&!adding&&<div style={{textAlign:'center',padding:'32px 0',color:T.muted,fontSize:13,fontFamily:FONT_BODY,lineHeight:1.8}}>No profiles yet.<br/>Create your first profile below.</div>}
           <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:14}}>
-            {profiles.map(p=><div key={p.id} style={{position:'relative',borderRadius:12,border:'2px solid rgba(0,0,0,.07)',background:'#ffffff',transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=p.color;e.currentTarget.style.background='#f9f7f5';}} onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(0,0,0,.07)';e.currentTarget.style.background='#ffffff';}}>
+            {profiles.map(p=><div key={p.id} style={{position:'relative',borderRadius:12,border:'1px solid '+T.borderL,background:CARD_BG,boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)',transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=p.color;e.currentTarget.style.background=T.raised;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.borderL;e.currentTarget.style.background=CARD_BG;}}>
               <div onClick={()=>onSelect(p)} style={{padding:'16px 14px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
-                <div style={{width:46,height:46,borderRadius:11,background:p.color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:900,color:'#000',fontFamily:FONT_HEAD}}>{initials(p.name)}</div>
+                <div style={{width:46,height:46,borderRadius:11,background:p.color,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:900,color:T.onGold,fontFamily:FONT_HEAD,textTransform:'uppercase'}}>{initials(p.name)}</div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:14,fontWeight:800,color:'#1a1a2e',fontFamily:FONT_HEAD,letterSpacing:'0.04em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
-                  <div style={{fontSize:10,color:'rgba(26,26,46,0.35)',fontFamily:FONT_BODY,marginTop:2,letterSpacing:'0.06em',textTransform:'uppercase'}}>{p.members?.length||1} member{(p.members?.length||1)>1?'s':''} · {isOwner(p)?'Owner':'Member'}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:T.text,fontFamily:FONT_HEAD,textTransform:'uppercase',letterSpacing:'0.04em',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+                  <div style={{fontSize:10,color:T.muted,fontFamily:FONT_BODY,marginTop:2,letterSpacing:'0.06em',textTransform:'uppercase'}}>{p.members?.length||1} member{(p.members?.length||1)>1?'s':''} · {isOwner(p)?'Owner':'Member'}</div>
                 </div>
-                <ChevronRight size={15} color="rgba(26,26,46,0.2)"/>
+                <ChevronRight size={15} color={T.muted}/>
               </div>
               {/* Action buttons */}
               <div style={{padding:'0 14px 12px',display:'flex',gap:6}}>
@@ -1881,9 +1887,9 @@ function ProfilePicker({firebaseUser,onSelect,onLogout}){
             </div>)}
           </div>
           {adding?(
-            <div style={{background:'#ffffff',border:'2px solid '+T.gold,borderRadius:12,padding:18}}>
-              <h4 style={{color:T.gold,fontFamily:FONT_HEAD,fontSize:13,margin:'0 0 12px',letterSpacing:'0.08em'}}>NEW PROFILE</h4>
-              <input autoFocus placeholder="Profile name (e.g. Main Site, Warehouse, HR)" value={newName} onChange={e=>{setNewName(e.target.value);setErr('');}} onKeyDown={e=>e.key==='Enter'&&addProfile()} style={{width:'100%',boxSizing:'border-box',background:'#f9f7f5',border:'2px solid rgba(0,0,0,.12)',borderRadius:8,padding:'11px 14px',color:'#1a1a2e',fontSize:14,fontFamily:FONT_BODY,outline:'none',marginBottom:err?8:12}}/>
+            <div style={{background:CARD_BG,border:'1px solid '+T.borderL,borderRadius:12,padding:18,boxShadow:'0 18px 45px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.025)'}}>
+              <h4 style={{color:T.gold,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:13,margin:'0 0 12px',letterSpacing:'0.08em'}}>NEW PROFILE</h4>
+              <input autoFocus placeholder="Profile name (e.g. Main Site, Warehouse, HR)" value={newName} onChange={e=>{setNewName(e.target.value);setErr('');}} onKeyDown={e=>e.key==='Enter'&&addProfile()} style={{width:'100%',boxSizing:'border-box',background:T.input,border:'1px solid '+T.borderL,borderRadius:6,minHeight:48,padding:'11px 14px',color:T.text,fontSize:15,fontFamily:FONT_BODY,outline:'none',marginBottom:err?8:12}}/>
               {err&&<p style={{color:T.warn,fontSize:12,margin:'0 0 10px',fontFamily:FONT_BODY,fontWeight:700}}>{err}</p>}
               <div style={{display:'flex',gap:8}}><Btn onClick={addProfile} v="dark" style={{flex:1}}><Plus size={14}/>Create Profile</Btn><Btn onClick={()=>{setAdding(false);setNewName('');setErr('');}} v="ghost">Cancel</Btn></div>
             </div>
@@ -1891,8 +1897,8 @@ function ProfilePicker({firebaseUser,onSelect,onLogout}){
             <Btn onClick={()=>setAdding(true)} v="dark" full size="lg"><Plus size={16}/>Create New Profile</Btn>
           )}
         </div>}
-      <p style={{textAlign:'center',marginTop:20,fontSize:10,color:'rgba(26,26,46,0.15)',letterSpacing:'0.1em',textTransform:'uppercase',fontFamily:FONT_BODY}}>Each profile has independent data · Invite teammates via the Share button</p>
-      <div style={{textAlign:'center',marginTop:14}}><span onClick={onLogout} style={{fontSize:11,color:'rgba(26,26,46,0.25)',cursor:'pointer',fontFamily:FONT_BODY,letterSpacing:'0.08em'}}>Sign out ({firebaseUser.email})</span></div>
+      <p style={{textAlign:'center',marginTop:20,fontSize:10,color:T.muted,letterSpacing:'0.1em',textTransform:'uppercase',fontFamily:FONT_BODY}}>Each profile has independent data · Invite teammates via the Share button</p>
+      <div style={{textAlign:'center',marginTop:14}}><span onClick={onLogout} style={{fontSize:11,color:T.muted,cursor:'pointer',fontFamily:FONT_BODY,letterSpacing:'0.08em'}}>Sign out ({firebaseUser.email})</span></div>
     </div>
   </div>;
 }
@@ -2111,12 +2117,12 @@ export default function ScreeningSolutionsApp({portalUser,onExit}={}){
   if(authPhase==='login')    return <LoginScreen onLogin={handleLogin} onGoRegister={()=>setAuthPhase('register')}/>;
   if(authPhase==='register') return <RegisterScreen onLogin={handleLogin} onGoLogin={()=>setAuthPhase('login')}/>;
   if(authPhase==='picker')   return <ProfilePicker firebaseUser={firebaseUser} onSelect={handleSelectProfile} onLogout={handleLogout}/>;
-  if(!dataReady) return <div style={{minHeight:'100vh',background:'#f5f2ee',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:FONT_HEAD,color:T.gold,gap:16}}><RefreshCw size={32} style={{animation:'spin 1s linear infinite'}}/><div style={{fontSize:16,letterSpacing:'0.1em'}}>SYNCING DATA…</div></div>;
+  if(!dataReady) return <div className="sunrise-admin" style={{minHeight:'100vh',background:T.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:FONT_HEAD,fontWeight:700,color:T.goldL,gap:16}}><RefreshCw size={32} style={{animation:'spin 1s linear infinite'}}/><div style={{fontSize:16,letterSpacing:'0.1em'}}>SYNCING DATA…</div></div>;
 
   const user={id:firebaseUser.uid,username:firebaseUser.displayName||firebaseUser.email,displayName:firebaseUser.displayName||firebaseUser.email,email:firebaseUser.email,photoURL:firebaseUser.photoURL};
   const vp={employees,screenings,saveEmployees,saveScreenings,notify,emailConfig,schedulerConfig,saveScheduler,saveEmailConfig,companySettings,saveCompanySettings,setView,tick,handleExportProfile,handleExportProfileExcel,handleImportProfile,activeProfile};
 
-  return <div style={{display:'flex',flexDirection:'column',height:'100vh',background:T.bg,fontFamily:FONT_BODY,color:T.text,overflow:'hidden'}}>
+  return <div className="sunrise-admin" style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0,background:T.bg,fontFamily:FONT_BODY,color:T.text,overflow:'hidden'}}>
     <Notif n={notif}/>
     {showDisclaimer&&<DisclaimerModal onAccept={acceptDisclaimer}/>}
     {showTC&&<TCModal onClose={()=>setShowTC(false)} isMobile={isMobile}/>}
@@ -2126,20 +2132,20 @@ export default function ScreeningSolutionsApp({portalUser,onExit}={}){
       {!isMobile&&<Sidebar view={view} setView={setView} user={user} onLogout={handleSwitchProfile} onExit={onExit} schedulerOn={schedulerConfig.enabled} companyLogo={companySettings.logo} companyName={activeProfile?.name||companySettings.name}/>}
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {isMobile&&<MobileTopBar view={view} user={user} onMenu={()=>setShowDrawer(true)} schedulerOn={schedulerConfig.enabled} companyLogo={companySettings.logo}/>}
-        {!isMobile&&<div style={{padding:'12px 24px',borderBottom:'2px solid '+T.border,background:'#fff',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+        {!isMobile&&<div style={{padding:'12px 24px',borderBottom:'1px solid '+T.keyline,background:'rgba(1,7,14,.72)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             {activeProfile&&<div style={{width:10,height:10,borderRadius:'50%',background:activeProfile.color,flexShrink:0}}/>}
-            <div><h2 style={{margin:0,fontFamily:FONT_HEAD,fontSize:20,color:T.text,letterSpacing:'0.05em'}}>{NAV.find(n=>n.v===view)?.label?.toUpperCase()||'DASHBOARD'}</h2><p style={{margin:'1px 0 0',fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{activeProfile?.name} · {firebaseUser.displayName||firebaseUser.email} · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p></div>
+            <div><h2 style={{margin:0,fontFamily:FONT_HEAD,fontWeight:700,textTransform:'uppercase',fontSize:20,color:T.text,letterSpacing:'0.05em'}}>{NAV.find(n=>n.v===view)?.label?.toUpperCase()||'DASHBOARD'}</h2><p style={{margin:'1px 0 0',fontSize:11,color:T.muted,fontFamily:FONT_BODY}}>{activeProfile?.name} · {firebaseUser.displayName||firebaseUser.email} · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p></div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <Btn onClick={handleExportProfile} v="secondary" size="sm"><Download size={12}/>Export JSON</Btn>
             <Btn onClick={handleExportProfileExcel} v="secondary" size="sm"><FileDown size={12}/>Export Excel</Btn>
-            {schedulerConfig.enabled&&<div style={{display:'flex',alignItems:'center',gap:6,background:'#fffbeb',border:'2px solid '+T.gold,borderRadius:4,padding:'4px 10px'}}><div style={{width:6,height:6,borderRadius:'50%',background:T.goldD,animation:'pulse 2s infinite'}}/><span style={{fontSize:10,color:T.goldD,fontWeight:800,letterSpacing:'0.08em'}}>SCHEDULER ON</span></div>}
-            <div style={{display:'flex',alignItems:'center',gap:4,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:4,padding:'4px 8px'}}><div style={{width:5,height:5,borderRadius:'50%',background:T.done}}/><span style={{fontSize:9,color:T.done,fontWeight:800,fontFamily:FONT_BODY,letterSpacing:'0.06em'}}>CLOUD SYNC</span></div>
+            {schedulerConfig.enabled&&<div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,107,24,.1)',border:'1px solid '+T.keyline,borderRadius:4,padding:'4px 10px'}}><div style={{width:6,height:6,borderRadius:'50%',background:T.goldD,animation:'pulse 2s infinite'}}/><span style={{fontSize:10,color:T.goldD,fontWeight:800,letterSpacing:'0.08em'}}>SCHEDULER ON</span></div>}
+            <div style={{display:'flex',alignItems:'center',gap:4,background:'rgba(25,212,123,.1)',border:'1px solid rgba(25,212,123,.45)',borderRadius:4,padding:'4px 8px'}}><div style={{width:5,height:5,borderRadius:'50%',background:T.done}}/><span style={{fontSize:9,color:T.done,fontWeight:800,fontFamily:FONT_BODY,letterSpacing:'0.06em'}}>CLOUD SYNC</span></div>
             <Btn onClick={handleSwitchProfile} v="ghost" size="sm"><Users size={12}/>Profiles</Btn>
           </div>
         </div>}
-        <div style={{flex:1,overflow:'auto',padding:isMobile?'14px 12px 80px':'20px 24px'}}>
+        <div style={{flex:1,overflow:'auto',padding:isMobile?'14px 12px':'20px 24px',paddingBottom:isMobile?'calc(80px + var(--tabbar-h, 0px))':'calc(24px + var(--tabbar-h, 0px))'}}>
           {view==='dashboard'&&<DashboardView {...vp}/>}
           {view==='employees'&&<EmployeesView {...vp}/>}
           {view==='picker'&&<PickerView {...vp}/>}
@@ -2162,9 +2168,11 @@ export default function ScreeningSolutionsApp({portalUser,onExit}={}){
       @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
       *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
       ::-webkit-scrollbar{width:5px;height:5px}
-      ::-webkit-scrollbar-track{background:#f0f0ec}
-      ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
-      select option{background:#fff;color:#111}
+      ::-webkit-scrollbar-track{background:rgba(2,8,17,.6)}
+      ::-webkit-scrollbar-thumb{background:#2b3949;border-radius:3px}
+      select option{background:#0a1826;color:#f6f3ec}
+      .sunrise-admin input::placeholder,.sunrise-admin textarea::placeholder{color:#717d8d}
+      .sunrise-admin input:focus,.sunrise-admin select:focus,.sunrise-admin textarea:focus{border-color:#ff7a21;box-shadow:0 0 0 3px rgba(255,107,24,.18)}
     `}</style>
   </div>;
 }

@@ -21,7 +21,7 @@ export default function LockScreen({ userName, onUnlocked, onUsePassword, paused
   useEffect(() => { if (!paused && !once.current) { once.current = true; attempt() } }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'radial-gradient(120% 80% at 50% 0%, #131a2e 0%, #0a0a14 55%, #06060f 100%)', color: '#F5F0EB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'radial-gradient(120% 80% at 50% 0%, rgba(19,26,46,.55) 0%, rgba(2,8,17,.45) 55%, rgba(2,8,17,.35) 100%)', color: '#f6f3ec', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
       <img src="/logo.webp" alt="" style={{ width: 84, height: 84, objectFit: 'contain', marginBottom: 18, filter: 'drop-shadow(0 0 22px rgba(249,115,22,.35))' }} />
       <div style={{ ...BB, fontSize: 30, letterSpacing: 3 }}>SUNRISE PORTAL</div>
       <div style={{ ...NB, fontSize: 15, color: '#9a958d', marginTop: 6 }}>{userName ? 'Signed in as ' + userName : 'Locked'}</div>

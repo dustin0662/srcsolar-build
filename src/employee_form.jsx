@@ -1,22 +1,35 @@
 import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
 
-/* ── design tokens (match the main site) ───────────────────────────── */
-const A = '#F97316';           // brand orange
-const BG = '#f5f2ee';          // warm off-white page bg
-const CARD = '#ffffff';
-const TEXT = '#1a1a2e';
-const MID = '#666';
-const DIM = '#999';
-const BORDER = 'rgba(0,0,0,.1)';
-const BB = { fontFamily: "'Bebas Neue',sans-serif" };
+/* ── design tokens — SUNRISE dark skin (see src/admin-skin.css) ─────── */
+const A = '#ff6b18';           // brand orange (accent)
+const HOT = '#ff7a21';         // accent hot
+const BG = 'rgba(2,8,17,.35)'; // translucent tint — the shared AmbientBackground canvas shows through
+const NAV_TOP = (typeof window !== 'undefined' && window.innerWidth < 768) ? 'calc(64px + var(--sat, 0px))' : 60;
+const CARD = 'linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))';
+const INPUT_BG = '#091522';
+const TEXT = '#f6f3ec';
+const MID = '#aab3c0';
+const DIM = '#717d8d';
+const BORDER = '#2b3949';      // hairline
+const KEYLINE = '#e65e20';     // orange keyline
+const KEYLINE_SOFT = '#a7461e';
+const GREEN = '#19d47b';
+const RED = '#ff4655';
+const ON_A = '#120a04';        // label text on orange
+const CTA_BG = 'linear-gradient(135deg, #ff6b18, #ff7a21)';
+const GHOST_BG = 'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))';
+const BB = { fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 };
 const NB = { fontFamily: "'Barlow Condensed',sans-serif" };
 const BODY = { fontFamily: "'Barlow',sans-serif" };
 const LOGO = '/logo.webp';
+const LOGO_ST = { objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }; // logo.webp has a white background
 const ENDPOINT = '/.netlify/functions/employeeforms';
 const LOCAL_KEY = 'employee_forms_local';
 
-const IST = { width: '100%', background: '#f9f7f5', border: '1px solid rgba(0,0,0,.12)', color: TEXT, padding: '12px 14px', ...BODY, fontSize: 16, outline: 'none', borderRadius: 0, WebkitAppearance: 'none', boxSizing: 'border-box' };
+const IST = { width: '100%', background: INPUT_BG, border: '1px solid ' + KEYLINE, color: TEXT, caretColor: A, padding: '12px 14px', minHeight: 48, ...BODY, fontSize: 16, outline: 'none', borderRadius: 6, WebkitAppearance: 'none', boxSizing: 'border-box' };
+const GHOST = { background: GHOST_BG, border: '1px solid ' + KEYLINE, color: TEXT, borderRadius: 6, minHeight: 44 };
+const CTA = { background: CTA_BG, border: '1px solid ' + HOT, color: ON_A, minHeight: 44 };
 const CLIP = 'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)';
 
 function uid() { return 'ef_' + Math.abs(Date.now() * 1000 + Math.floor(performance.now())).toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -318,19 +331,19 @@ function pdfFileName(form) {
 
 /* ── shared bits ───────────────────────────────────────────────────── */
 function Label({ children, req }) {
-  return <div style={{ ...NB, fontSize: 10, letterSpacing: '2px', textTransform: 'uppercase', color: A, marginBottom: 6 }}>{children}{req && <span style={{ color: '#dc2626' }}> *</span>}</div>;
+  return <div style={{ ...NB, fontSize: 10, letterSpacing: '2px', textTransform: 'uppercase', color: HOT, marginBottom: 6 }}>{children}{req && <span style={{ color: RED }}> *</span>}</div>;
 }
 function BrandHeader({ lang, onExit }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, paddingBottom: 16, borderBottom: '1px solid ' + KEYLINE_SOFT, flexWrap: 'wrap', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <img src={LOGO} alt="SRC" style={{ width: 46, height: 46, objectFit: 'contain' }} />
+        <img src={LOGO} alt="SRC" style={{ width: 46, height: 46, ...LOGO_ST }} />
         <div>
           <div style={{ ...BB, fontSize: 26, letterSpacing: 2, color: TEXT, lineHeight: 1 }}>{tr('page_title', lang)}</div>
           <div style={{ ...NB, fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', color: MID, marginTop: 4 }}>{tr('page_sub', lang)}</div>
         </div>
       </div>
-      {onExit && <div onClick={onExit} style={{ cursor: 'pointer', ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: A }}>{tr('back', lang)}</div>}
+      {onExit && <div onClick={onExit} style={{ cursor: 'pointer', ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: HOT }}>{tr('back', lang)}</div>}
     </div>
   );
 }
@@ -419,14 +432,14 @@ export function EmployeeForm({ lang, onExit }) {
 
   if (done) {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: BG, overflow: 'auto', ...BODY }}>
+      <div className="sunrise-admin" style={{ position: 'fixed', top: NAV_TOP, left: 0, right: 0, bottom: 0, zIndex: 2000, background: BG, color: TEXT, overflow: 'auto', paddingBottom: 'calc(24px + var(--tabbar-h, 0px))', ...BODY }}>
         <div style={{ maxWidth: 640, margin: '0 auto', padding: '80px 20px', textAlign: 'center' }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#16a34a', margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 40 }}>✓</div>
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: GREEN, margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00160a', fontSize: 40 }}>✓</div>
           <div style={{ ...BB, fontSize: 40, letterSpacing: 2, color: TEXT }}>{tr('success_title', L)}</div>
           <div style={{ ...NB, fontSize: 17, color: MID, marginTop: 12, lineHeight: 1.5 }}>{tr('success_msg', L)}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 340, margin: '32px auto 0' }}>
-            <button onClick={function () { if (lastDoc) lastDoc.save(pdfFileName(form)); }} style={{ background: A, color: '#1a1206', border: 'none', padding: '15px 0', ...NB, fontWeight: 700, fontSize: 15, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP }}>{tr('download_copy', L)}</button>
-            <button onClick={function () { setForm(emptyForm()); setDone(false); setLastDoc(null); }} style={{ background: 'transparent', color: MID, border: '1px solid ' + BORDER, padding: '13px 0', ...NB, fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer' }}>{tr('submit_another', L)}</button>
+            <button onClick={function () { if (lastDoc) lastDoc.save(pdfFileName(form)); }} style={{ ...CTA, padding: '15px 0', ...NB, fontWeight: 700, fontSize: 15, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP }}>{tr('download_copy', L)}</button>
+            <button onClick={function () { setForm(emptyForm()); setDone(false); setLastDoc(null); }} style={{ ...GHOST, padding: '13px 0', ...NB, fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer' }}>{tr('submit_another', L)}</button>
             {onExit && <div onClick={onExit} style={{ cursor: 'pointer', ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: DIM, marginTop: 4 }}>{tr('back', L)}</div>}
           </div>
         </div>
@@ -435,17 +448,17 @@ export function EmployeeForm({ lang, onExit }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: BG, overflow: 'auto', ...BODY }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: NAV_TOP, left: 0, right: 0, bottom: 0, zIndex: 2000, background: BG, color: TEXT, overflow: 'auto', paddingBottom: 'calc(24px + var(--tabbar-h, 0px))', ...BODY }}>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 20px 80px' }}>
         <BrandHeader lang={L} onExit={onExit} />
         <div style={{ ...NB, fontSize: 15, color: MID, marginBottom: 6, lineHeight: 1.5 }}>{tr('intro', L)}</div>
         <div style={{ ...NB, fontSize: 12, color: DIM, marginBottom: 24 }}>{tr('required_note', L)}</div>
 
-        {err && <div style={{ background: '#fdecea', border: '1px solid #dc2626', color: '#991b1b', padding: '12px 16px', ...NB, fontSize: 14, marginBottom: 22 }}>{err}</div>}
+        {err && <div style={{ background: 'rgba(255,70,85,.12)', border: '1px solid rgba(255,70,85,.55)', color: '#ff8a94', borderRadius: 6, padding: '12px 16px', ...NB, fontSize: 14, marginBottom: 22 }}>{err}</div>}
 
         {SECTIONS.map(function (s) {
           return (
-            <div key={s.title} style={{ background: CARD, border: '1px solid ' + BORDER, padding: '22px 22px 24px', marginBottom: 20 }}>
+            <div key={s.title} style={{ background: CARD, border: '1px solid ' + KEYLINE, borderRadius: 12, padding: '22px 22px 24px', marginBottom: 20 }}>
               <div style={{ ...BB, fontSize: 22, letterSpacing: 1.5, color: TEXT, marginBottom: 18, borderBottom: '2px solid ' + A, paddingBottom: 8, display: 'inline-block' }}>{tr(s.title, L)}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 16 }}>
                 {s.fields.map(function (f) {
@@ -455,13 +468,13 @@ export function EmployeeForm({ lang, onExit }) {
                       <div key={f.k} style={{ gridColumn: '1 / -1' }}>
                         <Label req={f.req}>{tr(f.k, L)}</Label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                          <label style={{ ...NB, fontSize: 14, letterSpacing: '1px', textTransform: 'uppercase', padding: '11px 20px', background: ph ? '#f9f7f5' : A, color: ph ? MID : '#1a1206', fontWeight: 700, border: '1px solid ' + (ph ? BORDER : A), cursor: 'pointer', display: 'inline-block' }}>
+                          <label style={{ ...NB, fontSize: 14, letterSpacing: '1px', textTransform: 'uppercase', padding: '11px 20px', minHeight: 44, borderRadius: 6, background: ph ? INPUT_BG : CTA_BG, color: ph ? TEXT : ON_A, fontWeight: 700, border: '1px solid ' + (ph ? KEYLINE : HOT), cursor: 'pointer', display: 'inline-flex', alignItems: 'center', boxSizing: 'border-box' }}>
                             {ph ? tr('photo_replace', L) : tr('photo_choose', L)}
                             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={function (e) { var file = e.target.files && e.target.files[0]; e.target.value = ''; setPhoto(f.k, file); }} />
                           </label>
                           <span style={{ ...NB, fontSize: 12, color: DIM }}>{ph ? (ph.name || '') : tr('photo_hint', L)}</span>
                         </div>
-                        {ph && ph.url && <img src={ph.url} alt="" style={{ maxHeight: 170, maxWidth: '100%', marginTop: 12, border: '1px solid ' + BORDER, borderRadius: 4, display: 'block' }} />}
+                        {ph && ph.url && <img src={ph.url} alt="" style={{ maxHeight: 170, maxWidth: '100%', marginTop: 12, border: '1px solid ' + BORDER, borderRadius: 6, display: 'block' }} />}
                       </div>
                     );
                   }
@@ -472,7 +485,7 @@ export function EmployeeForm({ lang, onExit }) {
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           {OPT[f.k].map(function (o) {
                             var on = form[f.k] === o[0];
-                            return <button key={o[0]} type="button" onClick={function () { set(f.k, o[0]); }} style={{ ...NB, fontSize: 14, padding: '10px 20px', border: '1px solid ' + (on ? A : BORDER), background: on ? A : '#f9f7f5', color: on ? '#1a1206' : MID, fontWeight: on ? 700 : 400, cursor: 'pointer' }}>{tr(o[1], L)}</button>;
+                            return <button key={o[0]} type="button" onClick={function () { set(f.k, o[0]); }} style={{ ...NB, fontSize: 14, padding: '10px 20px', minHeight: 44, borderRadius: 6, border: '1px solid ' + (on ? HOT : KEYLINE), background: on ? CTA_BG : INPUT_BG, color: on ? ON_A : TEXT, fontWeight: on ? 700 : 400, cursor: 'pointer' }}>{tr(o[1], L)}</button>;
                           })}
                         </div>
                       </div>
@@ -485,7 +498,7 @@ export function EmployeeForm({ lang, onExit }) {
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                           {EQUIP.map(function (o) {
                             var on = (form.equipment || []).indexOf(o[0]) >= 0;
-                            return <button key={o[0]} type="button" onClick={function () { toggleEquip(o[0]); }} style={{ ...NB, fontSize: 14, padding: '10px 18px', border: '1px solid ' + (on ? A : BORDER), background: on ? A : '#f9f7f5', color: on ? '#1a1206' : MID, fontWeight: on ? 700 : 400, cursor: 'pointer' }}>{on ? '✓ ' : ''}{tr(o[1], L)}</button>;
+                            return <button key={o[0]} type="button" onClick={function () { toggleEquip(o[0]); }} style={{ ...NB, fontSize: 14, padding: '10px 18px', minHeight: 44, borderRadius: 6, border: '1px solid ' + (on ? HOT : KEYLINE), background: on ? CTA_BG : INPUT_BG, color: on ? ON_A : TEXT, fontWeight: on ? 700 : 400, cursor: 'pointer' }}>{on ? '✓ ' : ''}{tr(o[1], L)}</button>;
                           })}
                         </div>
                       </div>
@@ -504,7 +517,7 @@ export function EmployeeForm({ lang, onExit }) {
         })}
 
         {/* Acknowledgment */}
-        <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: '22px', marginBottom: 24 }}>
+        <div style={{ background: CARD, border: '1px solid ' + KEYLINE, borderRadius: 12, padding: '22px', marginBottom: 24 }}>
           <div style={{ ...BB, fontSize: 22, letterSpacing: 1.5, color: TEXT, marginBottom: 16, borderBottom: '2px solid ' + A, paddingBottom: 8, display: 'inline-block' }}>{tr('sec_ack', L)}</div>
           <div style={{ ...NB, fontSize: 14, color: MID, lineHeight: 1.6, marginBottom: 18, fontStyle: 'italic' }}>{tr('ack_text', L)}</div>
           <div style={{ marginBottom: 16 }}>
@@ -513,11 +526,11 @@ export function EmployeeForm({ lang, onExit }) {
           </div>
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', ...NB, fontSize: 15, color: TEXT }}>
             <input type="checkbox" checked={form.ackAgree} onChange={function (e) { set('ackAgree', e.target.checked); }} style={{ width: 20, height: 20, marginTop: 1, accentColor: A }} />
-            <span>{tr('ack_agree', L)} <span style={{ color: '#dc2626' }}>*</span></span>
+            <span>{tr('ack_agree', L)} <span style={{ color: RED }}>*</span></span>
           </label>
         </div>
 
-        <button onClick={submit} disabled={submitting} style={{ width: '100%', background: submitting ? DIM : A, color: '#1a1206', border: 'none', padding: '17px 0', ...NB, fontWeight: 700, fontSize: 17, letterSpacing: '3px', textTransform: 'uppercase', cursor: submitting ? 'default' : 'pointer', clipPath: CLIP, boxShadow: '0 6px 24px rgba(249,115,22,.28)' }}>{submitting ? tr('submitting', L) : tr('submit', L)}</button>
+        <button onClick={submit} disabled={submitting} style={{ width: '100%', background: submitting ? DIM : CTA_BG, color: ON_A, border: 'none', padding: '17px 0', minHeight: 48, ...NB, fontWeight: 700, fontSize: 17, letterSpacing: '3px', textTransform: 'uppercase', cursor: submitting ? 'default' : 'pointer', clipPath: CLIP, boxShadow: '0 6px 24px rgba(255,107,24,.28)' }}>{submitting ? tr('submitting', L) : tr('submit', L)}</button>
       </div>
     </div>
   );
@@ -596,31 +609,31 @@ export function EmployeeFormAdmin({ lang, onExit }) {
 
   if (authPin == null) {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'radial-gradient(120% 80% at 50% -10%, #14182a 0%, #0a0a14 55%, #06060f 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, ...BODY }}>
+      <div className="sunrise-admin" style={{ position: 'fixed', top: NAV_TOP, left: 0, right: 0, bottom: 0, zIndex: 2000, background: BG, color: TEXT, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingBottom: 'calc(24px + var(--tabbar-h, 0px))', ...BODY }}>
         <div style={{ maxWidth: 400, width: '100%', textAlign: 'center' }}>
-          <img src={LOGO} alt="SRC" style={{ width: 64, height: 64, objectFit: 'contain', marginBottom: 18 }} />
-          <div style={{ ...NB, fontSize: 12, letterSpacing: '3px', textTransform: 'uppercase', color: A, marginBottom: 8 }}>{tr('admin_locked', L)}</div>
-          <div style={{ ...BB, fontSize: 30, letterSpacing: 2, color: '#F5F0EB', marginBottom: 24 }}>{tr('admin_title', L)}</div>
-          <input type="password" inputMode="numeric" value={pin} placeholder={tr('admin_pin', L)} autoFocus onChange={function (e) { setPin(e.target.value); setErr(''); }} onKeyDown={function (e) { if (e.key === 'Enter') unlock(); }} style={{ width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(245,240,235,.25)', color: '#F5F0EB', padding: '14px 16px', ...NB, fontSize: 18, letterSpacing: '4px', textAlign: 'center', outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
-          {err && <div style={{ ...NB, fontSize: 13, color: '#f87171', marginBottom: 12 }}>{err}</div>}
-          <button onClick={unlock} disabled={busy} style={{ width: '100%', background: A, color: '#1a1206', border: 'none', padding: '15px 0', ...NB, fontWeight: 700, fontSize: 15, letterSpacing: '3px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP }}>{busy ? '…' : tr('admin_unlock', L)}</button>
-          {onExit && <div onClick={onExit} style={{ cursor: 'pointer', ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(245,240,235,.5)', marginTop: 18 }}>{tr('back', L)}</div>}
+          <img src={LOGO} alt="SRC" style={{ width: 64, height: 64, marginBottom: 18, ...LOGO_ST }} />
+          <div style={{ ...NB, fontSize: 12, letterSpacing: '3px', textTransform: 'uppercase', color: HOT, marginBottom: 8 }}>{tr('admin_locked', L)}</div>
+          <div style={{ ...BB, fontSize: 30, letterSpacing: 2, color: TEXT, marginBottom: 24 }}>{tr('admin_title', L)}</div>
+          <input type="password" inputMode="numeric" value={pin} placeholder={tr('admin_pin', L)} autoFocus onChange={function (e) { setPin(e.target.value); setErr(''); }} onKeyDown={function (e) { if (e.key === 'Enter') unlock(); }} style={{ width: '100%', background: INPUT_BG, border: '1px solid ' + KEYLINE, borderRadius: 6, color: TEXT, caretColor: A, padding: '14px 16px', minHeight: 48, ...NB, fontSize: 18, letterSpacing: '4px', textAlign: 'center', outline: 'none', boxSizing: 'border-box', marginBottom: 12 }} />
+          {err && <div style={{ ...NB, fontSize: 13, color: '#ff8a94', marginBottom: 12 }}>{err}</div>}
+          <button onClick={unlock} disabled={busy} style={{ width: '100%', ...CTA, padding: '15px 0', ...NB, fontWeight: 700, fontSize: 15, letterSpacing: '3px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP }}>{busy ? '…' : tr('admin_unlock', L)}</button>
+          {onExit && <div onClick={onExit} style={{ cursor: 'pointer', ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: DIM, marginTop: 18 }}>{tr('back', L)}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: BG, overflow: 'auto', ...BODY }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: NAV_TOP, left: 0, right: 0, bottom: 0, zIndex: 2000, background: BG, color: TEXT, overflow: 'auto', paddingBottom: 'calc(24px + var(--tabbar-h, 0px))', ...BODY }}>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 20px 80px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <img src={LOGO} alt="SRC" style={{ width: 40, height: 40, objectFit: 'contain' }} />
+            <img src={LOGO} alt="SRC" style={{ width: 40, height: 40, ...LOGO_ST }} />
             <div style={{ ...BB, fontSize: 28, letterSpacing: 2, color: TEXT }}>{tr('admin_title', L)}</div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button onClick={function () { load(authPin); }} style={{ ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', padding: '8px 16px', background: 'transparent', border: '1px solid ' + BORDER, color: MID, cursor: 'pointer' }}>{tr('admin_refresh', L)}</button>
-            <button onClick={function () { setAuthPin(null); setPin(''); setItems([]); setDetail({}); }} style={{ ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', padding: '8px 16px', background: 'transparent', border: '1px solid ' + BORDER, color: MID, cursor: 'pointer' }}>{tr('admin_lock', L)}</button>
+            <button onClick={function () { load(authPin); }} style={{ ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', padding: '8px 16px', ...GHOST, cursor: 'pointer' }}>{tr('admin_refresh', L)}</button>
+            <button onClick={function () { setAuthPin(null); setPin(''); setItems([]); setDetail({}); }} style={{ ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', padding: '8px 16px', ...GHOST, cursor: 'pointer' }}>{tr('admin_lock', L)}</button>
           </div>
         </div>
         <div style={{ ...NB, fontSize: 13, color: DIM, marginBottom: 24 }}>{items.length} {tr('admin_count', L)}</div>
@@ -630,7 +643,7 @@ export function EmployeeFormAdmin({ lang, onExit }) {
         {items.map(function (row) {
           var rec = detail[row.id];
           return (
-            <div key={row.id} style={{ background: CARD, border: '1px solid ' + BORDER, marginBottom: 12 }}>
+            <div key={row.id} style={{ background: CARD, border: '1px solid ' + KEYLINE, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 18px', flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 200 }}>
                   <div style={{ ...NB, fontSize: 18, fontWeight: 700, color: TEXT }}>{row.name || '—'}</div>
@@ -640,8 +653,8 @@ export function EmployeeFormAdmin({ lang, onExit }) {
                   <div style={{ ...NB, fontSize: 12, color: DIM, marginTop: 2 }}>{fmtDate(row.submittedAt)}{row._local ? '  ·  (local)' : ''}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={function () { toggleDetail(row); }} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', padding: '9px 16px', background: 'transparent', border: '1px solid ' + BORDER, color: MID, cursor: 'pointer' }}>{openId === row.id ? tr('admin_hide', L) : tr('admin_view', L)}</button>
-                  <button onClick={function () { download(row); }} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', padding: '9px 18px', background: A, border: 'none', color: '#1a1206', fontWeight: 700, cursor: 'pointer' }}>{tr('admin_dl', L)}</button>
+                  <button onClick={function () { toggleDetail(row); }} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', padding: '9px 16px', ...GHOST, cursor: 'pointer' }}>{openId === row.id ? tr('admin_hide', L) : tr('admin_view', L)}</button>
+                  <button onClick={function () { download(row); }} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', padding: '9px 18px', ...CTA, borderRadius: 6, fontWeight: 700, cursor: 'pointer' }}>{tr('admin_dl', L)}</button>
                 </div>
               </div>
               {openId === row.id && rec && (
@@ -654,8 +667,8 @@ export function EmployeeFormAdmin({ lang, onExit }) {
                           <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: DIM, marginBottom: 4 }}>{tr(f.k, 'en')}</div>
                           {ph && ph.url ? (
                             <div>
-                              <img src={ph.url} alt="" style={{ maxHeight: 220, maxWidth: '100%', border: '1px solid ' + BORDER, borderRadius: 4, display: 'block' }} />
-                              <a href={ph.url} download={ph.name || 'photo.jpg'} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', color: A, textDecoration: 'underline', display: 'inline-block', marginTop: 6 }}>{tr('photo_download', L)}</a>
+                              <img src={ph.url} alt="" style={{ maxHeight: 220, maxWidth: '100%', border: '1px solid ' + BORDER, borderRadius: 6, display: 'block' }} />
+                              <a href={ph.url} download={ph.name || 'photo.jpg'} style={{ ...NB, fontSize: 12, letterSpacing: '1px', textTransform: 'uppercase', color: HOT, textDecoration: 'underline', display: 'inline-block', marginTop: 6 }}>{tr('photo_download', L)}</a>
                             </div>
                           ) : <div style={{ ...NB, fontSize: 14, color: TEXT }}>—</div>}
                         </div>
