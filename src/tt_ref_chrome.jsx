@@ -8,7 +8,6 @@ import { RefSprite } from './tt_glyphs.jsx'
    product skin on every platform; RefNav is only used by the standalone demo
    (the app renders the shell's MobileTabBar with the same RefTabButton). */
 
-export { REF } from './tt_glyphs.jsx'
 import { REF_SPRITES as SPR } from './tt_ref_sprites.js'
 export const REF_LOGO_URI = SPR.logo ? SPR.logo.uri : null
 export const REF_NAV_H = 62.5

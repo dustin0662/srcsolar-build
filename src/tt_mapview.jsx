@@ -11,11 +11,11 @@ const ESRI_SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Ima
 const ESRI_ATTR = 'Imagery &copy; Esri, Maxar, Earthstar Geographics';
 const OSM_STREETS = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTR = '&copy; OpenStreetMap contributors';
-import { TT, SEG_WRAP, seg as segStyle, PANEL_SHADOW } from './tt_theme.js';
+import { TT } from './tt_theme.js';
 const ORANGE = TT.orange;
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
-import { paintStack, paintRefStack, radiusForZoom, onIconsReady, REF, clampK } from './tt_glyphs.jsx';
+import { paintRefStack, radiusForZoom, onIconsReady, clampK } from './tt_glyphs.jsx';
 import { RefZoom, RefSeg, RefCompass } from './tt_ref_chrome.jsx';
 
 /* One marker per point for hit-testing / clicks, but drawing happens in a
@@ -28,8 +28,8 @@ const GlyphMarker = L.CircleMarker.extend({
     this._radius = r * 1.1; this.options.radius = this._radius;
     this._point = map.latLngToLayerPoint(this._latlng);
     this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
-    let pad = r * 5.8 + 4;   // icon box, selection ring, raised flag + glow, joint to the next point
-    if (REF) { const k = clampK((this._nextPoint ? this._point.distanceTo(this._nextPoint) : 36 * r / 9) / 36); this._radius = Math.max(r * 1.1, 9 * k); this.options.radius = this._radius; pad = 40 * k + 4; }
+    let pad;   // sprite box, selection ring, raised flag + glow, joint to the next point
+    { const k = clampK((this._nextPoint ? this._point.distanceTo(this._nextPoint) : 36 * r / 9) / 36); this._radius = Math.max(r * 1.1, 9 * k); this.options.radius = this._radius; pad = 40 * k + 4; }
     const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
     if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
     this._pxBounds = b;
@@ -70,7 +70,7 @@ const GlyphRenderer = L.Canvas.extend({
       const r = radiusForZoom(this._map.getZoom());
       let dir = [0, 1];
       for (const g of glyphs) if (g._nextPoint) { const dx = g._nextPoint.x - g._point.x, dy = g._nextPoint.y - g._point.y, L2 = Math.hypot(dx, dy) || 1; dir = [dx / L2, dy / L2]; break; }
-      if (REF) {
+      {
         const z = this._map.getZoom();
         if (this._refZoom !== z || this._refPitch == null) {
           const ds = [];
@@ -78,7 +78,7 @@ const GlyphRenderer = L.Canvas.extend({
           ds.sort((a, b) => a - b); this._refPitch = ds.length ? ds[ds.length >> 1] : 36 * r / 9; this._refZoom = z;
         }
         paintRefStack(ctx, glyphs.map((g) => g._item()), clampK(this._refPitch / 36), dir, L.Browser.retina ? 2 : 1, this._refPitch);
-      } else paintStack(ctx, glyphs.map((g) => g._item()), r, dir, L.Browser.retina ? 2 : 1);
+      }
     }
     for (const layer of others) layer._updatePath();
     this._drawing = false;
@@ -113,7 +113,7 @@ export default function TTMapView({
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { zoomControl: false, attributionControl: true, zoomSnap: 0, renderer: new GlyphRenderer({ padding: 0.5 }) });
     map.attributionControl.setPrefix(false);   // imagery credit only, no Leaflet link
-    if (REF) { map.createPane('tt-site').style.zIndex = 390; siteRendererRef.current = L.canvas({ pane: 'tt-site', padding: 0.5 }); }
+    { map.createPane('tt-site').style.zIndex = 390; siteRendererRef.current = L.canvas({ pane: 'tt-site', padding: 0.5 }); }
     mapRef.current = map;
     baseLayerRef.current = L.tileLayer(
       layerMode === 'streets' ? OSM_STREETS : ESRI_SAT,
@@ -149,8 +149,7 @@ export default function TTMapView({
       markersRef.current.push(m);
     });
     if (!bounds.isValid()) return;
-    if (REF) map.fitBounds(bounds, { paddingTopLeft: [48, 74], paddingBottomRight: [66, 62], maxZoom: 22 });
-    else map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
+    map.fitBounds(bounds, { paddingTopLeft: [48, 74], paddingBottomRight: [66, 62], maxZoom: 22 });
     /* Keep the view over the site: pad the KMZ extent by a margin so the
        outermost points can still be centred and worked on, but the map can't
        be dragged off into empty imagery. */
@@ -165,7 +164,7 @@ export default function TTMapView({
      points), a darkening mask outside it, and dashed contour echoes — all in
      a pane below the point sprites. */
   useEffect(() => {
-    const map = mapRef.current; if (!REF || !map || !geo || !geo.lonLat || !geo.lonLat.length) return;
+    const map = mapRef.current; if (!map || !geo || !geo.lonLat || !geo.lonLat.length) return;
     siteRef.current.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); siteRef.current = [];
     const lonLat = geo.lonLat;
     let ring;
@@ -377,29 +376,15 @@ export default function TTMapView({
     <div style={{ position: 'absolute', inset: 0 }}>
       <style>{`
         .tt-block-label{background:rgba(6,21,37,.92);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px;border-radius:6px}.tt-block-label::before{display:none}
-        /* skin pack: navy wash so overlays read on bright imagery; translucent navy zoom control */
-        .tt-map .leaflet-tile-pane{filter:${REF ? 'brightness(.78) saturate(.85) contrast(1.05)' : 'brightness(.9) saturate(.92)'}}
-        .tt-map .leaflet-bar{border:1px solid ${TT.border};border-radius:10px;box-shadow:0 5px 14px rgba(0,0,0,.56);overflow:hidden}
-        .tt-map .leaflet-bar a{background:rgba(6,21,37,.9);color:${TT.text};border-bottom:1px solid ${TT.divider};width:44px;height:44px;line-height:44px;font-size:22px}
-        .tt-map .leaflet-bar a:last-child{border-bottom:none}
-        .tt-map .leaflet-bar a.leaflet-disabled{color:${TT.muted};background:rgba(6,21,37,.7)}
+        /* navy wash so the sprites and outline read on bright imagery */
+        .tt-map .leaflet-tile-pane{filter:brightness(.78) saturate(.85) contrast(1.05)}
         .tt-map .leaflet-control-attribution{background:rgba(1,15,28,.72);color:rgba(213,218,224,.75);font-size:8px;line-height:1.4;padding:0 5px;margin:0}
         .tt-map .leaflet-control-attribution a{color:${TT.text2}}
       `}</style>
       <div ref={containerRef} className="tt-map" style={{ position: 'absolute', inset: 0, background: TT.canvas }} />
-      {REF ? (
-        <>
-          <RefZoom onIn={() => mapRef.current && mapRef.current.zoomIn()} onOut={() => mapRef.current && mapRef.current.zoomOut()} style={{ left: 14, top: 12 }} />
-          <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 64]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
-          <RefCompass style={{ right: 10, top: 55.5 }} />
-        </>
-      ) : (
-        <div style={{ position: 'absolute', top: 10, left: 62, zIndex: 500, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
-          {['satellite', 'streets'].map((k) => (
-            <button key={k} onClick={() => onLayerMode(k)} aria-selected={layerMode === k} style={{ ...segStyle(layerMode === k), padding: '0 12px', minHeight: 42 }}>{k}</button>
-          ))}
-        </div>
-      )}
+      <RefZoom onIn={() => mapRef.current && mapRef.current.zoomIn()} onOut={() => mapRef.current && mapRef.current.zoomOut()} style={{ left: 14, top: 12 }} />
+      <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 64]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
+      <RefCompass style={{ right: 10, top: 55.5 }} />
     </div>
   );
 }
