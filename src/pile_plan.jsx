@@ -7,7 +7,7 @@ import TTMapView from './tt_mapview.jsx';
 import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
-import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, TriangleAlert, OctagonAlert, FileText, Box, History, Cylinder, Cable, LayoutGrid, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
+import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
 import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_SHADOW, PANEL_STYLE, FLOAT, SEG_WRAP, seg as segStyle, tool as toolStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
 
@@ -1310,7 +1310,7 @@ export default function PilePlan({ onExit, portalUser }) {
   /* which point comes next down each tracker row — tubes and modules join up along these */
   const rowLinks = useMemo(() => computeRowLinks(points), [points]);
   const dotEls = useMemo(() => (
-    <StackSvg points={points} stage={stage} qc={qc} rowNext={rowLinks.next} pad={PAD} unit={4.6} marked={delSel}
+    <StackSvg points={points} stage={stage} qc={qc} rowNext={rowLinks.next} rowDir={rowLinks.dir} pad={PAD} unit={4.6} marked={delSel}
       isDim={selSection != null && sections ? (i) => sections[i] !== selSection : null} />
   ), [points, stage, qc, selSection, sections, delSel, rowLinks]);
 
@@ -1350,7 +1350,6 @@ export default function PilePlan({ onExit, portalUser }) {
   const isAllowed = (tok) => !allowed || allowed.has(tok);
   const canEditQC = isAllowed('q2');
   const health = stats.orange > 0 ? { label: 'Action Required', color: ORANGE } : stats.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW } : { label: 'On Track', color: GREEN };
-  const PHASE_ICON = [null, Cylinder, Box, Cable, LayoutGrid];
   const toolBtn = (on) => ({ flex: 1, ...toolStyle(on), minHeight: 64, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase' });
   const panelHead = (Icon, txt, right) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1431,7 +1430,7 @@ export default function PilePlan({ onExit, portalUser }) {
           ? <button onClick={resetAll} title={'Reset every task in ' + scopeLabel()} style={{ ...miniBtn, color: ORANGE, borderColor: ORANGE }}>Reset All</button>
           : <span style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: MUTE }}>4 phases</span>)}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
-          {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); const on = paint === tok && !lock; const I = PHASE_ICON[k]; return (
+          {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); const on = paint === tok && !lock; return (
             <div key={i} onClick={() => { if (!lock) setPaint(tok); }} style={{ minWidth: 0, borderRadius: 10, padding: '9px 9px 8px', border: '1px solid ' + (on ? s.color : hexA(s.color, .35)), background: on ? hexA(s.color, .16) : hexA(s.color, .05), boxShadow: on ? `0 0 0 1px ${s.color}, 0 0 18px ${hexA(s.color, .3)}` : 'none', opacity: lock ? .5 : 1, cursor: lock ? 'default' : 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Glyph code={tok} size={28} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(s.color, .6) + ')' }} />
@@ -1454,7 +1453,7 @@ export default function PilePlan({ onExit, portalUser }) {
       <div style={card()}>
         {panelHead(ShieldCheck, 'Quality Checks')}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[{ q: 1, tok: 'q1', I: TriangleAlert, col: QC_YELLOW, l: 'Requires Attention', n: stats.yellow }, { q: 2, tok: 'q2', I: OctagonAlert, col: QC_ORANGE, l: 'Flagged Issue', n: stats.orange }].map((r) => (
+          {[{ q: 1, tok: 'q1', col: QC_YELLOW, l: 'Requires Attention', n: stats.yellow }, { q: 2, tok: 'q2', col: QC_ORANGE, l: 'Flagged Issue', n: stats.orange }].map((r) => (
             <div key={r.q} style={{ ...statusRow(paint === r.tok && isAllowed(r.tok)), cursor: isAllowed(r.tok) ? 'pointer' : 'default', opacity: isAllowed(r.tok) ? 1 : .5 }} onClick={() => { if (isAllowed(r.tok)) setPaint(r.tok); }}>
               <Glyph code={r.tok} size={24} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(r.col, .6) + ')' }} />
               <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{r.l}</span>
@@ -1714,6 +1713,7 @@ export default function PilePlan({ onExit, portalUser }) {
               mode={mode}
               marked={delSel}
               rowNext={rowLinks.next}
+              rowDir={rowLinks.dir}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1738,6 +1738,7 @@ export default function PilePlan({ onExit, portalUser }) {
               dispColor={dispColor}
               marked={delSel}
               rowNext={rowLinks.next}
+              rowDir={rowLinks.dir}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}

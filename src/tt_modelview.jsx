@@ -22,7 +22,7 @@ export default function TTModelView({
   projectId, points, planW, planH, stage, qc, sections, selSection,
   overlay3d, onSaveOverlay, mode, canAlign, onModelBuffer,
   onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints,
-  dispColor, marked, rowNext,
+  dispColor, marked, rowNext, rowDir,
 }) {
   const [models, setModels] = useState([]);
   const [buf, setBuf] = useState(null);
@@ -170,7 +170,7 @@ export default function TTModelView({
           onPointerDown={onDown} onPointerMove={onMove}>
           <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', opacity: ov.opacity != null ? ov.opacity : 0.9, pointerEvents: 'none' }}>
             <g transform={`translate(${ov.x} ${ov.y}) scale(${ov.scale})`}>
-              <StackSvg points={points} stage={stage} qc={qc || []} rowNext={rowNext} pad={PAD} unit={4.6} marked={marked}
+              <StackSvg points={points} stage={stage} qc={qc || []} rowNext={rowNext} rowDir={rowDir} pad={PAD} unit={4.6} marked={marked}
                 isDim={selSection != null && sections ? (i) => sections[i] !== selSection : null} />
               {selHull && <polygon points={selHull} fill="rgba(249,115,22,.10)" stroke={ORANGE} strokeWidth={2} strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,.7))' }} />}
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.6} strokeDasharray="6 4" />; })()}

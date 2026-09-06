@@ -15,7 +15,7 @@ import { TT, SEG_WRAP, seg as segStyle, PANEL_SHADOW } from './tt_theme.js';
 const ORANGE = TT.orange;
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
-import { paintStack, radiusForZoom } from './tt_glyphs.jsx';
+import { paintStack, radiusForZoom, onIconsReady } from './tt_glyphs.jsx';
 
 /* One marker per point for hit-testing / clicks, but drawing happens in a
    single multi-pass painter so the stacks layer correctly: piles, then the
@@ -27,7 +27,7 @@ const GlyphMarker = L.CircleMarker.extend({
     this._radius = r * 1.1; this.options.radius = this._radius;
     this._point = map.latLngToLayerPoint(this._latlng);
     this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
-    const pad = r * 4.8 + 4;   // cube above, flag on its leader, module width, joint to the next point
+    const pad = r * 5.8 + 4;   // icon box, selection ring, raised flag + glow, joint to the next point
     const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
     if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
     this._pxBounds = b;
@@ -39,6 +39,20 @@ const GlyphMarker = L.CircleMarker.extend({
   },
 });
 const GlyphRenderer = L.Canvas.extend({
+  onAdd(map) {
+    L.Canvas.prototype.onAdd.call(this, map);
+    /* icons rasterise asynchronously — repaint everything once they land */
+    this._offIcons = onIconsReady(() => {
+      if (!this._map) return;
+      this._fullRedraw = true;
+      this._redrawRequest = this._redrawRequest || L.Util.requestAnimFrame(this._redraw, this);
+    });
+  },
+  onRemove(map) { if (this._offIcons) { this._offIcons(); this._offIcons = null; } L.Canvas.prototype.onRemove.call(this, map); },
+  _redraw() {
+    if (this._fullRedraw) { this._fullRedraw = false; this._redrawBounds = null; }
+    L.Canvas.prototype._redraw.call(this);
+  },
   _draw() {
     const bounds = this._redrawBounds; const ctx = this._ctx;
     ctx.save();
@@ -54,7 +68,7 @@ const GlyphRenderer = L.Canvas.extend({
       const r = radiusForZoom(this._map.getZoom());
       let dir = [0, 1];
       for (const g of glyphs) if (g._nextPoint) { const dx = g._nextPoint.x - g._point.x, dy = g._nextPoint.y - g._point.y, L2 = Math.hypot(dx, dy) || 1; dir = [dx / L2, dy / L2]; break; }
-      paintStack(ctx, glyphs.map((g) => g._item()), r, dir);
+      paintStack(ctx, glyphs.map((g) => g._item()), r, dir, L.Browser.retina ? 2 : 1);
     }
     for (const layer of others) layer._updatePath();
     this._drawing = false;
@@ -62,15 +76,6 @@ const GlyphRenderer = L.Canvas.extend({
   },
 });
 
-function colorFor(stage, qc) {
-  if (qc === 2) return '#ea580c';
-  if (qc === 1) return '#eab308';
-  if (stage === 4) return '#16a34a';
-  if (stage === 3) return '#7c3aed';
-  if (stage === 2) return '#2563eb';
-  if (stage === 1) return '#9ca3af';
-  return '#e8e8ea';
-}
 
 export default function TTMapView({
   geo, stage, qc, sections, sectionNames, selSection,
