@@ -9,6 +9,7 @@ import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import LoadsFrame from "./native/LoadsFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
 import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
+import HomeScreen from "./HomeScreen.jsx"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
@@ -5593,7 +5594,7 @@ export default function App(){
         <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'space-between',padding:m?'10px 16px':'16px 40px',paddingTop:m?'calc(10px + var(--sat))':'16px',minHeight:m?'calc(64px + var(--sat))':'auto',background:'rgba(2,2,12,.85)',backdropFilter:'blur(14px)',borderBottom:'1px solid rgba(249,115,22,.1)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0,marginRight:m?0:20}}>
             <img src={LOGO_SRC} alt="SRC" style={{width:m?36:48,height:m?36:48,objectFit:"contain"}}/>
-            <div style={{display:m?'none':'block'}}>
+            <div style={{display:(m&&page!=='dashboard')?'none':'block'}}>
               <div style={{...BB,fontSize:m?17:21,letterSpacing:m?'2px':'4px',color:'#F5F0EB',lineHeight:1}}>SUNRISE</div>
               <div style={{...NB,display:m?'none':'block',fontSize:m?7:9,letterSpacing:'2px',color:A,textTransform:'uppercase',whiteSpace:'nowrap'}}>Construction & Development</div>
             </div>
@@ -5675,19 +5676,8 @@ export default function App(){
           </div>
         )}
 
-        {page==='dashboard'&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px',background:'#f5f2ee'}}>
-            <div style={{maxWidth:1200,margin:'0 auto'}}>
-              <div style={{marginBottom:m?28:40}}>
-                <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{width:22,height:1,background:A}}/>Welcome back
-                </div>
-                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none'}}>
-                  {user ? user.name.toUpperCase() : 'OPERATOR'}
-                </div>
-                <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
-                <div onClick={openChangePw} style={{display:'inline-block',marginTop:12,cursor:'pointer',...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,borderBottom:'1px solid '+A,paddingBottom:2}}>Change Password</div>
-              </div>
+        {page==='dashboard'&&showPw&&(function(){return (
+          <>
               {showPw&&(
                 <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
                   <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
@@ -5705,6 +5695,24 @@ export default function App(){
                   </div>
                 </div>
               )}
+          </>
+        )})()}
+        {page==='dashboard'&&m&&<HomeScreen user={user} tiles={dashTiles} hideKeys={showTabBar?['mytimecard','pileplan','documents']:[]} isAdmin={isPortalAdmin}
+          onOpen={function(tile){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}}
+          onOpenPage={setPage} onChangePassword={openChangePw} onSignOut={function(){setUser(null);setPage(isNative?'login':'landing')}}/>}
+        {page==='dashboard'&&!m&&(
+          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:'120px 48px 80px',background:'#f5f2ee'}}>
+            <div style={{maxWidth:1200,margin:'0 auto'}}>
+              <div style={{marginBottom:m?28:40}}>
+                <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:22,height:1,background:A}}/>Welcome back
+                </div>
+                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none'}}>
+                  {user ? user.name.toUpperCase() : 'OPERATOR'}
+                </div>
+                <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
+                <div onClick={openChangePw} style={{display:'inline-block',marginTop:12,cursor:'pointer',...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,borderBottom:'1px solid '+A,paddingBottom:2}}>Change Password</div>
+              </div>
               {hasTool('pileplan')&&(function(){
                 var ttk=getTaskTrackerKPI();
                 return (

@@ -207,13 +207,32 @@ function ensureMigrated() {
 export function getTaskTrackerKPI() {
   let reg = storage.get(REG_KEY); let raw = null;
   if (Array.isArray(reg) && reg.length) { const aid = storage.get(ACTIVE_KEY) || reg[0].id; raw = storage.get(projKey(aid)) || storage.get(projKey(reg[0].id)); }
+  return kpiFromDoc(raw);
+}
+function kpiFromDoc(raw) {
   const d = normalizeDoc(raw);
   const st = computeStats(d.stage, d.qc, d.subtasks, d.sub);
   const total = st.N;
   return {
     name: d.name || 'Project', total, overall: st.overall, lastModified: d.lastModified || 0,
+    flags: st.yellow + st.orange, attention: st.yellow, flagged: st.orange, blocks: d.sectionCount || 0,
     tasks: STAGES.slice(1).map((s, i) => ({ name: s.name.replace(' Installed', ''), color: s.color, count: st.cum[i + 1], pct: total ? st.cum[i + 1] / total * 100 : 0 })),
   };
+}
+/* Same snapshot straight from the cloud (no local side effects) — used by the
+   home screen so a fresh install shows real numbers before the Task Tracker
+   has ever been opened. Resolves null when offline or nothing is published. */
+export async function fetchTaskTrackerKPI() {
+  try {
+    const reg = await fetch(ENDPOINT + '?registry=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
+    const projects = (reg && Array.isArray(reg.projects)) ? reg.projects.filter((p) => p && p.id) : [];
+    if (!projects.length) return null;
+    const localActive = storage.get(ACTIVE_KEY);
+    const pick = projects.find((p) => p.id === localActive) || projects[0];
+    const doc = await fetch(ENDPOINT + '?project=' + encodeURIComponent(pick.id), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
+    if (!doc || !Array.isArray(doc.points) || !doc.points.length) return null;
+    return { ...kpiFromDoc({ ...doc, name: doc.name || pick.name }), id: pick.id, projects: projects.map((p) => ({ id: p.id, name: p.name })) };
+  } catch (e) { return null; }
 }
 
 /* ------------------------------------------------------------------ */
