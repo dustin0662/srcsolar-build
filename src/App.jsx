@@ -22,7 +22,6 @@ import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;600&family=Barlow+Condensed:wght@400;600;700&display=swap');
 :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--tabbar-h:0px}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;touch-action:manipulation}
 body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
@@ -33,7 +32,7 @@ input,select,textarea{font-size:16px !important}
   input,select,textarea{font-size:16px !important}
 }
 /* Mobile shell (phone widths and the Android app) */
-html.has-tabbar{--tabbar-h:calc(64px + var(--sab))}
+html.has-tabbar{--tabbar-h:calc(62.5px + var(--sab))}
 html.native{overscroll-behavior:none}
 html.native *{-webkit-tap-highlight-color:transparent}
 html.native ::selection{background:rgba(249,115,22,.3)}

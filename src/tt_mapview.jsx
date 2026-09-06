@@ -111,7 +111,8 @@ export default function TTMapView({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: !REF, attributionControl: !REF, zoomSnap: REF ? 0 : 1, renderer: new GlyphRenderer({ padding: 0.5 }) });
+    const map = L.map(containerRef.current, { zoomControl: false, attributionControl: true, zoomSnap: 0, renderer: new GlyphRenderer({ padding: 0.5 }) });
+    map.attributionControl.setPrefix(false);   // imagery credit only, no Leaflet link
     if (REF) { map.createPane('tt-site').style.zIndex = 390; siteRendererRef.current = L.canvas({ pane: 'tt-site', padding: 0.5 }); }
     mapRef.current = map;
     baseLayerRef.current = L.tileLayer(
@@ -382,7 +383,7 @@ export default function TTMapView({
         .tt-map .leaflet-bar a{background:rgba(6,21,37,.9);color:${TT.text};border-bottom:1px solid ${TT.divider};width:44px;height:44px;line-height:44px;font-size:22px}
         .tt-map .leaflet-bar a:last-child{border-bottom:none}
         .tt-map .leaflet-bar a.leaflet-disabled{color:${TT.muted};background:rgba(6,21,37,.7)}
-        .tt-map .leaflet-control-attribution{background:rgba(6,21,37,.75);color:${TT.text2};font-size:10px}
+        .tt-map .leaflet-control-attribution{background:rgba(1,15,28,.72);color:rgba(213,218,224,.75);font-size:8px;line-height:1.4;padding:0 5px;margin:0}
         .tt-map .leaflet-control-attribution a{color:${TT.text2}}
       `}</style>
       <div ref={containerRef} className="tt-map" style={{ position: 'absolute', inset: 0, background: TT.canvas }} />

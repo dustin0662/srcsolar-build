@@ -44,6 +44,7 @@ export function useNavStack(page, setPage, fallbackPage) {
       setPage(p)
     }
     function onNativeBack(ev) {
+      if (ev.defaultPrevented) return    // a module (e.g. the Task Tracker's map view) handled it
       const cur = pageRef.current
       if (ROOT_PAGES.has(cur)) return     // default: shell minimizes the app
       ev.preventDefault()

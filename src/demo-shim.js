@@ -67,9 +67,7 @@ window.storage = {
 window.storage.set('tt-projects', cloud.registry)
 window.storage.set('tt-active', 'demo')
 window.storage.set('tt-proj-demo', seed)
-window.__TT_SKIN = 'reference'                 // reference-skin chrome + the mock's sprites (demo only)
-window.__TT_REF_SPRITES = REF_SPRITES
-window.__TT_DEMO = { startView: 'tracker', mode: 'pan' }
+window.__TT_DEMO = { startView: 'tracker', mode: 'pan' }   // demo-only: open on the map in Pan, inert bottom nav
 window.__TT_LOGO = REF_SPRITES.logo ? REF_SPRITES.logo.uri : LOGO_DATA_URI
 
 /* in-memory cloud: same routes as netlify/functions/pileplan + ttmodels */

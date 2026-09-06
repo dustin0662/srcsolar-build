@@ -4,12 +4,14 @@ import { RefSprite } from './tt_glyphs.jsx'
 
 /* "Reference skin" chrome for the Task Tracker — a pixel-faithful rebuild of
    the concept mock (864×1536, treated as a 2× render of a 432×768 phone).
-   Every measurement here is the mock's value ÷ 2, in CSS px. Only active when
-   window.__TT_SKIN === 'reference' (the standalone demo sets it); the app
-   never renders these. */
+   Every measurement here is the mock's value ÷ 2, in CSS px. This is the
+   product skin on every platform; RefNav is only used by the standalone demo
+   (the app renders the shell's MobileTabBar with the same RefTabButton). */
 
-export const REF = typeof window !== 'undefined' && window.__TT_SKIN === 'reference'
-const SPR = (REF && typeof window !== 'undefined' && window.__TT_REF_SPRITES) || {}
+export { REF } from './tt_glyphs.jsx'
+import { REF_SPRITES as SPR } from './tt_ref_sprites.js'
+export const REF_LOGO_URI = SPR.logo ? SPR.logo.uri : null
+export const REF_NAV_H = 62.5
 
 export const REF_C = {
   bgTop: '#001528', bgBot: '#010F1C', panel: '#010F1C', border: '#4C626F',
@@ -28,10 +30,10 @@ const abs = (left, top, extra) => ({ position: 'absolute', left, top, ...extra }
 const btnReset = { background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }
 
 /* ---------- header: status band + 45.5 px content + 2 px orange rule ---------- */
-export function RefHeader({ projName, pct, onBack, onProject, onExport, logoUri }) {
+export function RefHeader({ projName, pct, onBack, onProject, onExport, logoUri, nameMax = 120 }) {
   const fill = Math.max(0, Math.min(100, +pct || 0))
   return (
-    <div style={{ position: 'relative', flexShrink: 0, paddingTop: 'max(24px, var(--sat, 0px))', height: 45.5, boxSizing: 'content-box', background: BG_GRAD, borderBottom: RULE, color: REF_C.text, zIndex: 5 }}>
+    <div style={{ position: 'relative', flexShrink: 0, paddingTop: 'var(--sat, 0px)', height: 45.5, boxSizing: 'content-box', background: BG_GRAD, borderBottom: RULE, color: REF_C.text, zIndex: 5 }}>
       <div style={{ position: 'relative', height: 45.5 }}>
         {onBack && (
           <button onClick={onBack} aria-label="Back to projects" style={{ ...btnReset, ...abs(1, 1.5, { width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F0F0F2' }) }}>
@@ -40,7 +42,7 @@ export function RefHeader({ projName, pct, onBack, onProject, onExport, logoUri 
         )}
         {logoUri && <img src={logoUri} alt="" draggable={false} style={abs(44, -2, { width: 47, height: 43, objectFit: 'contain' })} />}
         <div style={abs(105, 5, { fontFamily: NBF, fontWeight: 700, fontSize: 19, letterSpacing: '0.06em', lineHeight: 1, color: '#fff', whiteSpace: 'nowrap', textTransform: 'uppercase' })}>Task Tracker</div>
-        <button onClick={onProject} style={{ ...btnReset, ...abs(107, 23.5, { ...caps(12, { color: REF_C.project, letterSpacing: '0.17em', fontWeight: 600 }), maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left' }) }}>
+        <button onClick={onProject} style={{ ...btnReset, ...abs(107, 23.5, { ...caps(12, { color: REF_C.project, letterSpacing: '0.17em', fontWeight: 600 }), maxWidth: nameMax, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'left' }) }}>
           {projName} <span style={{ fontSize: 9, color: '#E86616' }}>&#9662;</span>
         </button>
         <div style={{ position: 'absolute', right: 126.5, top: 6.5, fontFamily: NBF, fontWeight: 700, fontSize: 20, lineHeight: 1, color: REF_C.amber, whiteSpace: 'nowrap' }}>{fill.toFixed(0)}%</div>
@@ -66,12 +68,13 @@ export function RefHeader({ projName, pct, onBack, onProject, onExport, logoUri 
 /* ---------- floating map controls ---------- */
 const FLOAT_PANEL = { background: 'rgba(1,15,28,.95)', border: '0.5px solid #5E6E80', borderRadius: 5, boxShadow: '0 3px 10px rgba(0,0,0,.45)' }
 
-export function RefZoom({ onIn, onOut, style }) {
+export function RefZoom({ onIn, onOut, onFit, style }) {
   const b = { ...btnReset, width: 28.5, height: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: BF, fontWeight: 700, fontSize: 26, lineHeight: 1 }
   return (
-    <div style={{ position: 'absolute', zIndex: 600, width: 28.5, height: 59, ...FLOAT_PANEL, display: 'flex', flexDirection: 'column', overflow: 'hidden', ...style }}>
+    <div style={{ position: 'absolute', zIndex: 600, width: 28.5, height: onFit ? 78 : 59, ...FLOAT_PANEL, display: 'flex', flexDirection: 'column', overflow: 'hidden', ...style }}>
       <button onClick={onIn} aria-label="Zoom in" style={{ ...b, borderBottom: '1px solid ' + REF_C.border }}>+</button>
-      <button onClick={onOut} aria-label="Zoom out" style={b}>&minus;</button>
+      <button onClick={onOut} aria-label="Zoom out" style={onFit ? { ...b, borderBottom: '1px solid ' + REF_C.border } : b}>&minus;</button>
+      {onFit && <button onClick={onFit} aria-label="Fit to view" style={{ ...b, height: 19, ...caps(9, { letterSpacing: '0.1em', color: '#E7E9EF' }) }}>Fit</button>}
     </div>
   )
 }
@@ -151,19 +154,22 @@ export function RefToolCard({ on, Icon, title, hint, onClick, style }) {
 
 /* ---------- bottom navigation ---------- */
 const NAV = [['home', 'Home', Home], ['time', 'Time', Clock], ['tasks', 'Tasks', MapIcon], ['docs', 'Docs', FileText], ['more', 'More', LayoutGrid]]
+/* one tab of the bottom nav — shared by the demo's RefNav and the app's MobileTabBar */
+export function RefTabButton({ on, label, Icon, onClick, style, ...aria }) {
+  return (
+    <button onClick={onClick} {...aria} style={{ ...btnReset, position: 'relative', flex: 1, height: REF_NAV_H, color: on ? REF_C.navActive : '#E0E2E7', ...style }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 7, display: 'flex', justifyContent: 'center', color: on ? REF_C.navActive : '#BBC2D4' }}><Icon size={24} strokeWidth={2.2} /></div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 32.5, textAlign: 'center', ...caps(13, { letterSpacing: '0.2em', fontWeight: 500 }) }}>{label}</div>
+      {on && <div style={{ position: 'absolute', left: '50%', top: 49, width: 44, height: 3, marginLeft: -22, borderRadius: 1.5, background: REF_C.navActive }} />}
+    </button>
+  )
+}
+export const NAV_BAR_STYLE = { flexShrink: 0, height: 'calc(' + REF_NAV_H + 'px + var(--sab, 0px))', paddingBottom: 'var(--sab, 0px)', boxSizing: 'content-box', background: BG_GRAD, borderTop: '1px solid rgba(249,107,2,.6)', display: 'flex', zIndex: 5 }
+/* demo only: the mock's five tabs, inert except Tasks */
 export function RefNav({ active = 'tasks', onSelect }) {
   return (
-    <nav style={{ flexShrink: 0, height: 'calc(62.5px + var(--sab, 0px))', paddingBottom: 'var(--sab, 0px)', boxSizing: 'content-box', background: BG_GRAD, borderTop: '1px solid rgba(249,107,2,.6)', display: 'flex', zIndex: 5 }}>
-      {NAV.map(([k, label, Icon]) => {
-        const on = k === active
-        return (
-          <button key={k} onClick={() => onSelect && onSelect(k)} aria-current={on ? 'page' : undefined} style={{ ...btnReset, position: 'relative', flex: 1, height: 62.5, color: on ? REF_C.navActive : '#E0E2E7' }}>
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 7, display: 'flex', justifyContent: 'center', color: on ? REF_C.navActive : '#BBC2D4' }}><Icon size={24} strokeWidth={2.2} /></div>
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 32.5, textAlign: 'center', ...caps(13, { letterSpacing: '0.2em', fontWeight: 500 }) }}>{label}</div>
-            {on && <div style={{ position: 'absolute', left: '50%', top: 49, width: 44, height: 3, marginLeft: -22, borderRadius: 1.5, background: REF_C.navActive }} />}
-          </button>
-        )
-      })}
+    <nav style={NAV_BAR_STYLE}>
+      {NAV.map(([k, label, Icon]) => <RefTabButton key={k} on={k === active} label={label} Icon={Icon} onClick={() => onSelect && onSelect(k)} aria-current={k === active ? 'page' : undefined} />)}
     </nav>
   )
 }

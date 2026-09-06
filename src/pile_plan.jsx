@@ -7,10 +7,11 @@ import TTMapView from './tt_mapview.jsx';
 import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
-import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
+import { Paintbrush, SquareDashed, Move, Trash2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
-import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_SHADOW, PANEL_STYLE, FLOAT, SEG_WRAP, seg as segStyle, tool as toolStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
-import { REF, REF_C, BG_GRAD, RULE, RULE_SOFT, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
+import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_STYLE, seg as segStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
+import { REF_C, REF_LOGO_URI, BG_GRAD, RULE_SOFT, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
+import { useIsMobile } from './native/useIsMobile.js';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -24,7 +25,7 @@ const storage = window.storage || {
 /* skin pack tokens (src/tt_theme.js) */
 const ORANGE = TT.orange, GOLD = TT.amber, CREAM = TT.text;
 const INK = TT.canvas, INK2 = '#020910', MUTE = TT.text2;
-const LINE = TT.border, PANEL = TT.panel;
+const LINE = TT.border;
 const BBF = "'Bebas Neue', sans-serif", NBF = "'Barlow Condensed', sans-serif";
 const CLIP = 'polygon(9px 0%,100% 0%,calc(100% - 9px) 100%,0% 100%)';
 const LOGO_URL = (typeof window !== 'undefined' && window.__TT_LOGO) || '/logo.webp';
@@ -141,11 +142,6 @@ function scaleImage(file, maxDim, q) {
 let _idc = 1;
 function newProjId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
-function useIsMobile() {
-  const [m, setM] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  useEffect(() => { const h = () => setM(window.innerWidth < 768); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
-  return m;
-}
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const fileStamp = (ts) => { const d = new Date(ts || Date.now()); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
 const safeName = (s) => (s || 'Project').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -663,8 +659,8 @@ export function ClientPortal({ user, onExit }) {
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
-export default function PilePlan({ onExit, portalUser }) {
-  const mobW = useIsMobile(); const mob = REF || mobW;   // reference skin is phone-shaped everywhere
+export default function PilePlan({ onExit, portalUser, demo }) {
+  const mob = useIsMobile();   // phones and the Android shell get the drawer layout; wider screens the sidebar
   const pObj = (portalUser && typeof portalUser === 'object') ? portalUser : null;
   const userName = (typeof portalUser === 'string' ? portalUser : (pObj && pObj.name)) || 'Unknown user';
   const isAdmin = !!(pObj && pObj.role === 'admin');
@@ -673,7 +669,7 @@ export default function PilePlan({ onExit, portalUser }) {
 
   const [projects, setProjects] = useState(() => ensureMigrated());
   const [activeId, setActiveId] = useState(() => storage.get(ACTIVE_KEY) || (storage.get(REG_KEY)?.[0]?.id) || 'dwyer');
-  const [view, setView] = useState(() => (typeof window !== 'undefined' && window.__TT_DEMO && window.__TT_DEMO.startView) || 'dashboard'); // dashboard | tracker
+  const [view, setView] = useState(() => (demo && demo.startView) || 'dashboard'); // dashboard | tracker
 
   const loadDoc = (id) => normalizeDoc(storage.get(projKey(id)));
   const init = useRef(loadDoc(activeId));
@@ -708,12 +704,19 @@ export default function PilePlan({ onExit, portalUser }) {
   const allowed = allowedPaintSet(scopeForActive); // null = all allowed
 
   const [paint, setPaint] = useState('s1');         // s0-s4 stages, q1/q2 QC, q0 clear
-  const [mode, setMode] = useState(() => (typeof window !== 'undefined' && window.__TT_DEMO && window.__TT_DEMO.mode) || 'brush');
+  const [mode, setMode] = useState(() => (demo && demo.mode) || 'brush');
   const [toast, setToast] = useState('');
+  /* Android back button: the map view returns to the project list; the
+     shell's nav stack (registered earlier) sees defaultPrevented and stands down */
+  useEffect(() => {
+    if (view !== 'tracker') return;
+    const h = (ev) => { ev.preventDefault(); setView('dashboard'); };
+    window.addEventListener('native:back', h, true);
+    return () => window.removeEventListener('native:back', h, true);
+  }, [view]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 1500); return () => clearTimeout(t); }, [toast]);        // brush | fill | pan | delete | bg
   const [delSel, setDelSel] = useState(() => new Set()); // points queued for deletion (delete mode)
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [legendOpen, setLegendOpen] = useState(true);   // phone map legend (tap to collapse)
   const [historyOpen, setHistoryOpen] = useState(false);
   const [projOpen, setProjOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -1353,13 +1356,15 @@ export default function PilePlan({ onExit, portalUser }) {
   const isAllowed = (tok) => !allowed || allowed.has(tok);
   const canEditQC = isAllowed('q2');
   const health = stats.orange > 0 ? { label: 'Action Required', color: ORANGE } : stats.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW } : { label: 'On Track', color: GREEN };
-  const toolBtn = (on) => ({ flex: 1, ...toolStyle(on), minHeight: 64, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase' });
   const panelHead = (Icon, txt, right) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
       <Icon size={18} color={ORANGE} strokeWidth={2.2} /><span style={kicker}>{txt}</span>
       {right && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>{right}</div>}
     </div>
   );
+  /* the four paint tools — the sidebar (desktop) and the drawer (phones) render the same list */
+  const TOOLS = [{ k: 'brush', l: 'Brush', hint: 'Drag to paint', I: Paintbrush }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block', I: SquareDashed }, { k: 'pan', l: 'Pan', hint: 'Move & pinch', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points', I: Trash2 }] : []);
+  const pickTool = (k) => { if (mode === 'delete' && k !== 'delete') clearDel(); setMode(k); };
   const legendBody = (
     <>
       {allowed && <div style={{ fontFamily: NBF, fontSize: 12.5, color: GOLD, background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.3)', borderRadius: 8, padding: '8px 10px' }}>You're assigned to: {(scopeForActive || []).map((t) => (TASK_DEFS.find((x) => x.id === t) || {}).label).filter(Boolean).join(', ') || 'view only'}.</div>}
@@ -1383,12 +1388,9 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       {/* tools */}
-      <div style={{ display: 'flex', gap: 7 }}>
-        {[{ k: 'brush', l: 'Brush', I: Paintbrush }, { k: 'fill', l: 'Fill', I: SquareDashed }, { k: 'pan', l: 'Pan', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', I: Trash2, red: true }] : []).map((t) => (
-          <button key={t.k} onClick={() => { if (t.k === 'delete') { setMode(mode === 'delete' ? 'brush' : 'delete'); clearDel(); } else { if (mode === 'delete') clearDel(); setMode(t.k); } }} style={toolBtn(mode === t.k, t.red)}><t.I size={20} /><span>{t.l}</span></button>
-        ))}
-        <div style={{ width: 1, background: 'rgba(255,255,255,.1)', margin: '8px 1px' }} />
-        <button onClick={undo} disabled={!canUndo} style={{ ...toolBtn(false), flex: '0 0 64px', color: ORANGE, opacity: canUndo ? 1 : .4 }}><Undo2 size={20} /><span>Undo</span></button>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
+        {TOOLS.map((t) => <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => pickTool(t.k)} />)}
+        <div style={{ width: 38, position: 'relative', flexShrink: 0 }}><RefUndo onClick={undo} disabled={!canUndo} style={{ right: 0, top: 19 }} /></div>
       </div>
       <div style={{ fontFamily: NBF, fontSize: 11.5, color: MUTE, marginTop: -4 }}>
         {mode === 'brush' ? 'Drag across points to paint them.'
@@ -1614,10 +1616,10 @@ export default function PilePlan({ onExit, portalUser }) {
   /* ---- projects dashboard view ---- */
   if (view === 'dashboard') {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 4px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)', position: 'sticky', top: 0, zIndex: 5 }}>
           {onExit && <button onClick={onExit} style={backBtn} aria-label="Back"><ArrowLeft size={22} /></button>}
-          <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 32 : 38, height: mob ? 32 : 38, objectFit: 'contain', borderRadius: 4 }} />
+          <img src={REF_LOGO_URI || LOGO_URL} alt="" style={{ width: mob ? 36 : 42, height: mob ? 33 : 38, objectFit: 'contain' }} />
           <div style={{ fontFamily: BBF, fontSize: mob ? 18 : 27, letterSpacing: 1.2, color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>TASK TRACKER <span style={{ width: 1, height: 20, background: TT.borderStrong }} /><span style={{ color: ORANGE }}>PROJECTS</span></div>
         </div>
         <div style={{ padding: mob ? 14 : 28, paddingBottom: mob ? 'calc(24px + var(--sab, 0px))' : 40, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
@@ -1672,40 +1674,17 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- tracker view ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: REF ? '#010F1C' : `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: REF_C.panel, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
       <GlyphDefs />
-      {REF ? (
-        <RefHeader projName={projName} pct={stats.overall.toFixed(0)} onBack={() => setView('dashboard')} onProject={() => setProjOpen(true)} onExport={handleExport} logoUri={LOGO_URL} />
-      ) : (
-      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 2px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)' }}>
-        <button onClick={() => setView('dashboard')} style={backBtn} title="Back to projects" aria-label="Back to projects"><ArrowLeft size={22} /></button>
-        <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 36, height: mob ? 30 : 36, objectFit: 'contain', borderRadius: 4 }} />
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: BBF, fontSize: mob ? 18 : 24, letterSpacing: 1.2, color: CREAM, lineHeight: .95 }}>TASK TRACKER</div>
-          <button onClick={() => setProjOpen(true)} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, maxWidth: mob ? 150 : 260, minHeight: 22 }}>
-            <span style={{ fontFamily: NBF, fontSize: mob ? 12 : 13, fontWeight: 700, letterSpacing: 1.5, color: ORANGE, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projName}</span><span style={{ color: ORANGE, fontSize: 10 }}>&#9662;</span>
-          </button>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 14 }}>
-          <div style={{ textAlign: 'right', lineHeight: 1, minWidth: mob ? 60 : 90 }}>
-            <div style={{ fontFamily: BBF, fontSize: mob ? 22 : 30, color: ORANGE, textShadow: '0 0 18px rgba(249,115,22,.4)' }}>{stats.overall.toFixed(0)}%</div>
-            <div style={{ height: 5, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden', marginTop: 3 }}><div style={{ height: '100%', width: stats.overall + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')' }} /></div>
-            {!mob && <div style={{ fontFamily: NBF, fontSize: 9, letterSpacing: 2, color: MUTE, textTransform: 'uppercase', marginTop: 3 }}>Complete</div>}
-          </div>
-          {/* Export stays available on phones — the PDF goes to the share sheet there. */}
-          <button onClick={handleExport} aria-label="Export PDF" style={mob ? { ...ctaBtn, padding: 0, width: 46, height: 46, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, fontSize: 9, letterSpacing: 1 } : ctaBtn}>{mob ? <><FileText size={20} />PDF</> : 'Export PDF'}</button>
-        </div>
-      </div>
-      )}
-
+      <RefHeader projName={projName} pct={stats.overall.toFixed(0)} onBack={() => setView('dashboard')} onProject={() => setProjOpen(true)} onExport={handleExport} logoUri={REF_LOGO_URI || LOGO_URL} nameMax={mob ? 120 : 260} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {!mob && (
-          <div style={{ width: 340, flexShrink: 0, background: PANEL, borderRight: '1px solid ' + LINE, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ width: 430, flexShrink: 0, background: REF_C.panel, borderRight: RULE_SOFT, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {sectionLabel('Status Legend')}
             {legendBody}
           </div>
         )}
-        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: REF ? RULE_SOFT : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
+        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: mob ? RULE_SOFT : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
           {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
@@ -1764,54 +1743,21 @@ export default function PilePlan({ onExit, portalUser }) {
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.4} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />; })()}
             </svg>
           )}
-          {/* on phones this drops to a second row so it clears the satellite/streets toggle */}
-          {REF ? (
-            <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[47.5, 64, 45.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
-          ) : (
-          <div style={{ position: 'absolute', top: mob ? 64 : 10, right: 12, zIndex: 600, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
-            {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
-              v.need === false ? null : (
-                <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
-                  style={{ ...segStyle(viewMode === v.k), padding: '0 12px', minHeight: mob ? 42 : 36 }}>{mob && v.k === 'model' ? '3D' : v.l}</button>
-              )
-            ))}
-          </div>
-          )}
+          <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[47.5, 64, 45.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
           {selSection != null && (
             <div style={mob
-              ? { position: 'absolute', left: 12, bottom: REF ? 56 : 'calc(12px + var(--sab, 0px))', zIndex: 601, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
+              ? { position: 'absolute', left: 12, bottom: 56, zIndex: 601, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
               : { position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
               <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sectionLabelFor(selSection)}</span>
               <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 20, lineHeight: 1, cursor: 'pointer', minWidth: 32, minHeight: 32 }}>&times;</button>
             </div>
           )}
-          {REF ? <RefLegend /> : mob && (
-            <div onClick={() => setLegendOpen((v) => !v)} style={{ position: 'absolute', left: 12, bottom: `calc(${selSection != null ? 62 : 12}px + var(--sab, 0px))`, zIndex: 600, ...FLOAT, padding: legendOpen ? '8px 10px' : '7px 10px', maxWidth: 236, cursor: 'pointer' }}>
-              {legendOpen ? (<>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px' }}>
-                  {STAGES.slice(1).map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: CREAM, whiteSpace: 'nowrap' }}><Glyph code={'s' + (i + 1)} size={19} />{s.name.replace(' Installed', '')}</div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: CREAM }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q1" size={13} />Attention <b style={{ color: QC_YELLOW }}>{stats.yellow}</b></span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q2" size={13} />Flagged <b style={{ color: QC_ORANGE }}>{stats.orange}</b></span>
-                </div>
-              </>) : (<div style={{ fontFamily: NBF, fontWeight: 700, fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>Legend &#9652;</div>)}
-            </div>
-          )}
-          {viewMode === 'plan' && (REF ? <RefZoom onIn={() => zoomB(1.3)} onOut={() => zoomB(1 / 1.3)} style={{ left: 14, top: 12 }} /> : (
-            <div style={{ position: 'absolute', bottom: mob ? 'calc(14px + var(--sab, 0px))' : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-              <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
-              <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
-              <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
-              <button onClick={resetView} style={{ ...zbtn, fontSize: 12, fontFamily: NBF }} title="Fit">FIT</button>
-            </div>
-          ))}
+          <RefLegend />
+          {viewMode === 'plan' && <RefZoom onIn={() => zoomB(1.3)} onOut={() => zoomB(1 / 1.3)} onFit={resetView} style={{ left: 14, top: 12 }} />}
         </div>
       </div>
 
-      {REF ? (
+      {mob && (
         <div style={{ position: 'relative', flexShrink: 0, height: 110, background: BG_GRAD, zIndex: 700 }}>
           {/* raised tab on the drawer rule with the small grab handle */}
           <div style={{ position: 'absolute', left: '50%', top: -7.5, marginLeft: -31, width: 62, height: 7.5, background: '#E0701A', clipPath: 'polygon(6.5px 0,55.5px 0,62px 100%,0 100%)' }} />
@@ -1834,53 +1780,16 @@ export default function PilePlan({ onExit, portalUser }) {
             </>
           )}
           <div style={{ position: 'absolute', left: 10, right: 10, top: 37.5, display: 'flex', gap: 4 }}>
-            {[{ k: 'brush', l: 'Brush', hint: 'Drag to paint', I: Paintbrush }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block', I: SquareDashed }, { k: 'pan', l: 'Pan', hint: 'Move & pinch', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points', I: Trash2 }] : []).map((t) => (
-              <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => { if (mode === 'delete' && t.k !== 'delete') clearDel(); setMode(t.k); }} />
-            ))}
-          </div>
-        </div>
-      ) : mob && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: GRAD_PANEL, borderTop: '1px solid rgba(255,107,0,.55)' }}>
-          {mode === 'delete' ? (
-            /* delete mode: what's queued + the two actions */
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Trash2 size={18} color="#f87171" style={{ flexShrink: 0 }} />
-              <span style={{ flex: 1, fontFamily: NBF, fontWeight: 600, fontSize: 15, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{delSel.size ? `${delSel.size} point${delSel.size === 1 ? '' : 's'} selected` : 'Tap or drag over points to remove'}</span>
-              <button onClick={clearDel} disabled={!delSel.size} style={{ ...ghostBtn, padding: '10px 13px', minHeight: 44, opacity: delSel.size ? 1 : .4 }}>Clear</button>
-              <button onClick={deleteMarked} disabled={!delSel.size} style={{ ...ctaBtn, background: '#dc2626', color: '#fff', padding: '10px 14px', minHeight: 44, boxShadow: 'none', opacity: delSel.size ? 1 : .4 }}>Delete</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '10px 14px', minHeight: 44, display: 'flex', alignItems: 'center', gap: 8 }}>Status &#9650;</button>
-              <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, minHeight: 44, cursor: 'pointer' }}>
-                <span style={{ width: 16, height: 16, borderRadius: 8, background: paintColor, flexShrink: 0, boxShadow: '0 0 8px ' + paintColor }} />
-                <span style={{ fontFamily: NBF, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13 }}>{paintLabel}</span>
-              </div>
-              <button onClick={undo} disabled={!canUndo} aria-label="Undo" style={{ ...ghostBtn, padding: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: canUndo ? 1 : .4 }}><Undo2 size={20} /></button>
-            </div>
-          )}
-          {/* explicit tool row — no more cycling through modes blind */}
-          <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 6 }}>
-            {[{ k: 'brush', l: 'Brush', hint: 'Drag to paint', I: Paintbrush }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block', I: SquareDashed }, { k: 'pan', l: 'Pan', hint: 'Move & pinch', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points', I: Trash2 }] : []).map((t) => {
-              const on = mode === t.k; const red = t.k === 'delete';
-              return (
-                <button key={t.k} onClick={() => { if (mode === 'delete' && t.k !== 'delete') clearDel(); setMode(t.k); }}
-                  aria-pressed={on} style={{ ...toolStyle(on), fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  <t.I size={22} />
-                  <span>{t.l}</span>
-                  <span style={{ fontSize: 10.5, letterSpacing: 0, textTransform: 'none', fontWeight: 500, color: on ? '#ffb27a' : TT.text2 }}>{t.hint}</span>
-                </button>
-              );
-            })}
+            {TOOLS.map((t) => <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => pickTool(t.k)} />)}
           </div>
         </div>
       )}
 
-      {REF && <RefNav active="tasks" onSelect={(k) => { if (k !== 'tasks') setToast('Demo: only Tasks is available'); }} />}
-      {REF && toast && <div style={{ position: 'fixed', left: '50%', bottom: 'calc(80px + var(--sab, 0px))', transform: 'translateX(-50%)', zIndex: 2150, background: 'rgba(1,15,28,.96)', border: '1px solid ' + REF_C.border, borderRadius: 8, padding: '8px 14px', fontFamily: NBF, fontSize: 13, color: '#fff', letterSpacing: .5, whiteSpace: 'nowrap' }}>{toast}</div>}
+      {demo && <RefNav active="tasks" onSelect={(k) => { if (k !== 'tasks') setToast('Demo: only Tasks is available'); }} />}
+      {demo && toast && <div style={{ position: 'fixed', left: '50%', bottom: 'calc(80px + var(--sab, 0px))', transform: 'translateX(-50%)', zIndex: 2150, background: 'rgba(1,15,28,.96)', border: '1px solid ' + REF_C.border, borderRadius: 8, padding: '8px 14px', fontFamily: NBF, fontSize: 13, color: '#fff', letterSpacing: .5, whiteSpace: 'nowrap' }}>{toast}</div>}
 
       {mob && sheetOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: `linear-gradient(180deg,${NAVY2}, ${NAVY})`, border: '1px solid ' + ORANGE, borderBottom: 'none', borderRadius: '18px 18px 0 0', padding: 14, paddingBottom: 'calc(14px + var(--sab, 0px))', maxHeight: '88dvh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <ListChecks size={26} color={ORANGE} />
@@ -2243,7 +2152,6 @@ const backBtn = { background: 'transparent', color: CREAM, border: 'none', width
 /* small ↺ that clears a task straight from its legend row */
 function resetX(active) { return { background: 'transparent', border: 'none', color: active ? ORANGE : 'rgba(255,255,255,.25)', width: 34, height: 34, fontSize: 16, lineHeight: 1, cursor: 'pointer', flexShrink: 0, borderRadius: 17, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }; }
 const miniBtn = { background: 'transparent', border: 'none', borderBottom: '2px solid', borderColor: TT.borderStrong, padding: '6px 8px', minHeight: 36, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' };
-const zbtn = { ...FLOAT, width: 46, height: 46, color: CREAM, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const xBtn = { background: 'transparent', border: 'none', color: ORANGE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
-function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2200, background: TT.scrim, display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
+function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2300, background: TT.scrim, display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
 function modalCard(mob, w) { return { background: GRAD_PANEL, border: '1px solid ' + ORANGE, borderRadius: mob ? '18px 18px 0 0' : TT.radiusPanel, padding: 18, width: mob ? '100%' : w, maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, boxShadow: '0 0 60px rgba(0,0,0,.6)' }; }
