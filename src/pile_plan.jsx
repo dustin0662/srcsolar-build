@@ -26,7 +26,7 @@ const INK = TT.canvas, INK2 = '#020910', MUTE = TT.text2;
 const LINE = TT.border, PANEL = TT.panel;
 const BBF = "'Bebas Neue', sans-serif", NBF = "'Barlow Condensed', sans-serif";
 const CLIP = 'polygon(9px 0%,100% 0%,calc(100% - 9px) 100%,0% 100%)';
-const LOGO_URL = '/logo.webp';
+const LOGO_URL = (typeof window !== 'undefined' && window.__TT_LOGO) || '/logo.webp';
 /* new skin: deep-navy panels with orange rules, rounded corners */
 const NAVY = TT.panel, NAVY2 = TT.elevated;
 const PBOX = GRAD_PANEL, PBORDER = TT.border;

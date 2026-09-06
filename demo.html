@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#030D18" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Task Tracker — demo</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;600&family=Barlow+Condensed:wght@400;600;700&display=swap');
+      :root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--tabbar-h:0px}
+      *{box-sizing:border-box;margin:0;padding:0}
+      html,body{height:100%;background:#030D18;color:#F5F8FC;font-family:'Barlow',Roboto,sans-serif;overscroll-behavior:none}
+      #root{position:fixed;inset:0}
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/demo.jsx"></script>
+  </body>
+</html>

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:demo": "vite build -c vite.demo.config.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
@@ -35,6 +36,7 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }
