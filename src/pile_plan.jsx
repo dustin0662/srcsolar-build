@@ -10,6 +10,7 @@ import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFract
 import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
 import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_SHADOW, PANEL_STYLE, FLOAT, SEG_WRAP, seg as segStyle, tool as toolStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
+import { REF, REF_C, BG_GRAD, RULE, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -663,7 +664,7 @@ export function ClientPortal({ user, onExit }) {
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 export default function PilePlan({ onExit, portalUser }) {
-  const mob = useIsMobile();
+  const mobW = useIsMobile(); const mob = REF || mobW;   // reference skin is phone-shaped everywhere
   const pObj = (portalUser && typeof portalUser === 'object') ? portalUser : null;
   const userName = (typeof portalUser === 'string' ? portalUser : (pObj && pObj.name)) || 'Unknown user';
   const isAdmin = !!(pObj && pObj.role === 'admin');
@@ -672,7 +673,7 @@ export default function PilePlan({ onExit, portalUser }) {
 
   const [projects, setProjects] = useState(() => ensureMigrated());
   const [activeId, setActiveId] = useState(() => storage.get(ACTIVE_KEY) || (storage.get(REG_KEY)?.[0]?.id) || 'dwyer');
-  const [view, setView] = useState('dashboard'); // dashboard | tracker
+  const [view, setView] = useState(() => (typeof window !== 'undefined' && window.__TT_DEMO && window.__TT_DEMO.startView) || 'dashboard'); // dashboard | tracker
 
   const loadDoc = (id) => normalizeDoc(storage.get(projKey(id)));
   const init = useRef(loadDoc(activeId));
@@ -707,7 +708,9 @@ export default function PilePlan({ onExit, portalUser }) {
   const allowed = allowedPaintSet(scopeForActive); // null = all allowed
 
   const [paint, setPaint] = useState('s1');         // s0-s4 stages, q1/q2 QC, q0 clear
-  const [mode, setMode] = useState('brush');        // brush | fill | pan | delete | bg
+  const [mode, setMode] = useState(() => (typeof window !== 'undefined' && window.__TT_DEMO && window.__TT_DEMO.mode) || 'brush');
+  const [toast, setToast] = useState('');
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 1500); return () => clearTimeout(t); }, [toast]);        // brush | fill | pan | delete | bg
   const [delSel, setDelSel] = useState(() => new Set()); // points queued for deletion (delete mode)
   const [sheetOpen, setSheetOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(true);   // phone map legend (tap to collapse)
@@ -1669,8 +1672,11 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- tracker view ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: REF ? '#010F1C' : `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
       <GlyphDefs />
+      {REF ? (
+        <RefHeader projName={projName} pct={stats.overall.toFixed(0)} onBack={() => setView('dashboard')} onProject={() => setProjOpen(true)} onExport={handleExport} logoUri={LOGO_URL} />
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 2px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)' }}>
         <button onClick={() => setView('dashboard')} style={backBtn} title="Back to projects" aria-label="Back to projects"><ArrowLeft size={22} /></button>
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 36, height: mob ? 30 : 36, objectFit: 'contain', borderRadius: 4 }} />
@@ -1690,6 +1696,7 @@ export default function PilePlan({ onExit, portalUser }) {
           <button onClick={handleExport} aria-label="Export PDF" style={mob ? { ...ctaBtn, padding: 0, width: 46, height: 46, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, fontSize: 9, letterSpacing: 1 } : ctaBtn}>{mob ? <><FileText size={20} />PDF</> : 'Export PDF'}</button>
         </div>
       </div>
+      )}
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {!mob && (
@@ -1698,7 +1705,7 @@ export default function PilePlan({ onExit, portalUser }) {
             {legendBody}
           </div>
         )}
-        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
+        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: REF ? RULE : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
           {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
@@ -1758,6 +1765,9 @@ export default function PilePlan({ onExit, portalUser }) {
             </svg>
           )}
           {/* on phones this drops to a second row so it clears the satellite/streets toggle */}
+          {REF ? (
+            <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[52, 64, 50.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
+          ) : (
           <div style={{ position: 'absolute', top: mob ? 64 : 10, right: 12, zIndex: 600, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
               v.need === false ? null : (
@@ -1766,15 +1776,16 @@ export default function PilePlan({ onExit, portalUser }) {
               )
             ))}
           </div>
+          )}
           {selSection != null && (
             <div style={mob
-              ? { position: 'absolute', left: 12, bottom: 'calc(12px + var(--sab, 0px))', zIndex: 601, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
+              ? { position: 'absolute', left: 12, bottom: REF ? 56 : 'calc(12px + var(--sab, 0px))', zIndex: 601, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
               : { position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
               <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sectionLabelFor(selSection)}</span>
               <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 20, lineHeight: 1, cursor: 'pointer', minWidth: 32, minHeight: 32 }}>&times;</button>
             </div>
           )}
-          {mob && (
+          {REF ? <RefLegend /> : mob && (
             <div onClick={() => setLegendOpen((v) => !v)} style={{ position: 'absolute', left: 12, bottom: `calc(${selSection != null ? 62 : 12}px + var(--sab, 0px))`, zIndex: 600, ...FLOAT, padding: legendOpen ? '8px 10px' : '7px 10px', maxWidth: 236, cursor: 'pointer' }}>
               {legendOpen ? (<>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px' }}>
@@ -1789,18 +1800,43 @@ export default function PilePlan({ onExit, portalUser }) {
               </>) : (<div style={{ fontFamily: NBF, fontWeight: 700, fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>Legend &#9652;</div>)}
             </div>
           )}
-          {viewMode === 'plan' && (
+          {viewMode === 'plan' && (REF ? <RefZoom onIn={() => zoomB(1.3)} onOut={() => zoomB(1 / 1.3)} style={{ left: 14, top: 12 }} /> : (
             <div style={{ position: 'absolute', bottom: mob ? 'calc(14px + var(--sab, 0px))' : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
               <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
               <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
               <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
               <button onClick={resetView} style={{ ...zbtn, fontSize: 12, fontFamily: NBF }} title="Fit">FIT</button>
             </div>
-          )}
+          ))}
         </div>
       </div>
 
-      {mob && (
+      {REF ? (
+        <div style={{ position: 'relative', flexShrink: 0, height: 109, background: BG_GRAD }}>
+          <div style={{ position: 'absolute', left: '50%', top: -7, marginLeft: -29.75, width: 59.5, height: 4, borderRadius: 2, background: REF_C.orange, zIndex: 3 }} />
+          {mode === 'delete' ? (
+            <div style={{ position: 'absolute', left: 11, right: 11, top: 5, height: 27.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Trash2 size={16} color="#f87171" />
+              <span style={{ flex: 1, minWidth: 0, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{delSel.size ? `${delSel.size} point${delSel.size === 1 ? '' : 's'} selected` : 'Tap or drag over points to remove'}</span>
+              <button onClick={clearDel} disabled={!delSel.size} style={{ background: 'transparent', border: '1px solid ' + REF_C.border, borderRadius: 5, color: '#fff', height: 27.5, padding: '0 10px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', opacity: delSel.size ? 1 : .4 }}>Clear</button>
+              <button onClick={deleteMarked} disabled={!delSel.size} style={{ background: TT.danger, border: 'none', borderRadius: 5, color: '#fff', height: 27.5, padding: '0 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', opacity: delSel.size ? 1 : .4 }}>Delete</button>
+            </div>
+          ) : (
+            <>
+              <RefStatusChip onClick={() => setSheetOpen(true)} style={{ left: 11, top: 6.5 }} />
+              <div style={{ position: 'absolute', left: 115, top: 13, width: 3, height: 15, background: REF_C.slash, transform: 'skewX(-23deg)' }} />
+              <div style={{ position: 'absolute', left: 130.5, top: 13, width: 16, height: 15, background: mode === 'pan' ? REF_C.swatch : paintColor, clipPath: 'polygon(3.5px 0,100% 0,calc(100% - 3.5px) 100%,0 100%)' }} />
+              <div onClick={() => setSheetOpen(true)} style={{ position: 'absolute', left: 156, right: 60, top: 12.5, fontFamily: NBF, fontWeight: 700, fontSize: 13.5, letterSpacing: 1, textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'pointer' }}>{mode === 'pan' ? 'All install phases' : paintLabel}</div>
+              <RefUndo onClick={undo} disabled={!canUndo} style={{ right: 12.5, top: 4.5 }} />
+            </>
+          )}
+          <div style={{ position: 'absolute', left: 10, right: 10, top: 37.5, display: 'flex', gap: 4 }}>
+            {[{ k: 'brush', l: 'Brush', hint: 'Drag to paint', I: Paintbrush }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block', I: SquareDashed }, { k: 'pan', l: 'Pan', hint: 'Move & pinch', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points', I: Trash2 }] : []).map((t) => (
+              <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => { if (mode === 'delete' && t.k !== 'delete') clearDel(); setMode(t.k); }} />
+            ))}
+          </div>
+        </div>
+      ) : mob && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: GRAD_PANEL, borderTop: '1px solid rgba(255,107,0,.55)' }}>
           {mode === 'delete' ? (
             /* delete mode: what's queued + the two actions */
@@ -1836,6 +1872,9 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         </div>
       )}
+
+      {REF && <RefNav active="tasks" onSelect={(k) => { if (k !== 'tasks') setToast('Demo: only Tasks is available'); }} />}
+      {REF && toast && <div style={{ position: 'fixed', left: '50%', bottom: 'calc(80px + var(--sab, 0px))', transform: 'translateX(-50%)', zIndex: 2150, background: 'rgba(1,15,28,.96)', border: '1px solid ' + REF_C.border, borderRadius: 8, padding: '8px 14px', fontFamily: NBF, fontSize: 13, color: '#fff', letterSpacing: .5, whiteSpace: 'nowrap' }}>{toast}</div>}
 
       {mob && sheetOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>

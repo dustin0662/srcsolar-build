@@ -15,7 +15,8 @@ import { TT, SEG_WRAP, seg as segStyle, PANEL_SHADOW } from './tt_theme.js';
 const ORANGE = TT.orange;
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
-import { paintStack, radiusForZoom, onIconsReady } from './tt_glyphs.jsx';
+import { paintStack, paintRefStack, radiusForZoom, onIconsReady, REF, clampK } from './tt_glyphs.jsx';
+import { RefZoom, RefSeg, RefCompass } from './tt_ref_chrome.jsx';
 
 /* One marker per point for hit-testing / clicks, but drawing happens in a
    single multi-pass painter so the stacks layer correctly: piles, then the
@@ -27,7 +28,8 @@ const GlyphMarker = L.CircleMarker.extend({
     this._radius = r * 1.1; this.options.radius = this._radius;
     this._point = map.latLngToLayerPoint(this._latlng);
     this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
-    const pad = r * 5.8 + 4;   // icon box, selection ring, raised flag + glow, joint to the next point
+    let pad = r * 5.8 + 4;   // icon box, selection ring, raised flag + glow, joint to the next point
+    if (REF) { const k = clampK((this._nextPoint ? this._point.distanceTo(this._nextPoint) : 36 * r / 9) / 36); this._radius = Math.max(r * 1.1, 9 * k); this.options.radius = this._radius; pad = 40 * k + 4; }
     const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
     if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
     this._pxBounds = b;
@@ -68,7 +70,15 @@ const GlyphRenderer = L.Canvas.extend({
       const r = radiusForZoom(this._map.getZoom());
       let dir = [0, 1];
       for (const g of glyphs) if (g._nextPoint) { const dx = g._nextPoint.x - g._point.x, dy = g._nextPoint.y - g._point.y, L2 = Math.hypot(dx, dy) || 1; dir = [dx / L2, dy / L2]; break; }
-      paintStack(ctx, glyphs.map((g) => g._item()), r, dir, L.Browser.retina ? 2 : 1);
+      if (REF) {
+        const z = this._map.getZoom();
+        if (this._refZoom !== z || this._refPitch == null) {
+          const ds = [];
+          for (const id in this._layers) { const l = this._layers[id]; if (l instanceof GlyphMarker && l._nextPoint) ds.push(l._point.distanceTo(l._nextPoint)); }
+          ds.sort((a, b) => a - b); this._refPitch = ds.length ? ds[ds.length >> 1] : 36 * r / 9; this._refZoom = z;
+        }
+        paintRefStack(ctx, glyphs.map((g) => g._item()), clampK(this._refPitch / 36), dir, L.Browser.retina ? 2 : 1, this._refPitch);
+      } else paintStack(ctx, glyphs.map((g) => g._item()), r, dir, L.Browser.retina ? 2 : 1);
     }
     for (const layer of others) layer._updatePath();
     this._drawing = false;
@@ -96,10 +106,13 @@ export default function TTMapView({
   const marqRef = useRef(null);
   const rpanRef = useRef(null);
   const [ready, setReady] = useState(0);
+  const siteRendererRef = useRef(null);
+  const siteRef = useRef([]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, renderer: new GlyphRenderer({ padding: 0.5 }) });
+    const map = L.map(containerRef.current, { zoomControl: !REF, attributionControl: !REF, zoomSnap: REF ? 0 : 1, renderer: new GlyphRenderer({ padding: 0.5 }) });
+    if (REF) { map.createPane('tt-site').style.zIndex = 390; siteRendererRef.current = L.canvas({ pane: 'tt-site', padding: 0.5 }); }
     mapRef.current = map;
     baseLayerRef.current = L.tileLayer(
       layerMode === 'streets' ? OSM_STREETS : ESRI_SAT,
@@ -135,7 +148,8 @@ export default function TTMapView({
       markersRef.current.push(m);
     });
     if (!bounds.isValid()) return;
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
+    if (REF) map.fitBounds(bounds, { paddingTopLeft: [48, 74], paddingBottomRight: [66, 62], maxZoom: 22 });
+    else map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
     /* Keep the view over the site: pad the KMZ extent by a margin so the
        outermost points can still be centred and worked on, but the map can't
        be dragged off into empty imagery. */
@@ -144,6 +158,43 @@ export default function TTMapView({
     map.options.maxBoundsViscosity = 1.0;
     /* don't let them zoom out past the whole site either */
     map.setMinZoom(Math.max(1, map.getBoundsZoom(bounds, false) - 2));
+  }, [geo, ready, rowNext]);
+
+  /* Reference skin: the site outline (from the doc, else a padded hull of the
+     points), a darkening mask outside it, and dashed contour echoes — all in
+     a pane below the point sprites. */
+  useEffect(() => {
+    const map = mapRef.current; if (!REF || !map || !geo || !geo.lonLat || !geo.lonLat.length) return;
+    siteRef.current.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); siteRef.current = [];
+    const lonLat = geo.lonLat;
+    let ring;
+    if (Array.isArray(geo.boundary) && geo.boundary.length >= 3) ring = geo.boundary.map(([lon, lat]) => [lat, lon]);
+    else {
+      /* convex hull (monotone chain) in a locally metric frame, then pushed out 1.2 row pitches */
+      const lat0 = lonLat[0][1]; const cs = Math.cos(lat0 * Math.PI / 180) || 1;
+      const pts = lonLat.map(([lon, lat]) => [lon * cs, lat]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const lower = []; for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+      const upper = []; for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+      const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+      const ds = []; if (rowNext) for (let i = 0; i < lonLat.length; i++) { const j = rowNext[i]; if (j >= 0) ds.push(Math.hypot((lonLat[j][0] - lonLat[i][0]) * cs, lonLat[j][1] - lonLat[i][1])); }
+      ds.sort((a, b) => a - b); const sp = ds.length ? ds[ds.length >> 1] : 5e-5;
+      const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length, cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
+      ring = hull.map(([x, y]) => { const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1; return [y + dy / d * 1.2 * sp, (x + dx / d * 1.2 * sp) / cs]; });
+    }
+    const opts = { pane: 'tt-site', renderer: siteRendererRef.current, interactive: false };
+    const world = [[-89.9, -179.9], [89.9, -179.9], [89.9, 179.9], [-89.9, 179.9]];
+    const cy = ring.reduce((a, p) => a + p[0], 0) / ring.length, cx = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+    const scaled = (f) => ring.map(([la, lo]) => [cy + (la - cy) * f, cx + (lo - cx) * f]);
+    const layers = [
+      L.polygon([world, ring], { ...opts, stroke: false, fillColor: '#020A14', fillOpacity: 0.45 }),
+      L.polygon(scaled(0.955), { ...opts, color: '#F97316', weight: 1, opacity: 0.55, dashArray: '5 6', fill: false }),
+      L.polygon(scaled(1.045), { ...opts, color: '#F97316', weight: 1, opacity: 0.55, dashArray: '5 6', fill: false }),
+      L.polygon(scaled(1.11), { ...opts, color: '#F97316', weight: 1, opacity: 0.35, dashArray: '4 7', fill: false }),
+      L.polygon(ring, { ...opts, color: '#F97316', weight: 1.5, opacity: 0.95, fill: false }),
+    ];
+    layers.forEach((l) => l.addTo(map)); siteRef.current = layers;
+    return () => { layers.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); };
   }, [geo, ready, rowNext]);
 
   useEffect(() => {
@@ -299,7 +350,7 @@ export default function TTMapView({
       <style>{`
         .tt-block-label{background:rgba(6,21,37,.92);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px;border-radius:6px}.tt-block-label::before{display:none}
         /* skin pack: navy wash so overlays read on bright imagery; translucent navy zoom control */
-        .tt-map .leaflet-tile-pane{filter:brightness(.9) saturate(.92)}
+        .tt-map .leaflet-tile-pane{filter:${REF ? 'brightness(.78) saturate(.85) contrast(1.05)' : 'brightness(.9) saturate(.92)'}}
         .tt-map .leaflet-bar{border:1px solid ${TT.border};border-radius:10px;box-shadow:0 5px 14px rgba(0,0,0,.56);overflow:hidden}
         .tt-map .leaflet-bar a{background:rgba(6,21,37,.9);color:${TT.text};border-bottom:1px solid ${TT.divider};width:44px;height:44px;line-height:44px;font-size:22px}
         .tt-map .leaflet-bar a:last-child{border-bottom:none}
@@ -308,11 +359,19 @@ export default function TTMapView({
         .tt-map .leaflet-control-attribution a{color:${TT.text2}}
       `}</style>
       <div ref={containerRef} className="tt-map" style={{ position: 'absolute', inset: 0, background: TT.canvas }} />
-      <div style={{ position: 'absolute', top: 10, left: 62, zIndex: 500, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
-        {['satellite', 'streets'].map((k) => (
-          <button key={k} onClick={() => onLayerMode(k)} aria-selected={layerMode === k} style={{ ...segStyle(layerMode === k), padding: '0 12px', minHeight: 42 }}>{k}</button>
-        ))}
-      </div>
+      {REF ? (
+        <>
+          <RefZoom onIn={() => mapRef.current && mapRef.current.zoomIn()} onOut={() => mapRef.current && mapRef.current.zoomOut()} style={{ left: 14, top: 12 }} />
+          <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 68]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
+          <RefCompass style={{ right: 10, top: 55.5 }} />
+        </>
+      ) : (
+        <div style={{ position: 'absolute', top: 10, left: 62, zIndex: 500, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
+          {['satellite', 'streets'].map((k) => (
+            <button key={k} onClick={() => onLayerMode(k)} aria-selected={layerMode === k} style={{ ...segStyle(layerMode === k), padding: '0 12px', minHeight: 42 }}>{k}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
