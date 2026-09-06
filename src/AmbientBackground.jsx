@@ -125,10 +125,15 @@ export default function AmbientBackground() {
       for (let i = ripples.length - 1; i >= 0; i--) {
         const r = ripples[i]; const k = (t - r.t) / r.dur
         if (k >= 1) { ripples.splice(i, 1); continue }
-        const rad = 12 + k * r.max; const a = (1 - k) * 0.45
+        const ease = 1 - Math.pow(1 - k, 2)                 // fast start, long soft tail
+        const rad = 12 + ease * r.max; const a = (1 - k) * 0.8
+        // soft glow pool so the touch reads even under a module's tint
+        const pool = ctx.createRadialGradient(r.x, r.y, 0, r.x, r.y, rad)
+        pool.addColorStop(0, `rgba(255,140,60,${a * 0.28})`); pool.addColorStop(0.7, `rgba(255,107,24,${a * 0.1})`); pool.addColorStop(1, 'rgba(255,107,24,0)')
+        ctx.fillStyle = pool; ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI * 2); ctx.fill()
         ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI * 2)
-        ctx.strokeStyle = `rgba(${ORANGE[0]},${ORANGE[1]},${ORANGE[2]},${a})`; ctx.lineWidth = 1.5 + (1 - k) * 1.5; ctx.stroke()
-        if (r.second) { ctx.beginPath(); ctx.arc(r.x, r.y, rad * 0.55, 0, Math.PI * 2); ctx.strokeStyle = `rgba(255,190,120,${a * 0.6})`; ctx.lineWidth = 1; ctx.stroke() }
+        ctx.strokeStyle = `rgba(${ORANGE[0]},${ORANGE[1]},${ORANGE[2]},${a})`; ctx.lineWidth = 2 + (1 - k) * 2.5; ctx.stroke()
+        if (r.second) { ctx.beginPath(); ctx.arc(r.x, r.y, rad * 0.55, 0, Math.PI * 2); ctx.strokeStyle = `rgba(255,200,140,${a * 0.7})`; ctx.lineWidth = 1.25; ctx.stroke() }
       }
     }
     function draw(t, dt) {
@@ -159,7 +164,7 @@ export default function AmbientBackground() {
     /* interaction: everything passive, never intercepting */
     const onDown = (e) => {
       pointer.x = e.clientX; pointer.y = e.clientY; pointer.down = true; pointer.lx = e.clientX; pointer.ly = e.clientY; pointer.lt = performance.now()
-      ripples.push({ x: e.clientX, y: e.clientY, t: performance.now(), dur: 900, max: 90 + Math.min(W, H) * 0.12, second: true })
+      ripples.push({ x: e.clientX, y: e.clientY, t: performance.now(), dur: 1400, max: 110 + Math.min(W, H) * 0.16, second: true })
       if (reduced) draw(performance.now(), 0)
     }
     const onMove = (e) => {
