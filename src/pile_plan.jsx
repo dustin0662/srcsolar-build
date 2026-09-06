@@ -1623,7 +1623,7 @@ export default function PilePlan({ onExit, portalUser, demo }) {
        header, night-time site art on each card, thin orange keylines. */
     const ART = PROJECT_ART.sites;
     const CARD_BG = 'linear-gradient(180deg, rgba(8,20,34,.96) 0%, rgba(3,11,20,.98) 100%)';
-    const CANVAS = 'radial-gradient(120% 60% at 50% -10%, #0a1a2e 0%, rgba(2,8,17,0) 55%), repeating-linear-gradient(0deg, transparent 0 31px, rgba(50,115,171,.07) 32px), repeating-linear-gradient(90deg, transparent 0 31px, rgba(50,115,171,.07) 32px), #020811';
+    const CANVAS = 'linear-gradient(180deg, rgba(2,8,17,.6) 0%, rgba(2,8,17,.42) 100%)';   // translucent: the animated AmbientBackground shows through
     const statLine = { display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: mob ? 12.5 : 13.5, letterSpacing: '.1em', textTransform: 'uppercase', color: '#c9cfd8', whiteSpace: 'nowrap' };
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: CANVAS, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>

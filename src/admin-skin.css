@@ -31,14 +31,11 @@
 
   min-height: 100vh;
   color: var(--sr-text);
-  /* near-black navy with a faint 32px blueprint grid; the night-time site
-     illustration shows through only where there is no card on top */
-  background:
-    linear-gradient(180deg, rgba(2, 8, 17, .9) 0%, rgba(2, 8, 17, .8) 30%, rgba(2, 8, 17, .52) 100%),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(50, 115, 171, .08) 32px),
-    repeating-linear-gradient(90deg, transparent 0 31px, rgba(50, 115, 171, .08) 32px),
-    url(/home-site.jpg) center bottom / cover no-repeat,
-    var(--sr-canvas);
+  /* Only a translucent tint: the navy canvas, blueprint grid, site photo and
+     the animated contour lines / site lights live on the shared
+     AmbientBackground canvas underneath every screen (src/AmbientBackground.jsx),
+     so they show through wherever no card sits on top. */
+  background: linear-gradient(180deg, rgba(2, 8, 17, .5) 0%, rgba(2, 8, 17, .3) 100%);
   font-family: var(--sr-font-body);
   color-scheme: dark;
 }

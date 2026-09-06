@@ -154,7 +154,7 @@ export default function HomeScreen({ user, tiles, hideKeys, isAdmin, onOpen, onO
   const first = user && user.name ? String(user.name).split(' ')[0] : ''
 
   return (
-    <div style={{ minHeight: '100vh', background: '#05070f', color: CREAM, paddingTop: 'calc(64px + var(--sat, 0px))', paddingBottom: 'calc(var(--tabbar-h, 0px) + 18px)', position: 'relative', zIndex: 10 }}>
+    <div style={{ minHeight: '100vh', background: 'rgba(5,7,15,.58)', color: CREAM, paddingTop: 'calc(64px + var(--sat, 0px))', paddingBottom: 'calc(var(--tabbar-h, 0px) + 18px)', position: 'relative', zIndex: 10 }}>
       {/* project chip + who's signed in */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 0' }}>
         <div onClick={() => { if (kpi && kpi.projects && kpi.projects.length) setProjOpen((v) => !v) }}

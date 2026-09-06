@@ -10,6 +10,7 @@ import LoadsFrame from "./native/LoadsFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
 import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
 import HomeScreen from "./HomeScreen.jsx"
+import AmbientBackground from "./AmbientBackground.jsx"
 import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton, SrModuleHeader, SrModuleTabs, SrEmpty, SrBadge } from "./admin_skin.jsx"
 import "./admin-skin.css"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
@@ -5546,16 +5547,18 @@ export default function App(){
   if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
 
   var introEl=intro?<IntroSplash onDone={function(){setIntro(false)}}/>:null;
-  if(!lang) return <>{introEl}<LangPicker onPick={setLang}/></>;
-  if(locked&&user) return <>{introEl}<LockScreen paused={intro} userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/></>;
+  if(!lang) return <>{introEl}<AmbientBackground/><LangPicker onPick={setLang}/></>;
+  if(locked&&user) return <>{introEl}<AmbientBackground/><LockScreen paused={intro} userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/></>;
 
   return(
     <div style={{position:'fixed',inset:0,fontFamily:"'Barlow',sans-serif"}}>
       {introEl}
       <style>{CSS}</style>
+      <AmbientBackground/>
       {loading&&<Loader phase={phase} prog={prog}/>}
       <div ref={boxRef} style={{position:'absolute',inset:0,overflowY:'scroll',overflowX:'hidden'}}>
-        <AerialBG scrollP={scrollP}/>
+        {/* the marketing site's aerial build scene stays on the landing page; every other screen sits on the shared AmbientBackground canvas */}
+        {page==='landing'&&<AerialBG scrollP={scrollP}/>}
 
         {/* Phase label — hide on mobile */}
         {/* ── NAV ── */}
