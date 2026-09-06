@@ -225,16 +225,19 @@ function kpiFromDoc(raw) {
     tasks: STAGES.slice(1).map((s, i) => ({ name: s.name.replace(' Installed', ''), color: s.color, count: st.cum[i + 1], pct: total ? st.cum[i + 1] / total * 100 : 0 })),
   };
 }
+/* Remember which project the Task Tracker should open on (the home screen's
+   project toggle sets this; the tracker reads it at mount). */
+export function setActiveProject(id) { try { storage.set(ACTIVE_KEY, id); } catch (e) { /* ignore */ } }
 /* Same snapshot straight from the cloud (no local side effects) — used by the
    home screen so a fresh install shows real numbers before the Task Tracker
    has ever been opened. Resolves null when offline or nothing is published. */
-export async function fetchTaskTrackerKPI() {
+export async function fetchTaskTrackerKPI(projectId) {
   try {
     const reg = await fetch(ENDPOINT + '?registry=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
     const projects = (reg && Array.isArray(reg.projects)) ? reg.projects.filter((p) => p && p.id) : [];
     if (!projects.length) return null;
     const localActive = storage.get(ACTIVE_KEY);
-    const pick = projects.find((p) => p.id === localActive) || projects[0];
+    const pick = projects.find((p) => p.id === projectId) || projects.find((p) => p.id === localActive) || projects[0];
     const doc = await fetch(ENDPOINT + '?project=' + encodeURIComponent(pick.id), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
     if (!doc || !Array.isArray(doc.points) || !doc.points.length) return null;
     return { ...kpiFromDoc({ ...doc, name: doc.name || pick.name }), id: pick.id, projects: projects.map((p) => ({ id: p.id, name: p.name })) };

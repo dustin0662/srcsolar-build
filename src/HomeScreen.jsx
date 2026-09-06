@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { Users, Wrench, DraftingCompass, HardHat, FileText, ShieldAlert, BarChart3, Clock, Truck, Contact, ListChecks, Settings, Map as MapIcon, Layers, ShieldCheck, TriangleAlert, ChevronDown, ChevronRight, CircleUser } from 'lucide-react'
-import { getTaskTrackerKPI, fetchTaskTrackerKPI } from './pile_plan.jsx'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Users, Wrench, DraftingCompass, HardHat, FileText, ShieldAlert, BarChart3, Clock, Truck, Contact, ListChecks, Settings, Map as MapIcon, Layers, ShieldCheck, TriangleAlert, ChevronDown, CircleUser, Check } from 'lucide-react'
+import { getTaskTrackerKPI, fetchTaskTrackerKPI, setActiveProject } from './pile_plan.jsx'
 
 /* Phone home screen: the illustrated site with every module pinned to it as
    a callout, under a live "project health" strip. Numbers are real —
@@ -113,17 +113,31 @@ export default function HomeScreen({ user, tiles, hideKeys, isAdmin, onOpen, onO
   const [crew, setCrew] = useState(null)
   const [issues, setIssues] = useState(null)
   const [projOpen, setProjOpen] = useState(false)
+  const [busy, setBusy] = useState(false)          // board refreshing after a project switch
+  const aliveRef = useRef(true)
 
   useEffect(() => {
     let alive = true
+    aliveRef.current = true
     fetchTaskTrackerKPI().then((k) => { if (alive && k) setKpi(k) })
     fetch('/.netlify/functions/portal?key=tk_punches', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (alive) setCrew(crewOnSite(j && j.value)) }).catch(() => { if (alive) setCrew(0) })
     fetch('/.netlify/functions/projecttracker', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (!alive) return; const items = (d && Array.isArray(d.items)) ? d.items : []; setIssues(items.filter((i) => i && i.status !== 'closed').length) })
       .catch(() => { if (alive) setIssues(0) })
-    return () => { alive = false }
+    return () => { alive = false; aliveRef.current = false }
   }, [])
+
+  /* the project toggle only switches the board below it — the Task Tracker
+     itself opens from the Tasks tab / tile, never from here */
+  const pickProject = (p) => {
+    setProjOpen(false)
+    if (!kpi || p.id === kpi.id) return
+    setActiveProject(p.id)
+    setKpi((k) => ({ ...k, id: p.id, name: p.name }))
+    setBusy(true)
+    fetchTaskTrackerKPI(p.id).then((k) => { if (aliveRef.current && k) setKpi(k) }).finally(() => { if (aliveRef.current) setBusy(false) })
+  }
 
   const hidden = useMemo(() => new Set(hideKeys || []), [hideKeys])
   const all = useMemo(() => {
@@ -143,8 +157,8 @@ export default function HomeScreen({ user, tiles, hideKeys, isAdmin, onOpen, onO
     <div style={{ minHeight: '100vh', background: '#05070f', color: CREAM, paddingTop: 'calc(64px + var(--sat, 0px))', paddingBottom: 'calc(var(--tabbar-h, 0px) + 18px)', position: 'relative', zIndex: 10 }}>
       {/* project chip + who's signed in */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 0' }}>
-        <div onClick={() => (kpi && kpi.projects && kpi.projects.length > 1 ? setProjOpen(!projOpen) : onOpenPage('pileplan'))}
-          style={{ ...PANEL, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', minHeight: 46, flex: 1, minWidth: 0, cursor: 'pointer', position: 'relative' }}>
+        <div onClick={() => { if (kpi && kpi.projects && kpi.projects.length) setProjOpen((v) => !v) }}
+          style={{ ...PANEL, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', minHeight: 46, flex: 1, minWidth: 0, cursor: kpi && kpi.projects && kpi.projects.length ? 'pointer' : 'default', position: 'relative' }}>
           <div style={{ width: 34, height: 26, borderRadius: 4, background: 'linear-gradient(135deg,#1d4ed8,#3b82f6)', display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, padding: 2, flexShrink: 0 }}>
             {[0, 1, 2, 3, 4, 5].map((i) => <span key={i} style={{ background: 'rgba(255,255,255,.22)', borderRadius: 1 }} />)}
           </div>
@@ -156,9 +170,9 @@ export default function HomeScreen({ user, tiles, hideKeys, isAdmin, onOpen, onO
           {projOpen && kpi && kpi.projects && (
             <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 20, ...PANEL, padding: 6 }}>
               {kpi.projects.map((p) => (
-                <div key={p.id} onClick={() => { setProjOpen(false); try { localStorage.setItem('tt-active', JSON.stringify(p.id)) } catch (e) { /* ignore */ } onOpenPage('pileplan') }}
+                <div key={p.id} onClick={() => pickProject(p)}
                   style={{ ...NB, fontSize: 14, padding: '10px 10px', minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: p.id === kpi.id ? A : CREAM, borderBottom: '1px solid rgba(255,255,255,.06)', cursor: 'pointer' }}>
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span><ChevronRight size={16} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>{p.id === kpi.id && <Check size={16} />}
                 </div>
               ))}
             </div>
@@ -170,7 +184,7 @@ export default function HomeScreen({ user, tiles, hideKeys, isAdmin, onOpen, onO
       </div>
 
       {/* project health */}
-      <div style={{ ...PANEL, margin: '12px 12px 0', padding: '10px 12px 12px' }}>
+      <div style={{ ...PANEL, margin: '12px 12px 0', padding: '10px 12px 12px', opacity: busy ? 0.55 : 1, transition: 'opacity .2s' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
           <div style={{ ...NB, fontSize: 11.5, letterSpacing: 2, textTransform: 'uppercase', color: A, borderLeft: '2px solid ' + A, paddingLeft: 7, whiteSpace: 'nowrap' }}>Project Health</div>
           <div style={{ ...NB, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: MUTE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Updated {fmtWhen(kpi && kpi.lastModified)}</div>
