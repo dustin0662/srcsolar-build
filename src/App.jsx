@@ -10,7 +10,7 @@ import LoadsFrame from "./native/LoadsFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
 import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
 import HomeScreen from "./HomeScreen.jsx"
-import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton } from "./admin_skin.jsx"
+import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton, SrModuleHeader, SrModuleTabs, SrEmpty, SrBadge } from "./admin_skin.jsx"
 import "./admin-skin.css"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
@@ -19,7 +19,7 @@ import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_
 import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
 import ProjectTracker from "./project_tracker.jsx"
 import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
-import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff, UserCheck } from "lucide-react"
+import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff, UserCheck, Clock, ChevronUp, MapPin, Wrench, Folder } from "lucide-react"
 import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
 
@@ -997,7 +997,7 @@ function ComplianceChat({show,onToggle}){
 }
 
 // ═══ EQUIPMENT MANAGER MODULE ═══
-var EQ_GOLD='#F97316',EQ_NAV='#ffffff',EQ_BG='#f5f2ee',EQ_FF="'Barlow Condensed',sans-serif",EQ_BB="'Bebas Neue',sans-serif"
+var EQ_GOLD='#ff6b18',EQ_NAV='#07121e',EQ_BG='transparent',EQ_FF="'Barlow Condensed',sans-serif",EQ_BB="'Barlow Condensed',sans-serif",EQ_TEXT='#f6f3ec',EQ_MID='#aab3c0',EQ_DIM='#717d8d',EQ_LINE='#2b3949',EQ_CARD='linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))'
 var EQ_TYPES=['Work Trucks','PD10','ATV/Buggies','Skidsteer W/Forks','Telehandler','MiniEx','Klemm Drill']
 
 function EquipmentManager({onExit,portalUser}){
@@ -1091,14 +1091,15 @@ function EquipmentManager({onExit,portalUser}){
     }catch(e2){toast('Export failed','error')}
   }
 
-  var IS={width:'100%',padding:'10px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:16,fontFamily:EQ_FF,outline:'none',boxSizing:'border-box',marginBottom:10}
+  var IS={width:'100%',padding:'12px 14px',border:'1px solid #e65e20',borderRadius:6,fontSize:16,fontFamily:"'Barlow',sans-serif",outline:'none',boxSizing:'border-box',marginBottom:10,background:'#091522',color:EQ_TEXT,minHeight:48}
+  var EQ_LABEL={fontSize:12,letterSpacing:'.2em',color:'#ff7a21',marginBottom:5,textTransform:'uppercase',fontWeight:600}
   var today=new Date().toISOString().slice(0,10)
 
   // Login
   if(!user){
     return (
-      <div style={{position:'fixed',inset:0,background:EQ_NAV,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:EQ_FF,zIndex:2000}}>
-        <div style={{width:'90%',maxWidth:360,background:'#fff',borderRadius:12,padding:m?24:32}}>
+      <div className="sunrise-admin" style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:EQ_FF,zIndex:2000}}>
+        <div style={{width:'90%',maxWidth:360,background:EQ_CARD,border:'1px solid #e65e20',borderRadius:12,padding:mob?24:32}}>
           <div style={{textAlign:'center',marginBottom:24}}>
             <div style={{fontSize:28,fontWeight:700,letterSpacing:3,fontFamily:EQ_BB}}>SRC&D</div>
             <div style={{fontSize:12,color:'#888',letterSpacing:2,fontFamily:EQ_FF}}>EQUIPMENT MANAGER</div>
@@ -1130,220 +1131,218 @@ function EquipmentManager({onExit,portalUser}){
   var navItems=[{id:'projects',label:'Projects',ico:'📁'},{id:'equipment',label:'Equipment',ico:'🚜'},{id:'tools',label:'Tools',ico:'🔧'},{id:'records',label:'Records',ico:'📊'}]
 
   var sidebar=(
-    <div style={{width:mob?260:200,background:EQ_NAV,color:'#1a1a2e',display:'flex',flexDirection:'column',flexShrink:0,fontFamily:EQ_FF,height:'100%',borderRight:'1px solid rgba(0,0,0,.08)'}}>
-      <div style={{padding:'14px 12px',borderBottom:'1px solid rgba(0,0,0,.08)'}}>
+    <div style={{width:mob?260:210,background:EQ_NAV,color:EQ_TEXT,display:'flex',flexDirection:'column',flexShrink:0,fontFamily:EQ_FF,height:'100%',borderRight:'1px solid #a7461e'}}>
+      <div style={{padding:'14px 12px',borderBottom:'1px solid '+EQ_LINE}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{fontSize:13,fontWeight:700}}>{user.name}</div>
+          <div style={{fontSize:14,fontWeight:700}}>{user.name}</div>
         </div>
-        {selProj&&<div style={{marginTop:8,padding:'4px 8px',background:selProj.color+'22',borderLeft:'3px solid '+selProj.color,borderRadius:3,fontSize:11,color:'#666'}}>{selProj.name}</div>}
+        {selProj&&<div style={{marginTop:8,padding:'5px 8px',background:'rgba(255,107,24,.1)',borderLeft:'3px solid '+EQ_GOLD,borderRadius:3,fontSize:12,color:EQ_MID}}>{selProj.name}</div>}
       </div>
       <div style={{flex:1,padding:'6px 0'}}>
         {navItems.map(function(n){return (
-          <div key={n.id} onClick={function(){setPage(n.id);setDrawer(false)}} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',cursor:'pointer',color:page===n.id?EQ_GOLD:'#666',background:page===n.id?'rgba(249,115,22,.08)':'transparent',borderRight:page===n.id?'3px solid '+EQ_GOLD:'3px solid transparent',fontSize:13,letterSpacing:1}}><span>{n.ico}</span>{n.label}</div>
+          <div key={n.id} onClick={function(){setPage(n.id);setDrawer(false)}} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',minHeight:44,cursor:'pointer',color:page===n.id?'#ff7a21':EQ_MID,background:page===n.id?'rgba(255,107,24,.12)':'transparent',borderRight:page===n.id?'3px solid '+EQ_GOLD:'3px solid transparent',fontSize:14,letterSpacing:'.12em',textTransform:'uppercase',fontWeight:600}}><span>{n.ico}</span>{n.label}</div>
         )})}
       </div>
-      <div style={{padding:10,borderTop:'1px solid rgba(0,0,0,.08)'}}>
-        <div onClick={logout} style={{padding:'6px 10px',background:'#f0ede8',borderRadius:4,textAlign:'center',cursor:'pointer',fontSize:11,color:'#666',marginBottom:4}}>Sign Out</div>
-        {onExit&&<div onClick={onExit} style={{padding:'6px 10px',background:'#f0ede8',borderRadius:4,textAlign:'center',cursor:'pointer',fontSize:11,color:'#666'}}>✕ Exit</div>}
+      <div style={{padding:10,borderTop:'1px solid '+EQ_LINE,display:'grid',gap:6}}>
+        <button type="button" onClick={logout} className="sr-button sr-button--outline" style={{minHeight:40,fontSize:'.85rem'}}>Sign Out</button>
+        {onExit&&<button type="button" onClick={onExit} className="sr-button sr-button--outline" style={{minHeight:40,fontSize:'.85rem'}}>✕ Exit</button>}
       </div>
     </div>
   )
 
   return (
-    <div style={{position:'fixed',inset:0,display:'flex',fontFamily:EQ_FF,overflow:'hidden',background:EQ_BG,zIndex:2000}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,display:'flex',fontFamily:EQ_FF,overflow:'hidden',color:EQ_TEXT,zIndex:2000}}>
       {!mob&&sidebar}
-      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <div style={{background:EQ_NAV,color:'#1a1a2e',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,borderBottom:'1px solid rgba(0,0,0,.08)'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            {mob&&<span onClick={function(){setDrawer(true)}} style={{fontSize:20,cursor:'pointer'}}>☰</span>}
-            <span style={{fontWeight:700,letterSpacing:2,fontSize:14,fontFamily:EQ_BB}}>{(navItems.find(function(n){return n.id===page})||{label:''}).label.toUpperCase()}</span>
-          </div>
-          <div style={{display:'flex',gap:6,alignItems:'center'}}>
-            {selProj&&page!=='projects'&&<div onClick={exportExcel} style={{padding:'4px 10px',background:'#f0ede8',borderRadius:3,cursor:'pointer',fontSize:10,color:'#666',letterSpacing:1,fontFamily:EQ_FF}}>Export XLSX</div>}
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}}>
+        <div className="sr-module-header" style={{padding:'10px 16px'}}>
+          {mob&&<button type="button" aria-label="Menu" onClick={function(){setDrawer(true)}} className="sr-button sr-button--outline" style={{minHeight:40,padding:'6px 10px'}}><Menu size={18} /></button>}
+          <h1 className="sr-module-title">{(navItems.find(function(n){return n.id===page})||{label:''}).label}</h1>
+          <div className="sr-module-right">
+            {selProj&&page!=='projects'&&<button type="button" onClick={exportExcel} className="sr-button sr-button--outline" style={{minHeight:36,padding:'6px 12px',fontSize:'.8rem'}}>Export XLSX</button>}
           </div>
         </div>
-        <div style={{flex:1,overflow:'auto',padding:mob?12:'20px 28px'}}>
+        <div style={{flex:1,overflow:'auto',padding:mob?'12px 12px calc(24px + var(--tabbar-h, 0px))':'20px 28px'}}>
 
           {/* ═══ PROJECTS ═══ */}
           {page==='projects'&&<div>
-            <div style={{fontSize:22,fontWeight:700,letterSpacing:2,marginBottom:16,fontFamily:EQ_BB}}>PROJECTS</div>
-            <div style={{display:'flex',gap:8,marginBottom:16}}>
-              <input value={newProj} onChange={function(e){setNP(e.target.value)}} placeholder="New project" style={{flex:1,padding:'8px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:13,fontFamily:EQ_FF,outline:'none'}} onKeyDown={function(e){if(e.key==='Enter')createProj()}}/>
-              <input type="color" value={newColor} onChange={function(e){setNC(e.target.value)}} style={{width:38,height:38,border:'none',cursor:'pointer',borderRadius:4}}/>
-              <div onClick={createProj} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ CREATE</div>
+            <h2 className="sr-section-title sr-section-title--bar" style={{marginBottom:16}}>Projects</h2>
+            <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center'}}>
+              <input value={newProj} onChange={function(e){setNP(e.target.value)}} placeholder="New project" className="sr-input" style={{flex:1}} onKeyDown={function(e){if(e.key==='Enter')createProj()}}/>
+              <input type="color" value={newColor} onChange={function(e){setNC(e.target.value)}} style={{width:44,height:44,border:'1px solid #e65e20',cursor:'pointer',borderRadius:6,background:'#091522',padding:3}}/>
+              <button type="button" onClick={createProj} className="sr-button sr-button--primary">+ Create</button>
             </div>
             {projects.map(function(p){return (
-              <div key={p.id} onClick={function(){setSelProj(p);setPage('equipment')}} style={{background:'#fff',borderRadius:8,padding:16,marginBottom:8,cursor:'pointer',borderLeft:'4px solid '+p.color,transition:'transform .15s'}} onMouseEnter={function(e){e.currentTarget.style.transform='translateY(-2px)'}} onMouseLeave={function(e){e.currentTarget.style.transform='translateY(0)'}}>
-                <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
-                <div style={{fontSize:11,color:'#888',marginTop:4}}>Created {new Date(p.createdAt).toLocaleDateString()}</div>
+              <div key={p.id} onClick={function(){setSelProj(p);setPage('equipment')}} className="sr-card sr-equipment-card" style={{marginTop:0,marginBottom:8,padding:'14px 16px',cursor:'pointer',borderLeftColor:p.color}}>
+                <div className="sr-row-title">{p.name}</div>
+                <div className="sr-meta">Created {new Date(p.createdAt).toLocaleDateString()}</div>
               </div>
             )})}
-            {projects.length===0&&<div style={{textAlign:'center',padding:30,color:'#aaa'}}>No projects yet</div>}
+            {projects.length===0&&<div className="sr-meta" style={{textAlign:'center',padding:30}}>No projects yet</div>}
           </div>}
 
           {/* ═══ EQUIPMENT ═══ */}
-          {page==='equipment'&&!selProj&&<div style={{textAlign:'center',padding:40,color:'#888'}}>Select a project<br/><span onClick={function(){setPage('projects')}} style={{color:EQ_GOLD,cursor:'pointer'}}>← Projects</span></div>}
+          {page==='equipment'&&!selProj&&<SrEmpty Icon={Wrench} title="Select a project"><button type="button" className="sr-kicker sr-back" onClick={function(){setPage('projects')}}>← Projects</button></SrEmpty>}
           {page==='equipment'&&selProj&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>{selProj.name} — EQUIPMENT</div>
-              <div onClick={function(){setEqForm({id:uid(),type:'Work Trucks',qty:1,rental:'',rep:'',phone:'',dayIn:today,dayOut:'',notes:''})}} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ Add Equipment</div>
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>{selProj.name} — Equipment</h2>
+              <button type="button" onClick={function(){setEqForm({id:uid(),type:'Work Trucks',qty:1,rental:'',rep:'',phone:'',dayIn:today,dayOut:'',notes:''})}} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>+ Add Equipment</button>
             </div>
-            {overdueEq.length>0&&<div style={{background:'#fee',border:'1px solid #fcc',borderRadius:6,padding:'10px 14px',marginBottom:12,fontSize:13,color:'#c00',display:'flex',alignItems:'center',gap:8}}>⚠ {overdueEq.length} equipment past estimated day out</div>}
-            <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-              <input value={eqSearch} onChange={function(e){setEqSearch(e.target.value)}} placeholder="Search..." style={{flex:1,minWidth:150,padding:'7px 10px',border:'1px solid #ddd',borderRadius:4,fontSize:12,fontFamily:EQ_FF,outline:'none'}}/>
-              <div onClick={function(){setEqFilter('all')}} style={{padding:'6px 12px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',background:eqFilter==='all'?EQ_GOLD:'#fff',color:eqFilter==='all'?'#fff':'#666',border:'1px solid '+(eqFilter==='all'?EQ_GOLD:'#ddd')}}>All</div>
-              {EQ_TYPES.map(function(t){return <div key={t} onClick={function(){setEqFilter(eqFilter===t?'all':t)}} style={{padding:'6px 10px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',background:eqFilter===t?EQ_GOLD:'#fff',color:eqFilter===t?'#fff':'#666',border:'1px solid '+(eqFilter===t?EQ_GOLD:'#ddd')}}>{t}</div>})}
+            {overdueEq.length>0&&<div className="sr-alert" style={{marginBottom:12}}><AlertTriangle size={18} /> {overdueEq.length} equipment past estimated day out</div>}
+            <div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
+              <div style={{flex:'1 1 200px',position:'relative'}}>
+                <Search size={16} style={{position:'absolute',left:14,top:'50%',transform:'translateY(-50%)',color:'#aab3c0',pointerEvents:'none'}} />
+                <input value={eqSearch} onChange={function(e){setEqSearch(e.target.value)}} placeholder="Search..." className="sr-input" style={{minHeight:46,paddingLeft:38}}/>
+              </div>
+            </div>
+            <div className="sr-filter-row">
+              <button type="button" className="sr-chip" aria-pressed={eqFilter==='all'} onClick={function(){setEqFilter('all')}}>All</button>
+              {EQ_TYPES.map(function(t){return <button type="button" key={t} className="sr-chip" aria-pressed={eqFilter===t} onClick={function(){setEqFilter(eqFilter===t?'all':t)}}>{t}</button>})}
             </div>
             {filteredEq.map(function(eq){
               var overdue=eq.dayOut&&eq.dayOut<today
               return (
-                <div key={eq.id} style={{background:'#fff',borderRadius:6,padding:'12px 16px',marginBottom:6,borderLeft:'3px solid '+(overdue?'#ef4444':EQ_GOLD)}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
-                    <div>
-                      <div style={{fontWeight:700,fontSize:14}}>{eq.type} <span style={{fontWeight:400,color:'#888'}}>× {eq.qty}</span></div>
-                      <div style={{fontSize:12,color:'#555',marginTop:2}}>{eq.rental} · {eq.rep} · {eq.phone}</div>
-                      <div style={{fontSize:11,color:'#888',marginTop:2}}>In: {eq.dayIn} → Out: {eq.dayOut||'TBD'}{overdue&&<span style={{color:'#ef4444',fontWeight:700}}> OVERDUE</span>}</div>
+                <div key={eq.id} className={'sr-card sr-equipment-card'+(overdue?' sr-equipment-card--overdue':'')} style={{marginTop:0,marginBottom:10,padding:'14px 16px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                    <div style={{minWidth:0}}>
+                      <div className="sr-row-title">{eq.type} <span style={{fontWeight:400,color:EQ_MID}}>× {eq.qty}</span></div>
+                      <div className="sr-meta">{eq.rental} · {eq.rep} · {eq.phone}</div>
+                      <div className="sr-meta sr-meta--dim">In: {eq.dayIn} → Out: {eq.dayOut||'TBD'}{overdue&&<SrBadge tone="bad" style={{marginLeft:8}}>Overdue</SrBadge>}</div>
                     </div>
-                    <div style={{display:'flex',gap:4}}>
-                      <div onClick={function(){setEqForm(Object.assign({},eq))}} style={{padding:'4px 10px',background:'#f0f0ec',borderRadius:3,cursor:'pointer',fontSize:10,fontWeight:600}}>Edit</div>
-                      <div onClick={function(){deleteEquip(eq.id)}} style={{padding:'4px 10px',background:'#fee',color:'#c00',borderRadius:3,cursor:'pointer',fontSize:10}}>Remove</div>
+                    <div className="sr-actions" style={{marginTop:0}}>
+                      <button type="button" onClick={function(){setEqForm(Object.assign({},eq))}} className="sr-button sr-button--secondary">Edit</button>
+                      <button type="button" onClick={function(){deleteEquip(eq.id)}} className="sr-button sr-button--danger">Remove</button>
                     </div>
                   </div>
-                  {eq.notes&&<div style={{fontSize:11,color:'#888',marginTop:4}}>Notes: {eq.notes}</div>}
+                  {eq.notes&&<div className="sr-meta sr-meta--dim" style={{marginTop:6}}>Notes: {eq.notes}</div>}
                 </div>
               )
             })}
-            {filteredEq.length===0&&<div style={{background:'#fff',borderRadius:6,padding:20,color:'#aaa',textAlign:'center'}}>No equipment</div>}
+            {filteredEq.length===0&&<div className="sr-meta" style={{padding:20,textAlign:'center'}}>No equipment</div>}
           </div>}
 
           {/* ═══ TOOLS ═══ */}
-          {page==='tools'&&!selProj&&<div style={{textAlign:'center',padding:40,color:'#888'}}>Select a project<br/><span onClick={function(){setPage('projects')}} style={{color:EQ_GOLD,cursor:'pointer'}}>← Projects</span></div>}
+          {page==='tools'&&!selProj&&<SrEmpty Icon={Wrench} title="Select a project"><button type="button" className="sr-kicker sr-back" onClick={function(){setPage('projects')}}>← Projects</button></SrEmpty>}
           {page==='tools'&&selProj&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>TOOLS & INVENTORY</div>
-              <div onClick={function(){setToolForm({id:uid(),name:'',serial:'',cost:'',acquired:today,status:'working',statusChangedAt:'',statusChangedBy:''})}} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ Add Tool</div>
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>Tools &amp; Inventory</h2>
+              <button type="button" onClick={function(){setToolForm({id:uid(),name:'',serial:'',cost:'',acquired:today,status:'working',statusChangedAt:'',statusChangedBy:''})}} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>+ Add Tool</button>
             </div>
-            <input value={toolSearch} onChange={function(e){setToolSearch(e.target.value)}} placeholder="Search tools..." style={{width:'100%',padding:'8px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:12,fontFamily:EQ_FF,outline:'none',marginBottom:12,boxSizing:'border-box'}}/>
+            <input value={toolSearch} onChange={function(e){setToolSearch(e.target.value)}} placeholder="Search tools..." className="sr-input" style={{marginBottom:12,minHeight:46}}/>
             {filteredTools.map(function(t){return (
-              <div key={t.id} style={{background:'#fff',borderRadius:6,padding:'12px 16px',marginBottom:6,borderLeft:'3px solid '+(t.status==='working'?'#22c55e':'#ef4444')}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:14}}>{t.name}</div>
-                    <div style={{fontSize:12,color:'#555',marginTop:2}}>SN: {t.serial} · ${t.cost} · Acquired: {t.acquired}</div>
-                    {t.statusChangedAt&&<div style={{fontSize:10,color:'#888',marginTop:2}}>Status changed: {new Date(t.statusChangedAt).toLocaleString()} by {t.statusChangedBy}</div>}
+              <div key={t.id} className={'sr-card sr-equipment-card'+(t.status==='working'?'':' sr-equipment-card--overdue')} style={{marginTop:0,marginBottom:10,padding:'14px 16px',borderLeftColor:t.status==='working'?'#19d47b':undefined}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                  <div style={{minWidth:0}}>
+                    <div className="sr-row-title">{t.name}</div>
+                    <div className="sr-meta">SN: {t.serial} · ${t.cost} · Acquired: {t.acquired}</div>
+                    {t.statusChangedAt&&<div className="sr-meta sr-meta--dim">Status changed: {new Date(t.statusChangedAt).toLocaleString()} by {t.statusChangedBy}</div>}
                   </div>
-                  <div style={{display:'flex',gap:4,alignItems:'center'}}>
-                    <div onClick={function(){toggleToolStatus(t)}} style={{padding:'4px 12px',borderRadius:3,cursor:'pointer',fontSize:11,fontWeight:700,background:t.status==='working'?'#dcfce7':'#fee',color:t.status==='working'?'#16a34a':'#dc2626'}}>{t.status==='working'?'✓ Working':'✕ Broken'}</div>
-                    <div onClick={function(){setToolForm(Object.assign({},t))}} style={{padding:'4px 10px',background:'#f0f0ec',borderRadius:3,cursor:'pointer',fontSize:10}}>Edit</div>
+                  <div className="sr-actions" style={{marginTop:0,alignItems:'center'}}>
+                    <button type="button" onClick={function(){toggleToolStatus(t)}} className={'sr-button '+(t.status==='working'?'sr-button--success':'sr-button--danger')}>{t.status==='working'?'✓ Working':'✕ Broken'}</button>
+                    <button type="button" onClick={function(){setToolForm(Object.assign({},t))}} className="sr-button sr-button--secondary">Edit</button>
                   </div>
                 </div>
               </div>
             )})}
-            {filteredTools.length===0&&<div style={{background:'#fff',borderRadius:6,padding:20,color:'#aaa',textAlign:'center'}}>No tools</div>}
+            {filteredTools.length===0&&<div className="sr-meta" style={{padding:20,textAlign:'center'}}>No tools</div>}
           </div>}
 
           {/* ═══ RECORDS ═══ */}
           {page==='records'&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>RECORDS & LOGS</div>
-              {selProj&&<div onClick={exportExcel} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>📊 Export XLSX</div>}
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>Records &amp; Logs</h2>
+              {selProj&&<button type="button" onClick={exportExcel} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>Export XLSX</button>}
             </div>
-            {!selProj&&<div style={{color:'#888',textAlign:'center',padding:20}}>Select a project first</div>}
+            {!selProj&&<div className="sr-meta" style={{textAlign:'center',padding:20}}>Select a project first</div>}
             {selProj&&<div>
-              <div style={{fontSize:16,fontWeight:700,letterSpacing:1,marginBottom:8,fontFamily:EQ_BB}}>EQUIPMENT LOG ({eqLog.length})</div>
-              <div style={{background:'#fff',borderRadius:6,overflow:'hidden',marginBottom:20}}>
+              <div className="sr-kicker" style={{marginBottom:8}}>Equipment log ({eqLog.length})</div>
+              <div className="sr-list" style={{marginBottom:20}}>
                 {eqLog.slice().reverse().slice(0,30).map(function(l){return (
-                  <div key={l.id} style={{padding:'8px 12px',borderBottom:'1px solid #f0f0ec',fontSize:12,display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
+                  <div key={l.id} className="sr-list-row" style={{minHeight:0,justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
                     <div><span style={{fontWeight:600}}>{l.action}</span> — {l.item}</div>
-                    <div style={{color:'#888'}}>{l.user} · {new Date(l.date).toLocaleString()}</div>
+                    <div className="sr-meta">{l.user} · {new Date(l.date).toLocaleString()}</div>
                   </div>
                 )})}
-                {eqLog.length===0&&<div style={{padding:16,color:'#aaa',textAlign:'center'}}>No equipment logs</div>}
+                {eqLog.length===0&&<div className="sr-list-row sr-meta" style={{justifyContent:'center'}}>No equipment logs</div>}
               </div>
-              <div style={{fontSize:16,fontWeight:700,letterSpacing:1,marginBottom:8}}>TOOLING LOG ({toolLog.length})</div>
-              <div style={{background:'#fff',borderRadius:6,overflow:'hidden'}}>
+              <div className="sr-kicker" style={{marginBottom:8}}>Tooling log ({toolLog.length})</div>
+              <div className="sr-list">
                 {toolLog.slice().reverse().slice(0,30).map(function(l){return (
-                  <div key={l.id} style={{padding:'8px 12px',borderBottom:'1px solid #f0f0ec',fontSize:12,display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
+                  <div key={l.id} className="sr-list-row" style={{minHeight:0,justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
                     <div><span style={{fontWeight:600}}>{l.action}</span> — {l.item}{l.serial?' ('+l.serial+')':''}</div>
-                    <div style={{color:'#888'}}>{l.user} · {new Date(l.date).toLocaleString()}</div>
+                    <div className="sr-meta">{l.user} · {new Date(l.date).toLocaleString()}</div>
                   </div>
                 )})}
-                {toolLog.length===0&&<div style={{padding:16,color:'#aaa',textAlign:'center'}}>No tooling logs</div>}
+                {toolLog.length===0&&<div className="sr-list-row sr-meta" style={{justifyContent:'center'}}>No tooling logs</div>}
               </div>
             </div>}
           </div>}
 
         </div>
-        {mob&&<div style={{background:EQ_NAV,display:'flex',justifyContent:'space-around',padding:'8px 0',borderTop:'1px solid rgba(0,0,0,.08)',flexShrink:0}}>
-          {navItems.map(function(n){return (
-            <div key={n.id} onClick={function(){setPage(n.id)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1,cursor:'pointer',color:page===n.id?EQ_GOLD:'#888',fontSize:9}}><span style={{fontSize:16}}>{n.ico}</span>{n.label}</div>
-          )})}
-        </div>}
       </div>
 
       {/* Mobile drawer */}
       {mob&&drawer&&<div>
-        <div onClick={function(){setDrawer(false)}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:900}}/>
-        <div style={{position:'fixed',top:0,left:0,bottom:0,width:260,zIndex:901,background:EQ_NAV}}>{sidebar}</div>
+        <div onClick={function(){setDrawer(false)}} style={{position:'fixed',inset:0,background:'rgba(1,5,11,.72)',zIndex:900}}/>
+        <div style={{position:'fixed',top:0,left:0,bottom:0,width:260,zIndex:901,background:EQ_NAV,paddingTop:'var(--sat, 0px)'}}>{sidebar}</div>
       </div>}
 
       {/* Equipment form modal */}
-      {eqForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:7000,padding:16}}>
-        <div style={{background:'#fff',borderRadius:10,padding:20,width:'95vw',maxWidth:460,maxHeight:'85vh',overflow:'auto',fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
-            <div style={{fontSize:16,fontWeight:700}}>{equipment.find(function(e){return e.id===eqForm.id})?'Edit Equipment':'Add Equipment'}</div>
-            <span onClick={function(){setEqForm(null)}} style={{cursor:'pointer',color:'#888',fontSize:18}}>✕</span>
+      {eqForm&&<div className="sr-modal" style={{zIndex:7000}}>
+        <div className="sr-modal-sheet" style={{maxWidth:460,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{equipment.find(function(e){return e.id===eqForm.id})?'Edit Equipment':'Add Equipment'}</div>
+            <button type="button" aria-label="Close" onClick={function(){setEqForm(null)}} className="sr-button sr-button--outline" style={{minHeight:36,padding:'4px 10px'}}><X size={16} /></button>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>TYPE *</div>
+          <div style={EQ_LABEL}>TYPE *</div>
           <select value={eqForm.type} onChange={function(e){setEqForm(Object.assign({},eqForm,{type:e.target.value}))}} style={IS}>
             {EQ_TYPES.map(function(t){return <option key={t} value={t}>{t}</option>})}
           </select>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>QTY</div><input type="number" min="1" value={eqForm.qty} onChange={function(e){setEqForm(Object.assign({},eqForm,{qty:parseInt(e.target.value)||1}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>PHONE *</div><input value={eqForm.phone} onChange={function(e){setEqForm(Object.assign({},eqForm,{phone:e.target.value}))}} placeholder="Rep phone" style={IS}/></div>
+            <div><div style={EQ_LABEL}>QTY</div><input type="number" min="1" value={eqForm.qty} onChange={function(e){setEqForm(Object.assign({},eqForm,{qty:parseInt(e.target.value)||1}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>PHONE *</div><input value={eqForm.phone} onChange={function(e){setEqForm(Object.assign({},eqForm,{phone:e.target.value}))}} placeholder="Rep phone" style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>RENTAL COMPANY *</div>
+          <div style={EQ_LABEL}>RENTAL COMPANY *</div>
           <input value={eqForm.rental} onChange={function(e){setEqForm(Object.assign({},eqForm,{rental:e.target.value}))}} placeholder="Company name" style={IS}/>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>REPRESENTATIVE *</div>
+          <div style={EQ_LABEL}>REPRESENTATIVE *</div>
           <input value={eqForm.rep} onChange={function(e){setEqForm(Object.assign({},eqForm,{rep:e.target.value}))}} placeholder="Rep name" style={IS}/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>DAY IN</div><input type="date" value={eqForm.dayIn} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayIn:e.target.value}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>EST. DAY OUT</div><input type="date" value={eqForm.dayOut} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayOut:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>DAY IN</div><input type="date" value={eqForm.dayIn} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayIn:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>EST. DAY OUT</div><input type="date" value={eqForm.dayOut} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayOut:e.target.value}))}} style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>NOTES</div>
+          <div style={EQ_LABEL}>NOTES</div>
           <textarea value={eqForm.notes||''} onChange={function(e){setEqForm(Object.assign({},eqForm,{notes:e.target.value}))}} rows={2} style={Object.assign({},IS,{resize:'vertical'})}/>
           <div style={{display:'flex',gap:8,marginTop:6}}>
-            <div onClick={function(){if(!eqForm.rental||!eqForm.rep||!eqForm.phone){toast('Fill rental company, rep, and phone','error');return}saveEquip(eqForm)}} style={{flex:1,padding:12,background:EQ_GOLD,color:'#fff',borderRadius:4,textAlign:'center',cursor:'pointer',fontWeight:700,fontSize:14}}>SAVE</div>
-            <div onClick={function(){setEqForm(null)}} style={{padding:'12px 16px',background:'#eee',borderRadius:4,cursor:'pointer',fontSize:13}}>Cancel</div>
+            <div onClick={function(){if(!eqForm.rental||!eqForm.rep||!eqForm.phone){toast('Fill rental company, rep, and phone','error');return}saveEquip(eqForm)}} className="sr-button sr-button--primary sr-button--block" style={{flex:1}}>Save</div>
+            <div onClick={function(){setEqForm(null)}} className="sr-button sr-button--outline">Cancel</div>
           </div>
         </div>
       </div>}
 
       {/* Tool form modal */}
-      {toolForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:7000,padding:16}}>
-        <div style={{background:'#fff',borderRadius:10,padding:20,width:'95vw',maxWidth:420,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
-            <div style={{fontSize:16,fontWeight:700}}>{tools.find(function(t){return t.id===toolForm.id})?'Edit Tool':'Add Tool'}</div>
-            <span onClick={function(){setToolForm(null)}} style={{cursor:'pointer',color:'#888',fontSize:18}}>✕</span>
+      {toolForm&&<div className="sr-modal" style={{zIndex:7000}}>
+        <div className="sr-modal-sheet" style={{maxWidth:420,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{tools.find(function(t){return t.id===toolForm.id})?'Edit Tool':'Add Tool'}</div>
+            <button type="button" aria-label="Close" onClick={function(){setToolForm(null)}} className="sr-button sr-button--outline" style={{minHeight:36,padding:'4px 10px'}}><X size={16} /></button>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>TOOL NAME *</div>
+          <div style={EQ_LABEL}>TOOL NAME *</div>
           <input value={toolForm.name} onChange={function(e){setToolForm(Object.assign({},toolForm,{name:e.target.value}))}} placeholder="e.g. Impact Driver" style={IS}/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>SERIAL NUMBER</div><input value={toolForm.serial} onChange={function(e){setToolForm(Object.assign({},toolForm,{serial:e.target.value}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>COST ($)</div><input type="number" value={toolForm.cost} onChange={function(e){setToolForm(Object.assign({},toolForm,{cost:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>SERIAL NUMBER</div><input value={toolForm.serial} onChange={function(e){setToolForm(Object.assign({},toolForm,{serial:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>COST ($)</div><input type="number" value={toolForm.cost} onChange={function(e){setToolForm(Object.assign({},toolForm,{cost:e.target.value}))}} style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>DATE ACQUIRED</div>
+          <div style={EQ_LABEL}>DATE ACQUIRED</div>
           <input type="date" value={toolForm.acquired} onChange={function(e){setToolForm(Object.assign({},toolForm,{acquired:e.target.value}))}} style={IS}/>
           <div style={{display:'flex',gap:8,marginTop:6}}>
-            <div onClick={function(){if(!toolForm.name){toast('Enter tool name','error');return}saveTool(toolForm)}} style={{flex:1,padding:12,background:EQ_GOLD,color:'#fff',borderRadius:4,textAlign:'center',cursor:'pointer',fontWeight:700,fontSize:14}}>SAVE</div>
-            <div onClick={function(){setToolForm(null)}} style={{padding:'12px 16px',background:'#eee',borderRadius:4,cursor:'pointer',fontSize:13}}>Cancel</div>
+            <div onClick={function(){if(!toolForm.name){toast('Enter tool name','error');return}saveTool(toolForm)}} className="sr-button sr-button--primary sr-button--block" style={{flex:1}}>Save</div>
+            <div onClick={function(){setToolForm(null)}} className="sr-button sr-button--outline">Cancel</div>
           </div>
         </div>
       </div>}
 
       {/* Toasts */}
       <div style={{position:'fixed',top:16,right:16,zIndex:9999,display:'flex',flexDirection:'column',gap:6}}>
-        {toasts.map(function(t){return <div key={t.id} style={{background:t.type==='error'?'#dc2626':t.type==='warning'?'#d97706':'#16a34a',color:'#fff',padding:'10px 16px',borderRadius:6,fontFamily:EQ_FF,fontSize:13,boxShadow:'0 4px 16px rgba(0,0,0,.3)',minWidth:200}}>{t.msg}</div>})}
+        {toasts.map(function(t){return <div key={t.id} style={{background:t.type==='error'?'#ec3d49':t.type==='warning'?'#d97706':'#19d47b',color:t.type==='success'?'#00160a':'#fff',padding:'10px 16px',borderRadius:6,fontFamily:EQ_FF,fontSize:14,fontWeight:600,boxShadow:'0 4px 16px rgba(0,0,0,.45)',minWidth:200}}>{t.msg}</div>})}
       </div>
     </div>
   )
@@ -3596,8 +3595,8 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
 
 /* MY TIME CARD — employee-facing weekly calendar of their own punches */
 function MyTimeCard({ portalUser, onExit }){
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
   const [worker, setWorker] = useState(null);
   const [punches, setPunches] = useState({});
   const [loading, setLoading] = useState(true);
@@ -3645,7 +3644,7 @@ function MyTimeCard({ portalUser, onExit }){
   var DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:960,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:18}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:6}}>
@@ -3671,7 +3670,7 @@ function MyTimeCard({ portalUser, onExit }){
             <button onClick={function(){shiftWeek(1)}} disabled={weekEnd>=today} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:weekEnd>=today?DIM:A,border:'1px solid '+(weekEnd>=today?BORDER:A),cursor:weekEnd>=today?'default':'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>Next Week →</button>
           </div>
 
-          <div style={{background:CARD,border:'1px solid '+BORDER,marginBottom:16}}>
+          <div style={{background:CARD,border:'1px solid #e65e20',borderRadius:12,overflow:'hidden',marginBottom:16}}>
             {days.map(function(d,di){return (
               <div key={d.key} style={{display:'grid',gridTemplateColumns:mob?'80px 1fr 64px':'140px 1fr 90px',gap:12,padding:'14px 16px',borderTop:di===0?'none':'1px solid '+BORDER,background:d.isToday?'rgba(249,115,22,.05)':'transparent'}}>
                 <div>
@@ -3684,7 +3683,7 @@ function MyTimeCard({ portalUser, onExit }){
                     <div style={{...NB,fontSize:12,color:DIM,fontStyle:'italic'}}>{d.isFuture?'—':'No punches recorded'}</div>
                   ):d.punches.map(function(p,pi){return (
                     <div key={pi} style={{...NB,fontSize:13,color:TEXT,display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)',color:p.type==='in'?'#16a34a':'#dc2626',fontWeight:700,textTransform:'uppercase'}}>{p.type==='in'?'IN':'OUT'}</span>
+                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(25,212,123,.15)':'rgba(255,70,85,.15)',color:p.type==='in'?'#4fe3a1':'#ff8a94',fontWeight:700,textTransform:'uppercase',borderRadius:3}}>{p.type==='in'?'IN':'OUT'}</span>
                       {fmtTime(p.time)}
                     </div>
                   )})}
@@ -3740,10 +3739,10 @@ function TimekeepingModule({ onExit, portalUser }) {
   const geoWatch = useRef(null);
   const isAdmin = portalUser && (portalUser.role === 'admin' || portalUser.accountType === 'admin');
   const today = new Date().toISOString().slice(0,10);
-  const BB = {fontFamily:"'Bebas Neue',sans-serif"};
+  const BB = {fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};   // SUNRISE dark skin: condensed display type
   const NB = {fontFamily:"'Barlow Condensed',sans-serif"};
-  const A = '#F97316';
-  const TK_BG='#f5f2ee';const TK_CARD='#ffffff';const TK_TEXT='#1a1a2e';const TK_MID='#666';const TK_DIM='#999';const TK_BORDER='rgba(0,0,0,.08)';
+  const A = '#ff6b18';
+  const TK_BG='transparent';const TK_CARD='#07121e';const TK_TEXT='#f6f3ec';const TK_MID='#aab3c0';const TK_DIM='#717d8d';const TK_BORDER='#2b3949';
 
   useEffect(function(){
     var h = function(){ setMob(window.innerWidth < 768); };
@@ -4087,69 +4086,51 @@ function TimekeepingModule({ onExit, portalUser }) {
   };
 
   var cardStyle = {
-    background: TK_CARD, border: '1px solid '+TK_BORDER,
-    padding: mob ? 14 : 20, marginBottom: 12, borderRadius: 4, boxShadow:'0 1px 4px rgba(0,0,0,.06)'
+    background: 'linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))', border: '1px solid #e65e20',
+    padding: mob ? 16 : 20, marginBottom: 12, borderRadius: 12
   };
 
   var btnPrimary = {
-    background: A, color: '#fff', border: 'none', padding: '10px 22px', cursor: 'pointer',
-    fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, borderRadius: 4, ...NB
+    background: 'linear-gradient(135deg,#ff6b18,#ff7a21)', color: '#120a04', border: '1px solid #ff7a21', padding: '10px 18px', cursor: 'pointer',
+    fontSize: 13, letterSpacing: '.12em', textTransform: 'uppercase', fontWeight: 700, borderRadius: 6, minHeight: 44, ...NB
   };
 
   var btnSecondary = {
-    background: 'transparent', color: A, border: '1px solid ' + A, padding: '8px 18px', cursor: 'pointer',
-    fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600, borderRadius: 4, ...NB
+    background: 'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))', color: TK_TEXT, border: '1px solid #e65e20', padding: '8px 16px', cursor: 'pointer',
+    fontSize: 13, letterSpacing: '.12em', textTransform: 'uppercase', fontWeight: 600, borderRadius: 6, minHeight: 44, ...NB
   };
 
   var inputStyle = {
-    width: '100%', padding: '10px 14px', background: '#fff', border: '1px solid rgba(0,0,0,.15)',
-    color: TK_TEXT, fontSize: 14, borderRadius: 4, outline: 'none', ...NB
+    width: '100%', padding: '12px 14px', background: '#091522', border: '1px solid #e65e20',
+    color: TK_TEXT, fontSize: 16, borderRadius: 6, outline: 'none', minHeight: 48, fontFamily: "'Barlow',sans-serif"
   };
 
-  var labelStyle = { ...NB, fontSize: 10, letterSpacing: '2px', textTransform: 'uppercase', color: A, marginBottom: 4, display: 'block' };
+  var labelStyle = { ...NB, fontSize: 12, letterSpacing: '.2em', textTransform: 'uppercase', color: '#ff7a21', marginBottom: 5, display: 'block', fontWeight: 600 };
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,background:TK_BG,overflow:'auto',color:TK_TEXT}}>
-      <div style={{padding: mob ? '14px 16px' : '16px 32px', borderBottom: '1px solid '+TK_BORDER, background:TK_CARD, display:'flex', alignItems:'center', gap: 14, flexWrap:'wrap', boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
-        <div onClick={onExit} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:6,...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,transition:'opacity .2s'}}
-          onMouseEnter={function(e){e.currentTarget.style.opacity='.7'}} onMouseLeave={function(e){e.currentTarget.style.opacity='1'}}>
-          ← Dashboard
-        </div>
-        <div style={{width:1,height:20,background:TK_BORDER}}/>
-        <div style={{...BB,fontSize: mob ? 18 : 24, letterSpacing: '2px', color: TK_TEXT}}>TIMEKEEPING</div>
-        <div style={mob?{flexBasis:'100%',display:'flex',gap:4,flexWrap:'nowrap',overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:2,marginTop:6}:{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap'}}>
-          {['clock','roster','gps','payroll','invites','admin'].map(function(t){
-            if (['admin','payroll','invites'].indexOf(t) >= 0 && !isAdmin) return null;
-            var labels = {clock:'Time Clock',roster:'Roster',gps:'GPS Trail',payroll:'Payroll',invites:'Invites',admin:'Manage'};
-            return <button key={t} onClick={function(){setTab(t)}} style={tBarStyle(t)}>{labels[t]}</button>;
-          })}
-        </div>
-      </div>
-
-      <div style={{maxWidth:1200,margin:'0 auto',padding: mob ? '20px 14px' : '32px 32px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflow:'auto',color:TK_TEXT,paddingBottom:'calc(24px + var(--tabbar-h, 0px))'}}>
+      <SrModuleHeader onBack={onExit} title="Timekeeping" />
+      <div className="sr-content--wide">
+        <SrModuleTabs value={tab} onChange={setTab} items={['clock','roster','gps','payroll','invites','admin'].filter(function(t){return !(['admin','payroll','invites'].indexOf(t) >= 0 && !isAdmin)}).map(function(t){return [t,{clock:'Time Clock',roster:'Roster',gps:'GPS Trail',payroll:'Payroll',invites:'Invites',admin:'Manage'}[t]]})} />
 
         {/* ═══ TIME CLOCK TAB ═══ */}
         {tab === 'clock' && (
           <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>TIME CLOCK</div>
-                <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px'}}>{new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+                <h2 className="sr-section-title">Time Clock</h2>
+                <div className="sr-section-sub">{new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
               </div>
             </div>
             {workers.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{fontSize:48,marginBottom:16}}>&#128337;</div>
-                <div style={{...NB,fontSize:16,letterSpacing:'1px'}}>No workers registered yet</div>
-                <div style={{...NB,fontSize:12,color:TK_MID,marginTop:8}}>Go to the Roster tab to add employees</div>
-              </div>
+              <SrEmpty Icon={Clock} title="No workers registered yet" hint="Go to the Roster tab to add employees" />
             ) : (
               <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
                 {workers.map(function(w) {
                   var active = isPunchedIn(w.id);
                   var hours = getTotalHours(w.id);
                   return (
-                    <div key={w.id} style={{...cardStyle, borderLeft: '3px solid ' + (active ? '#22c55e' : '#555')}}>
+                    <div key={w.id} className="sr-state-card" data-state={active ? 'clocked-in' : 'off'}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                         <div>
                           <div style={{...BB,fontSize:20,letterSpacing:1}}>{w.name}</div>
@@ -4157,15 +4138,15 @@ function TimekeepingModule({ onExit, portalUser }) {
                           {(w.projects||[]).length > 0 && <div style={{...NB,fontSize:10,color:A,marginTop:4}}>{(w.projects||[]).map(function(p){return p.name}).join(', ')}</div>}
                         </div>
                         <div style={{textAlign:'right'}}>
-                          <div style={{...NB,fontSize:10,letterSpacing:'1px',color: active ? '#22c55e' : '#ef4444',textTransform:'uppercase',fontWeight:700}}>{active ? '● Clocked In' : '○ Off'}</div>
-                          <div style={{...BB,fontSize:24,color:TK_TEXT,marginTop:4}}>{hours}h</div>
+                          <span className={'sr-state-label ' + (active ? 'sr-state-label--on' : 'sr-state-label--off')}>{active ? 'Clocked In' : 'Off'}</span>
+                          <div className="sr-time-dur" style={{fontSize:'1.9rem',marginTop:6,marginLeft:0}}>{hours}H</div>
                         </div>
                       </div>
-                      <div style={{display:'flex',gap:8,marginTop:14}}>
+                      <div style={{display:'flex',gap:8}}>
                         {!active ? (
-                          <button onClick={function(){punchIn(w.id)}} style={{...btnPrimary,background:'#22c55e',flex:1,minHeight:48,fontSize:15}}>&#9654; Clock In</button>
+                          <button onClick={function(){punchIn(w.id)}} className="sr-button sr-clock-action sr-clock-action--in">&#9654; Clock In</button>
                         ) : (
-                          <button onClick={function(){punchOut(w.id)}} style={{...btnPrimary,background:'#ef4444',flex:1,minHeight:48,fontSize:15}}>&#9632; Clock Out</button>
+                          <button onClick={function(){punchOut(w.id)}} className="sr-button sr-clock-action sr-clock-action--out">&#9632; Clock Out</button>
                         )}
                       </div>
                     </div>
@@ -4180,13 +4161,13 @@ function TimekeepingModule({ onExit, portalUser }) {
         {tab === 'roster' && (
           <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
-              <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>EMPLOYEE ROSTER</div>
-              {isAdmin && <button onClick={function(){setShowAdd(true)}} style={btnPrimary}>+ Add Employee</button>}
+              <h2 className="sr-section-title sr-section-title--bar">Employee Roster</h2>
+              {isAdmin && <button onClick={function(){setShowAdd(true)}} className="sr-button sr-button--primary">+ Add Employee</button>}
             </div>
 
             {showAdd && (
               <div style={{...cardStyle,marginBottom:24,border:'1px solid '+A}}>
-                <div style={{...BB,fontSize:18,letterSpacing:1,marginBottom:16}}>NEW EMPLOYEE</div>
+                <div className="sr-card-title" style={{fontSize:'1.2rem',marginBottom:16}}>New Employee</div>
                 <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : '1fr 1fr',gap:14}}>
                   <div><label style={labelStyle}>Full Name *</label><input value={addForm.name} onChange={function(e){setAddForm(Object.assign({},addForm,{name:e.target.value}))}} style={inputStyle} placeholder="John Smith"/></div>
                   <div><label style={labelStyle}>Email *</label><input value={addForm.email} onChange={function(e){setAddForm(Object.assign({},addForm,{email:e.target.value}))}} style={inputStyle} placeholder="john@company.com" type="email"/></div>
@@ -4220,27 +4201,23 @@ function TimekeepingModule({ onExit, portalUser }) {
             )}
 
             {workers.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{...NB,fontSize:14}}>No employees registered. Click "+ Add Employee" to get started.</div>
-              </div>
+              <SrEmpty Icon={Users} title="No employees registered" hint={'Click "+ Add Employee" to get started.'} />
             ) : (
               <div>
                 {workers.map(function(w) {
                   var expanded = selWorker && selWorker.id === w.id;
                   return (
                     <div key={w.id} style={cardStyle}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}} onClick={function(){setSelWorker(expanded ? null : w)}}>
-                        <div style={{display:'flex',alignItems:'center',gap:14}}>
-                          <div style={{width:36,height:36,borderRadius:'50%',background:'rgba(249,115,22,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:A}}>{w.name.charAt(0)}</div>
-                          <div>
-                            <div style={{...BB,fontSize:18,letterSpacing:1}}>{w.name}</div>
-                            <div style={{...NB,fontSize:11,color:TK_MID}}>{w.role} · {w.email}</div>
-                          </div>
+                      <div className="sr-roster-summary" role="button" aria-expanded={!!expanded} onClick={function(){setSelWorker(expanded ? null : w)}}>
+                        <div className="sr-avatar">{w.name.charAt(0)}</div>
+                        <div style={{minWidth:0}}>
+                          <div className="sr-user-name">{w.name}</div>
+                          <div className="sr-meta">{w.role} · {w.email}</div>
                         </div>
-                        <div style={{...NB,fontSize:18,color:TK_MID}}>{expanded ? '▲' : '▼'}</div>
+                        {expanded ? <ChevronUp size={22} color="#aab3c0" /> : <ChevronDown size={22} color="#aab3c0" />}
                       </div>
                       {expanded && (
-                        <div style={{marginTop:16,paddingTop:16,borderTop:'1px solid '+TK_BORDER}}>
+                        <div className="sr-roster-details">
                           <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : '1fr 1fr 1fr',gap:12,marginBottom:16}}>
                             <div><span style={labelStyle}>Phone</span><div style={{...NB,fontSize:14}}>{w.phone || '—'}</div></div>
                             <div><span style={labelStyle}>Email</span><div style={{...NB,fontSize:14}}>{w.email || '—'}</div></div>
@@ -4249,7 +4226,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                           <div style={{marginBottom:14}}>
                             <span style={labelStyle}>Role</span>
                             {isAdmin ? (
-                              <select value={w.role||'Apprentice'} onChange={function(e){e.stopPropagation();var updated=workers.map(function(wk){return wk.id===w.id?Object.assign({},wk,{role:e.target.value}):wk});saveWorkers(updated)}} style={{...NB,fontSize:14,padding:'6px 10px',background:TK_CARD,border:'1px solid '+TK_BORDER,color:TK_TEXT,outline:'none',cursor:'pointer'}}>
+                              <select value={w.role||'Apprentice'} onChange={function(e){e.stopPropagation();var updated=workers.map(function(wk){return wk.id===w.id?Object.assign({},wk,{role:e.target.value}):wk});saveWorkers(updated)}} style={{...inputStyle,width:'auto',minWidth:220,cursor:'pointer'}}>
                                 {ROLES.map(function(r){return <option key={r} value={r}>{r}</option>})}
                               </select>
                             ) : (
@@ -4261,9 +4238,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                             {(w.projects||[]).length === 0 ? <div style={{...NB,fontSize:12,color:TK_DIM}}>None assigned</div> : (
                               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
                                 {(w.projects||[]).map(function(p){return (
-                                  <span key={p.id} style={{...NB,fontSize:11,padding:'4px 10px',background:'rgba(249,115,22,.12)',color:A,borderRadius:3,display:'inline-flex',alignItems:'center',gap:6}}>
-                                    {p.name} <span style={{fontSize:9,color:TK_MID}}>({p.source})</span>
-                                    {isAdmin && <span onClick={function(e){e.stopPropagation();unassignProject(w.id,p.id)}} style={{cursor:'pointer',color:'#ef4444',fontWeight:700}}>✕</span>}
+                                  <span key={p.id} className="sr-chip sr-chip--meta" style={{display:'inline-flex',alignItems:'center',gap:6,color:'#ff7a21',borderColor:'#e65e20'}}>
+                                    {p.name} <span style={{fontSize:'.75rem',color:TK_MID}}>({p.source})</span>
+                                    {isAdmin && <button type="button" className="sr-chip-x" aria-label="Unassign" onClick={function(e){e.stopPropagation();unassignProject(w.id,p.id)}}>✕</button>}
                                   </span>
                                 )})}
                               </div>
@@ -4274,9 +4251,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                             {(w.equipment||[]).length === 0 ? <div style={{...NB,fontSize:12,color:TK_DIM}}>None assigned</div> : (
                               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
                                 {(w.equipment||[]).map(function(eq){return (
-                                  <span key={eq.id} style={{...NB,fontSize:11,padding:'4px 10px',background:'rgba(34,197,94,.12)',color:'#22c55e',borderRadius:3,display:'inline-flex',alignItems:'center',gap:6}}>
+                                  <span key={eq.id} className="sr-chip sr-chip--meta sr-chip--green" style={{display:'inline-flex',alignItems:'center',gap:6}}>
                                     {eq.type} {eq.serial && '('+eq.serial+')'}
-                                    {isAdmin && <span onClick={function(e){e.stopPropagation();unassignEquipment(w.id,eq.id)}} style={{cursor:'pointer',color:'#ef4444',fontWeight:700}}>✕</span>}
+                                    {isAdmin && <button type="button" className="sr-chip-x" aria-label="Unassign" onClick={function(e){e.stopPropagation();unassignEquipment(w.id,eq.id)}}>✕</button>}
                                   </span>
                                 )})}
                               </div>
@@ -4284,9 +4261,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                           </div>
                           {isAdmin && (
                             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('project')}} style={btnSecondary}>Assign Project</button>
-                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('equipment')}} style={{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Assign Equipment</button>
-                              <button onClick={function(){removeWorker(w.id)}} style={{...btnSecondary,color:'#ef4444',borderColor:'#ef4444',marginLeft:'auto'}}>Remove</button>
+                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('project')}} className="sr-button sr-button--assign">Assign Project</button>
+                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('equipment')}} className="sr-button sr-button--success">Assign Equipment</button>
+                              <button onClick={function(){removeWorker(w.id)}} className="sr-button sr-button--danger" style={{marginLeft:'auto'}}>Remove</button>
                             </div>
                           )}
                         </div>
@@ -4302,19 +4279,19 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ GPS TRAIL TAB ═══ */}
         {tab === 'gps' && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>GPS TRAIL</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>View worker location breadcrumbs by day</div>
+            <h2 className="sr-section-title">GPS Trail</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>View worker location breadcrumbs by day</div>
             <div style={{display:'flex',gap:14,marginBottom:20,flexWrap:'wrap',alignItems:'flex-end'}}>
               <div>
                 <label style={labelStyle}>Employee</label>
-                <select value={mapWorker||''} onChange={function(e){setMapWorker(e.target.value)}} style={{...inputStyle,width:220,cursor:'pointer'}}>
+                <select value={mapWorker||''} onChange={function(e){setMapWorker(e.target.value)}} className="sr-select" style={{minWidth:220}}>
                   <option value="">Select worker...</option>
                   {workers.map(function(w){return <option key={w.id} value={w.id}>{w.name}</option>})}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>Date</label>
-                <input type="date" value={mapDate} onChange={function(e){setMapDate(e.target.value)}} style={{...inputStyle,width:180}}/>
+                <input type="date" value={mapDate} onChange={function(e){setMapDate(e.target.value)}} style={{...inputStyle,width:190}}/>
               </div>
             </div>
             {mapWorker ? (function(){
@@ -4326,15 +4303,15 @@ function TimekeepingModule({ onExit, portalUser }) {
                 <div>
                   <div style={{...cardStyle,marginBottom:16}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                      <div style={{...BB,fontSize:20,letterSpacing:1}}>{wName}</div>
-                      <div style={{...NB,fontSize:12,color:A}}>{trail.length} GPS points · {getTotalHours(mapWorker, mapDate)}h worked</div>
+                      <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{wName}</div>
+                      <div className="sr-meta" style={{color:'#ff7a21'}}>{trail.length} GPS points · {getTotalHours(mapWorker, mapDate)}h worked</div>
                     </div>
                     {dayPunches.length > 0 && (
                       <div style={{marginBottom:12}}>
                         <span style={labelStyle}>Punch Log</span>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {dayPunches.map(function(p, i){
-                            return <span key={i} style={{...NB,fontSize:11,padding:'4px 10px',background: p.type==='in'?'rgba(34,197,94,.12)':'rgba(239,68,68,.12)',color: p.type==='in'?'#22c55e':'#ef4444',borderRadius:3}}>
+                            return <span key={i} className={'sr-badge ' + (p.type==='in' ? 'sr-badge--ok' : 'sr-badge--bad')} style={{textTransform:'none',letterSpacing:0,fontFamily:"'Barlow',sans-serif",fontSize:'.85rem'}}>
                               {p.type==='in'?'▶ IN':'■ OUT'} {new Date(p.time).toLocaleTimeString()} ({p.location.lat.toFixed(4)}, {p.location.lng.toFixed(4)})
                             </span>;
                           })}
@@ -4343,31 +4320,29 @@ function TimekeepingModule({ onExit, portalUser }) {
                     )}
                   </div>
                   {trail.length === 0 ? (
-                    <div style={{textAlign:'center',padding:40,color:TK_DIM}}>
-                      <div style={{...NB,fontSize:14}}>No GPS breadcrumbs recorded for this date</div>
-                    </div>
+                    <SrEmpty Icon={MapPin} title="No GPS breadcrumbs recorded for this date" />
                   ) : (
                     <div style={{...cardStyle}}>
                       <span style={labelStyle}>Location Trail</span>
-                      <div style={{maxHeight:400,overflowY:'auto',marginTop:8}}>
-                        <table style={{width:'100%',borderCollapse:'collapse'}}>
+                      <div className="sr-data-scroll" style={{maxHeight:400,overflowY:'auto',marginTop:8}}>
+                        <table className="sr-data-table sr-data-table--compact">
                           <thead>
-                            <tr style={{borderBottom:'1px solid '+TK_BORDER}}>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>#</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>TIME</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>LATITUDE</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>LONGITUDE</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>ACCURACY</th>
+                            <tr>
+                              <th>#</th>
+                              <th>Time</th>
+                              <th>Latitude</th>
+                              <th>Longitude</th>
+                              <th>Accuracy</th>
                             </tr>
                           </thead>
                           <tbody>
                             {trail.map(function(pt, i){
-                              return <tr key={i} style={{borderBottom:'1px solid '+TK_BORDER}}>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:TK_MID}}>{i+1}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px'}}>{new Date(pt.ts).toLocaleTimeString()}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:A}}>{pt.lat.toFixed(6)}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:A}}>{pt.lng.toFixed(6)}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:TK_MID}}>±{pt.acc.toFixed(0)}m</td>
+                              return <tr key={i}>
+                                <td className="sr-data-dim">{i+1}</td>
+                                <td>{new Date(pt.ts).toLocaleTimeString()}</td>
+                                <td className="sr-data-accent">{pt.lat.toFixed(6)}</td>
+                                <td className="sr-data-accent">{pt.lng.toFixed(6)}</td>
+                                <td className="sr-data-dim">±{pt.acc.toFixed(0)}m</td>
                               </tr>;
                             })}
                           </tbody>
@@ -4391,10 +4366,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                 </div>
               );
             })() : (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{fontSize:48,marginBottom:16}}>&#128205;</div>
-                <div style={{...NB,fontSize:14}}>Select an employee to view their GPS trail</div>
-              </div>
+              <SrEmpty Icon={MapPin} title="Select an employee to view their GPS trail" />
             )}
           </div>
         )}
@@ -4413,30 +4385,30 @@ function TimekeepingModule({ onExit, portalUser }) {
             <div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
                 <div>
-                  <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>WEEKLY PAYROLL</div>
-                  <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px'}}>Hours summary by project · Mon–Sun</div>
+                  <h2 className="sr-section-title">Weekly Payroll</h2>
+                  <div className="sr-section-sub">Hours summary by project · Mon–Sun</div>
                 </div>
-                <button onClick={exportWeekly} style={btnPrimary}>↓ Export XLSX</button>
+                <button onClick={exportWeekly} className="sr-button sr-button--primary">↓ Export XLSX</button>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:24}}>
-                <button onClick={function(){setWeekOffset(weekOffset-1)}} style={btnSecondary}>← Prev</button>
-                <div style={{...BB,fontSize:20,letterSpacing:1,minWidth:220,textAlign:'center'}}>{weekLabel}</div>
-                <button onClick={function(){setWeekOffset(weekOffset+1)}} style={{...btnSecondary,opacity:weekOffset>=0?.4:1}} disabled={weekOffset>=0}>Next →</button>
-                {weekOffset!==0 && <button onClick={function(){setWeekOffset(0)}} style={{...NB,fontSize:10,color:A,background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Current Week</button>}
+              <div className="sr-week-nav">
+                <button onClick={function(){setWeekOffset(weekOffset-1)}} className="sr-button sr-button--outline">← Prev</button>
+                <div className="sr-week-label">{weekLabel}</div>
+                <button onClick={function(){setWeekOffset(weekOffset+1)}} className="sr-button sr-button--outline" disabled={weekOffset>=0}>Next →</button>
+                {weekOffset!==0 && <button onClick={function(){setWeekOffset(0)}} className="sr-kicker" style={{background:'none',border:'none',cursor:'pointer',textDecoration:'underline',width:'100%',textAlign:'center'}}>Current Week</button>}
               </div>
 
               {workers.length === 0 ? (
-                <div style={{textAlign:'center',padding:60,color:TK_DIM}}><div style={{...NB,fontSize:14}}>No employees registered</div></div>
+                <SrEmpty Icon={Users} title="No employees registered" />
               ) : (
                 <div>
-                  <div style={{...cardStyle,overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+                  <div className="sr-data-scroll" style={{...cardStyle,padding:mob?'6px 4px':'10px 12px'}}>
+                    <table className="sr-data-table">
                       <thead>
-                        <tr style={{borderBottom:'2px solid '+A}}>
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:A,padding:'10px 12px',textAlign:'left'}}>EMPLOYEE</th>
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:TK_MID,padding:'10px 8px',textAlign:'left'}}>ROLE</th>
-                          {weekDates.map(function(d){return <th key={d} style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'10px 8px',textAlign:'center'}}>{new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'})}</th>})}
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:A,padding:'10px 8px',textAlign:'center',fontWeight:700}}>TOTAL</th>
+                        <tr>
+                          <th className="sr-th-accent">Employee</th>
+                          <th>Role</th>
+                          {weekDates.map(function(d){return <th key={d} className="sr-th-center">{new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'})}</th>})}
+                          <th className="sr-th-accent sr-th-center">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4444,21 +4416,21 @@ function TimekeepingModule({ onExit, portalUser }) {
                           var dailyH = weekDates.map(function(d){return parseFloat(getTotalHours(w.id,d))});
                           var total = dailyH.reduce(function(s,h){return s+h},0);
                           return (
-                            <tr key={w.id} style={{borderBottom:'1px solid '+TK_BORDER,cursor:'pointer',background: payrollWorker===w.id?'rgba(249,115,22,.06)':'transparent'}} onClick={function(){setPayrollWorker(payrollWorker===w.id?null:w.id)}}>
-                              <td style={{...NB,fontSize:13,padding:'10px 12px',fontWeight:600}}>{w.name}</td>
-                              <td style={{...NB,fontSize:12,padding:'10px 8px',color:TK_MID}}>{w.role}</td>
-                              {dailyH.map(function(h,i){return <td key={i} style={{...NB,fontSize:13,padding:'10px 8px',textAlign:'center',color:h>0?TK_TEXT:'#999'}}>{h>0?h.toFixed(2):'—'}</td>})}
-                              <td style={{...BB,fontSize:18,padding:'10px 8px',textAlign:'center',color:total>0?A:'#444'}}>{total.toFixed(2)}</td>
+                            <tr key={w.id} aria-selected={payrollWorker===w.id} style={{cursor:'pointer'}} onClick={function(){setPayrollWorker(payrollWorker===w.id?null:w.id)}}>
+                              <td style={{fontWeight:600}}>{w.name}</td>
+                              <td className="sr-data-dim">{w.role}</td>
+                              {dailyH.map(function(h,i){return <td key={i} className={'sr-td-center' + (h>0?'':' sr-data-dim')}>{h>0?h.toFixed(2):'—'}</td>})}
+                              <td className={'sr-td-center sr-data-strong' + (total>0?' sr-data-accent':' sr-data-dim')}>{total.toFixed(2)}</td>
                             </tr>
                           );
                         })}
-                        <tr style={{borderTop:'2px solid '+A}}>
-                          <td colSpan={2} style={{...BB,fontSize:14,padding:'10px 12px',color:A}}>TOTALS</td>
+                        <tr className="sr-data-total">
+                          <td colSpan={2}>TOTALS</td>
                           {weekDates.map(function(d,di){
                             var dayTotal = workers.reduce(function(s,w){return s+parseFloat(getTotalHours(w.id,d))},0);
-                            return <td key={di} style={{...BB,fontSize:14,padding:'10px 8px',textAlign:'center',color:dayTotal>0?TK_TEXT:'#999'}}>{dayTotal>0?dayTotal.toFixed(2):'—'}</td>;
+                            return <td key={di} className="sr-td-center" style={{color:dayTotal>0?TK_TEXT:TK_DIM}}>{dayTotal>0?dayTotal.toFixed(2):'—'}</td>;
                           })}
-                          <td style={{...BB,fontSize:20,padding:'10px 8px',textAlign:'center',color:A}}>
+                          <td className="sr-td-center" style={{fontSize:'1.2rem'}}>
                             {workers.reduce(function(s,w){return s+parseFloat(getWeeklyHours(w.id,weekDates))},0).toFixed(2)}
                           </td>
                         </tr>
@@ -4471,13 +4443,13 @@ function TimekeepingModule({ onExit, portalUser }) {
                     if(!w) return null;
                     var dd = w.directDeposit || {};
                     return (
-                      <div style={{...cardStyle,marginTop:16,border:'1px solid '+A}}>
+                      <div style={{...cardStyle,marginTop:16}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
                           <div>
-                            <div style={{...BB,fontSize:22,letterSpacing:1}}>{w.name}</div>
-                            <div style={{...NB,fontSize:11,color:TK_MID}}>{w.role} · {w.phone}</div>
+                            <div className="sr-card-title" style={{fontSize:'1.35rem'}}>{w.name}</div>
+                            <div className="sr-meta">{w.role} · {w.phone}</div>
                           </div>
-                          <div style={{...BB,fontSize:28,color:A}}>{getWeeklyHours(w.id,weekDates)}h</div>
+                          <div className="sr-time-dur" style={{fontSize:'1.9rem',color:'#ff7a21'}}>{getWeeklyHours(w.id,weekDates)}H</div>
                         </div>
                         <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid '+TK_BORDER}}>
                           <div style={{...BB,fontSize:14,letterSpacing:1,color:A,marginBottom:10}}>DIRECT DEPOSIT</div>
@@ -4501,7 +4473,7 @@ function TimekeepingModule({ onExit, portalUser }) {
 
                   {projNames.length > 0 && (
                     <div style={{marginTop:24}}>
-                      <div style={{...BB,fontSize:20,letterSpacing:1,marginBottom:14}}>HOURS BY PROJECT</div>
+                      <h3 className="sr-section-title" style={{fontSize:'1.3rem',marginBottom:14}}>Hours by Project</h3>
                       {projNames.map(function(pn){
                         var projWorkers = workers.filter(function(w){
                           return (w.projects||[]).some(function(p){return p.name===pn}) || (pn==='Unassigned' && (w.projects||[]).length===0);
@@ -4517,31 +4489,29 @@ function TimekeepingModule({ onExit, portalUser }) {
                         return (
                           <div key={pn} style={{...cardStyle,marginBottom:10}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                              <div style={{...BB,fontSize:16,letterSpacing:1,color:A}}>{pn}</div>
-                              <div style={{...BB,fontSize:22}}>{projTotal.toFixed(2)}h</div>
+                              <div className="sr-card-title" style={{fontSize:'1.15rem',color:'#ff7a21'}}>{pn}</div>
+                              <div className="sr-time-dur" style={{fontSize:'1.5rem'}}>{projTotal.toFixed(2)}H</div>
                             </div>
                             {trackedHrs > 0 && (
-                              <div style={{marginBottom:10,padding:'10px 14px',background:belowTarget?'rgba(239,68,68,.08)':'rgba(34,197,94,.08)',border:'1px solid '+(belowTarget?'rgba(239,68,68,.25)':'rgba(34,197,94,.25)'),display:'flex',flexDirection:mob?'column':'row',gap:mob?8:20,alignItems:mob?'flex-start':'center',justifyContent:'space-between'}}>
+                              <div className={'sr-ratio-alert' + (belowTarget ? '' : ' sr-ratio-alert--ok')} style={{marginTop:0,marginBottom:10}}>
                                 <div>
-                                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:belowTarget?'#ef4444':'#22c55e',marginBottom:4}}>APPRENTICE RATIO</div>
+                                  <div className="sr-label" style={{color:'inherit',fontSize:'.72rem',marginBottom:4}}>Apprentice Ratio</div>
                                   <div style={{display:'flex',alignItems:'baseline',gap:8}}>
-                                    <span style={{...BB,fontSize:24,color:belowTarget?'#ef4444':'#22c55e'}}>{(ratio*100).toFixed(1)}%</span>
-                                    <span style={{...NB,fontSize:11,color:TK_MID}}>target: {(target*100)}%</span>
+                                    <span className="sr-ratio-value">{(ratio*100).toFixed(1)}%</span>
+                                    <span className="sr-meta">target: {(target*100)}%</span>
                                   </div>
-                                  <div style={{...NB,fontSize:11,color:TK_MID,marginTop:2}}>Apprentice: {appHrs.toFixed(1)}h · Journeyman: {jourHrs.toFixed(1)}h</div>
+                                  <div className="sr-meta" style={{marginTop:2}}>Apprentice: {appHrs.toFixed(1)}h · Journeyman: {jourHrs.toFixed(1)}h</div>
                                 </div>
                                 {belowTarget && (
-                                  <div style={{...NB,fontSize:12,color:'#ef4444',fontWeight:600,textAlign:mob?'left':'right'}}>
-                                    ⚠ Below 15% — needs ~{deficit}h more apprentice hours
-                                  </div>
+                                  <div className="sr-ratio-note"><AlertTriangle size={16} /> Below 15% — needs ~{deficit}h more apprentice hours</div>
                                 )}
                               </div>
                             )}
                             {projWorkers.map(function(w){
                               var hrs = getWeeklyHours(w.id,weekDates);
-                              return <div key={w.id} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',...NB,fontSize:12}}>
+                              return <div key={w.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid '+TK_BORDER,fontSize:'.95rem'}}>
                                 <span>{w.name} <span style={{color:TK_MID}}>({w.role})</span></span>
-                                <span style={{color:parseFloat(hrs)>0?TK_TEXT:'#999'}}>{hrs}h</span>
+                                <span style={{color:parseFloat(hrs)>0?TK_TEXT:TK_DIM,fontVariantNumeric:'tabular-nums'}}>{hrs}h</span>
                               </div>;
                             })}
                           </div>
@@ -4558,36 +4528,33 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ INVITES TAB ═══ */}
         {tab === 'invites' && isAdmin && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>PHONE INVITES</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>Invite workers to Timekeeping via phone number</div>
+            <h2 className="sr-section-title">Phone Invites</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>Invite workers to Timekeeping via phone number</div>
 
-            <div style={{...cardStyle,marginBottom:24,border:'1px solid '+A}}>
-              <div style={{...BB,fontSize:16,letterSpacing:1,marginBottom:14}}>SEND INVITE</div>
+            <div style={{...cardStyle,marginBottom:24}}>
+              <div className="sr-card-title" style={{fontSize:'1.2rem',marginBottom:14}}>Send Invite</div>
               <div style={{display:'grid',gridTemplateColumns: mob?'1fr':'1fr 1fr auto',gap:14,alignItems:'flex-end'}}>
                 <div><label style={labelStyle}>Phone Number *</label><input value={invitePhone} onChange={function(e){setInvitePhone(e.target.value)}} style={inputStyle} placeholder="(555) 123-4567" type="tel"/></div>
                 <div><label style={labelStyle}>Name (optional)</label><input value={inviteName} onChange={function(e){setInviteName(e.target.value)}} style={inputStyle} placeholder="Worker name"/></div>
-                <button onClick={sendInvite} style={{...btnPrimary,height:44}}>Send Invite</button>
+                <button onClick={sendInvite} className="sr-button sr-button--primary" style={{minHeight:52}}>Send Invite</button>
               </div>
             </div>
 
             {tkInvites.length === 0 ? (
-              <div style={{textAlign:'center',padding:40,color:TK_DIM}}><div style={{...NB,fontSize:14}}>No invites sent yet</div></div>
+              <SrEmpty Icon={Send} title="No invites sent yet" />
             ) : (
               <div>
-                <div style={{...NB,fontSize:10,letterSpacing:'1.5px',color:TK_MID,marginBottom:10}}>{tkInvites.length} INVITE{tkInvites.length!==1?'S':''} SENT</div>
+                <div className="sr-kicker" style={{marginBottom:10}}>{tkInvites.length} Invite{tkInvites.length!==1?'s':''} sent</div>
                 {tkInvites.map(function(inv){
                   return (
-                    <div key={inv.id} style={{...cardStyle,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div key={inv.id} className="sr-list-row sr-list-row--stack" style={{borderBottom:'1px solid '+TK_BORDER}}>
                       <div>
-                        <div style={{...NB,fontSize:14,fontWeight:600}}>{inv.phone} {inv.name && <span style={{color:TK_MID}}>· {inv.name}</span>}</div>
-                        <div style={{...NB,fontSize:10,color:TK_MID}}>Sent {new Date(inv.sentAt).toLocaleDateString()} by {inv.sentBy}</div>
+                        <div className="sr-row-title">{inv.phone} {inv.name && <span style={{color:TK_MID,fontWeight:400}}>· {inv.name}</span>}</div>
+                        <div className="sr-meta">Sent {new Date(inv.sentAt).toLocaleDateString()} by {inv.sentBy}</div>
                       </div>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <span style={{...NB,fontSize:10,letterSpacing:'1px',textTransform:'uppercase',padding:'4px 10px',borderRadius:3,
-                          background: inv.status==='accepted'?'rgba(34,197,94,.12)':'rgba(234,179,8,.12)',
-                          color: inv.status==='accepted'?'#22c55e':'#eab308'
-                        }}>{inv.status}</span>
-                        <button onClick={function(){revokeInvite(inv.id)}} style={{...NB,fontSize:10,background:'none',border:'1px solid #ef4444',color:'#ef4444',padding:'4px 10px',borderRadius:3,cursor:'pointer'}}>Revoke</button>
+                      <div className="sr-actions" style={{alignItems:'center'}}>
+                        <SrBadge tone={inv.status==='accepted'?'ok':'warn'}>{inv.status}</SrBadge>
+                        <button onClick={function(){revokeInvite(inv.id)}} className="sr-button sr-button--danger" style={{minHeight:36,padding:'6px 12px',fontSize:'.85rem'}}>Revoke</button>
                       </div>
                     </div>
                   );
@@ -4600,8 +4567,8 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ ADMIN / MANAGE TAB ═══ */}
         {tab === 'admin' && isAdmin && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>MANAGE ASSIGNMENTS</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>Assign workers to projects and equipment</div>
+            <h2 className="sr-section-title">Manage Assignments</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>Assign workers to projects and equipment</div>
 
             {workers.length === 0 ? (
               <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
@@ -4627,7 +4594,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                       <div style={{...BB,fontSize:18,letterSpacing:1,marginBottom:14,color:A}}>ASSIGN TO {selWorker.name.toUpperCase()}</div>
                       <div style={{display:'flex',gap:8,marginBottom:16}}>
                         <button onClick={function(){setAssignTab('project')}} style={assignTab==='project'?btnPrimary:btnSecondary}>Projects</button>
-                        <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#22c55e'}:{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Equipment</button>
+                        <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#19d47b',borderColor:'#53efaa',color:'#00160a'}:{...btnSecondary,color:'#7cf0bb',borderColor:'#19d47b'}}>Equipment</button>
                       </div>
 
                       {assignTab === 'project' && (
@@ -4637,11 +4604,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                             fieldProjects.map(function(fp){
                               var already = (selWorker.projects||[]).some(function(p){return p.id===fp.id});
                               return (
-                                <div key={fp.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                                <div key={fp.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                   <span style={{...NB,fontSize:13}}>{fp.name}</span>
                                   {already ?
-                                    <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                    <button onClick={function(){assignProject(selWorker.id,fp.id,fp.name,'Field Manager')}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                    <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                    <button onClick={function(){assignProject(selWorker.id,fp.id,fp.name,'Field Manager')}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                   }
                                 </div>
                               );
@@ -4652,11 +4619,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                             eqProjects.map(function(ep){
                               var already = (selWorker.projects||[]).some(function(p){return p.id===ep.id});
                               return (
-                                <div key={ep.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                                <div key={ep.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                   <span style={{...NB,fontSize:13}}>{ep.name}</span>
                                   {already ?
-                                    <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                    <button onClick={function(){assignProject(selWorker.id,ep.id,ep.name,'Equipment Mgr')}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                    <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                    <button onClick={function(){assignProject(selWorker.id,ep.id,ep.name,'Equipment Mgr')}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                   }
                                 </div>
                               );
@@ -4675,11 +4642,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                           {eqForProject.length > 0 && eqForProject.map(function(eq, i){
                             var already = (selWorker.equipment||[]).some(function(e){return e.type===eq.type&&e.serial===(eq.serial||eq.name||'')});
                             return (
-                              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                 <span style={{...NB,fontSize:13}}>{eq.type || eq.name} {eq.serial ? '('+eq.serial+')' : eq.qty ? '(qty: '+eq.qty+')' : ''}</span>
                                 {already ?
-                                  <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                  <button onClick={function(){assignEquipment(selWorker.id,eq)}} style={{...NB,fontSize:10,padding:'4px 12px',background:'#22c55e',color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                  <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                  <button onClick={function(){assignEquipment(selWorker.id,eq)}} style={{...NB,fontSize:12,padding:'6px 12px',background:'#19d47b',color:'#00160a',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                 }
                               </div>
                             );
@@ -4702,21 +4669,21 @@ function TimekeepingModule({ onExit, portalUser }) {
 
       {/* ═══ ASSIGN MODAL ═══ */}
       {showAssign && selWorker && (
-        <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowAssign(false)}}>
-          <div style={{background:'#fff',border:'1px solid '+A,borderRadius:6,padding:28,maxWidth:500,width:'100%',maxHeight:'80vh',overflowY:'auto'}} onClick={function(e){e.stopPropagation()}}>
-            <div style={{...BB,fontSize:22,letterSpacing:1,marginBottom:4}}>ASSIGN TO {selWorker.name.toUpperCase()}</div>
+        <div className="sr-modal" onClick={function(){setShowAssign(false)}}>
+          <div className="sr-modal-sheet" style={{maxWidth:500}} onClick={function(e){e.stopPropagation()}}>
+            <div className="sr-card-title" style={{marginBottom:12}}>Assign to {selWorker.name}</div>
             <div style={{display:'flex',gap:8,marginBottom:16}}>
               <button onClick={function(){setAssignTab('project')}} style={assignTab==='project'?btnPrimary:btnSecondary}>Projects</button>
-              <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#22c55e'}:{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Equipment</button>
+              <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#19d47b',borderColor:'#53efaa',color:'#00160a'}:{...btnSecondary,color:'#7cf0bb',borderColor:'#19d47b'}}>Equipment</button>
             </div>
             {assignTab==='project' && (
               <div>
                 {[...fieldProjects.map(function(p){return Object.assign({},p,{source:'Field Manager'})}),...eqProjects.map(function(p){return Object.assign({},p,{source:'Equipment Mgr'})})].map(function(p){
                   var already = (selWorker.projects||[]).some(function(x){return x.id===p.id});
-                  return <div key={p.id+p.source} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                  return <div key={p.id+p.source} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                     <span style={{...NB,fontSize:13}}>{p.name} <span style={{fontSize:9,color:TK_MID}}>({p.source})</span></span>
-                    {already ? <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓</span> :
-                      <button onClick={function(){assignProject(selWorker.id,p.id,p.name,p.source);setSelWorker(Object.assign({},selWorker,{projects:(selWorker.projects||[]).concat([{id:p.id,name:p.name,source:p.source}])}))}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>}
+                    {already ? <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓</span> :
+                      <button onClick={function(){assignProject(selWorker.id,p.id,p.name,p.source);setSelWorker(Object.assign({},selWorker,{projects:(selWorker.projects||[]).concat([{id:p.id,name:p.name,source:p.source}])}))}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>}
                   </div>;
                 })}
               </div>
@@ -4728,9 +4695,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                   {eqProjects.map(function(ep){return <option key={ep.id} value={ep.id}>{ep.name}</option>})}
                 </select>
                 {eqForProject.map(function(eq,i){
-                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                     <span style={{...NB,fontSize:13}}>{eq.type||eq.name}</span>
-                    <button onClick={function(){assignEquipment(selWorker.id,eq);}} style={{...NB,fontSize:10,padding:'4px 12px',background:'#22c55e',color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                    <button onClick={function(){assignEquipment(selWorker.id,eq);}} style={{...NB,fontSize:12,padding:'6px 12px',background:'#19d47b',color:'#00160a',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                   </div>;
                 })}
               </div>

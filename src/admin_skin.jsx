@@ -53,3 +53,40 @@ export function SrDot({ type }) {
 export function SrSkeleton() {
   return <div className="sr-skeleton" aria-hidden="true"><span /><span /><span /></div>
 }
+
+/* ---------- operations layer (Timekeeping / Equipment / Documents) ---------- */
+export function SrModuleHeader({ onBack, backLabel = 'Dashboard', title, right }) {
+  return (
+    <div className="sr-module-header">
+      <button type="button" className="sr-kicker sr-back" onClick={onBack}>&#8592; {backLabel}</button>
+      <span className="sr-module-divider" aria-hidden="true" />
+      <h1 className="sr-module-title">{title}</h1>
+      {right && <div className="sr-module-right">{right}</div>}
+    </div>
+  )
+}
+
+export function SrModuleTabs({ items, value, onChange }) {
+  return (
+    <div className="sr-module-tabs" role="tablist">
+      {items.map(([k, label]) => (
+        <button type="button" key={k} role="tab" className="sr-tab" aria-selected={value === k} onClick={() => onChange(k)}>{label}</button>
+      ))}
+    </div>
+  )
+}
+
+export function SrEmpty({ Icon, title, hint, children }) {
+  return (
+    <div className="sr-empty-state">
+      {Icon && <div className="sr-empty-state__icon"><Icon size={40} strokeWidth={1.6} /></div>}
+      {title && <div className="sr-empty-state__title">{title}</div>}
+      {hint && <div className="sr-empty-state__hint">{hint}</div>}
+      {children}
+    </div>
+  )
+}
+
+export function SrBadge({ tone, children, style }) {
+  return <span className={'sr-badge' + (tone ? ' sr-badge--' + tone : '')} style={style}>{children}</span>
+}
