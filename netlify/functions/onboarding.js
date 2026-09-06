@@ -1,8 +1,9 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const docKey = (uid) => 'doc:' + uid;
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('onboarding'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -35,4 +36,4 @@ export default async (req) => {
   }
 
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

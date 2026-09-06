@@ -1,10 +1,11 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const INDEX_KEY = 'index';
 const MAX_DOCS = 2000;
 const fileKey = (id, kind, i) => 'file:' + id + ':' + (kind || 'orig') + ':' + i;
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('documents'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -128,4 +129,4 @@ export default async (req) => {
     return Response.json({ error: 'bad request' }, { status: 400 });
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

@@ -16,11 +16,13 @@ function b64ToBytes(b64) { const bin = atob(b64 || ''); const n = bin.length; co
 
 const DEFAULT_OV = { on: true, locked: true, x: 0, y: 0, scale: 1, opacity: 0.9 };
 
+import { StackSvg } from './tt_glyphs.jsx';
+
 export default function TTModelView({
   projectId, points, planW, planH, stage, qc, sections, selSection,
   overlay3d, onSaveOverlay, mode, canAlign, onModelBuffer,
   onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints,
-  dispColor,
+  dispColor, marked, rowNext, rowDir,
 }) {
   const [models, setModels] = useState([]);
   const [buf, setBuf] = useState(null);
@@ -111,14 +113,14 @@ export default function TTModelView({
     return best;
   }, [points, toOverlay]);
 
-  const painting = mode === 'brush' || mode === 'fill';
+  const painting = mode === 'brush' || mode === 'fill' || mode === 'delete';
   /* The overlay only takes the pointer while aligning or painting — otherwise
      it would swallow the orbit/zoom gestures meant for the model itself. */
   const grabsPointer = aligning || painting;
 
   const onDown = (e) => {
     if (aligning) { dragRef.current = { sx: e.clientX, sy: e.clientY, x0: ov.x, y0: ov.y }; e.preventDefault(); return; }
-    if (mode === 'brush') {
+    if (mode === 'brush' || mode === 'delete') {
       paintRef.current = true; if (onBrushStart) onBrushStart();
       const i = nearestPoint(e.clientX, e.clientY); if (i >= 0 && onBrushPoint) onBrushPoint(i);
       e.preventDefault();
@@ -168,10 +170,8 @@ export default function TTModelView({
           onPointerDown={onDown} onPointerMove={onMove}>
           <svg viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', opacity: ov.opacity != null ? ov.opacity : 0.9, pointerEvents: 'none' }}>
             <g transform={`translate(${ov.x} ${ov.y}) scale(${ov.scale})`}>
-              {points.map((pt, i) => {
-                const dim = selSection != null && sections && sections[i] !== selSection;
-                return <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.3} fill={dispColor(stage[i] || 0, qc[i] || 0)} stroke="rgba(2,3,10,.6)" strokeWidth={0.6} opacity={dim ? 0.16 : 1} />;
-              })}
+              <StackSvg points={points} stage={stage} qc={qc || []} rowNext={rowNext} rowDir={rowDir} pad={PAD} unit={4.6} marked={marked}
+                isDim={selSection != null && sections ? (i) => sections[i] !== selSection : null} />
               {selHull && <polygon points={selHull} fill="rgba(249,115,22,.10)" stroke={ORANGE} strokeWidth={2} strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,.7))' }} />}
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.6} strokeDasharray="6 4" />; })()}
             </g>

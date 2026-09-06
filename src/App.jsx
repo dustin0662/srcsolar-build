@@ -1,24 +1,50 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
-import ScreeningSolutions from "./ScreeningSolutions.jsx"
+import { isNative, publicUrl } from "./native/platform.js"
+import { openExternal } from "./native/external.js"
+import { saveSession, loadSession, clearSession, homePageFor } from "./native/session.js"
+import { useNavStack } from "./native/navstack.js"
+import { useIsMobile } from "./native/useIsMobile.js"
+import { getCurrentPosition as geoGetCurrentPosition, watchPosition as geoWatchPosition, clearWatch as geoClearWatch, isSupported as geoSupported } from "./native/geo.js"
+import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
+import LoadsFrame from "./native/LoadsFrame.jsx"
+import EstimatorFrame from "./native/EstimatorFrame.jsx"
+import LockScreen from "./native/LockScreen.jsx"
+import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
+import HomeScreen from "./HomeScreen.jsx"
+import AmbientBackground from "./AmbientBackground.jsx"
+import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton, SrModuleHeader, SrModuleTabs, SrEmpty, SrBadge } from "./admin_skin.jsx"
+import "./admin-skin.css"
+import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
 import ProjectTracker from "./project_tracker.jsx"
 import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
-import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff, UserCheck, Clock, ChevronUp, MapPin, Wrench, Folder } from "lucide-react"
 import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
 
 const CSS = `
+:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--tabbar-h:0px}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;touch-action:manipulation}
 body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
 input,select,textarea{font-size:16px !important}
 @media(max-width:768px){
-  body{padding-bottom:env(safe-area-inset-bottom,0)}
+  body{padding-bottom:var(--sab)}
   .desktop-only{display:none !important}
   input,select,textarea{font-size:16px !important}
 }
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;600&family=Barlow+Condensed:wght@400;600;700&display=swap');
+/* Mobile shell (phone widths and the Android app) */
+html.has-tabbar{--tabbar-h:calc(62.5px + var(--sab))}
+html.native{overscroll-behavior:none}
+html.native *{-webkit-tap-highlight-color:transparent}
+html.native ::selection{background:rgba(249,115,22,.3)}
+@media(hover:none){
+  .hover-lift:hover{transform:none !important}
+}
+.tapt{min-height:44px;min-width:44px}
+.mobile-only{display:none}
+@media(max-width:768px){.mobile-only{display:block}}
 *{box-sizing:border-box;margin:0;padding:0}
 @keyframes spin{to{transform:rotate(360deg)}}@keyframes spinR{to{transform:rotate(-360deg)}}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
@@ -306,7 +332,7 @@ function LangPicker({ onPick }){
   var BB={fontFamily:"'Bebas Neue',sans-serif"};
   var NB={fontFamily:"'Barlow Condensed',sans-serif"};
   return (
-    <div style={{position:'fixed',inset:0,zIndex:9999,background:'radial-gradient(120% 80% at 50% -10%, #14182a 0%, #0a0a14 55%, #06060f 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+    <div className="sunrise-admin" style={{position:'fixed',inset:0,zIndex:9999,background:'radial-gradient(120% 80% at 50% -10%, rgba(20,24,42,.55) 0%, rgba(2,8,17,.45) 55%, rgba(2,8,17,.35) 100%)',display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
       <div style={{maxWidth:480,width:'100%',textAlign:'center'}}>
         <img src={LOGO_SRC} alt="SRC" style={{width:78,height:78,objectFit:'contain',marginBottom:18,filter:'drop-shadow(0 0 20px rgba(249,115,22,.3))'}}/>
         <div style={{...BB,fontSize:34,letterSpacing:3,color:'#F5F0EB',marginBottom:6}}>SUNRISE</div>
@@ -712,6 +738,7 @@ function logAudit(ev){try{if(typeof window!=='undefined'&&window.__audit)window.
 function auditKeyInfo(key){
   if(/^eq_/.test(key))return{tool:'equipment',detail:'Equipment Manager record updated'}
   if(/^precon_/.test(key))return{tool:'precon',detail:'PreCon Controls data updated'}
+  if(/^estimator_/.test(key))return{tool:'precon',detail:'Bid Estimator estimate updated'}
   if(/^tk_/.test(key))return{tool:'timekeeping',detail:'Timekeeping data updated'}
   if(/^hr_/.test(key)||/^ss_/.test(key))return{tool:'hr',detail:'Screening Solutions data updated'}
   if(key==='career_submissions')return{tool:'careers',detail:'Careers application submitted'}
@@ -972,7 +999,7 @@ function ComplianceChat({show,onToggle}){
 }
 
 // ═══ EQUIPMENT MANAGER MODULE ═══
-var EQ_GOLD='#F97316',EQ_NAV='#ffffff',EQ_BG='#f5f2ee',EQ_FF="'Barlow Condensed',sans-serif",EQ_BB="'Bebas Neue',sans-serif"
+var EQ_GOLD='#ff6b18',EQ_NAV='#07121e',EQ_BG='transparent',EQ_FF="'Barlow Condensed',sans-serif",EQ_BB="'Barlow Condensed',sans-serif",EQ_TEXT='#f6f3ec',EQ_MID='#aab3c0',EQ_DIM='#717d8d',EQ_LINE='#2b3949',EQ_CARD='linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))'
 var EQ_TYPES=['Work Trucks','PD10','ATV/Buggies','Skidsteer W/Forks','Telehandler','MiniEx','Klemm Drill']
 
 function EquipmentManager({onExit,portalUser}){
@@ -1066,14 +1093,15 @@ function EquipmentManager({onExit,portalUser}){
     }catch(e2){toast('Export failed','error')}
   }
 
-  var IS={width:'100%',padding:'10px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:16,fontFamily:EQ_FF,outline:'none',boxSizing:'border-box',marginBottom:10}
+  var IS={width:'100%',padding:'12px 14px',border:'1px solid #e65e20',borderRadius:6,fontSize:16,fontFamily:"'Barlow',sans-serif",outline:'none',boxSizing:'border-box',marginBottom:10,background:'#091522',color:EQ_TEXT,minHeight:48}
+  var EQ_LABEL={fontSize:12,letterSpacing:'.2em',color:'#ff7a21',marginBottom:5,textTransform:'uppercase',fontWeight:600}
   var today=new Date().toISOString().slice(0,10)
 
   // Login
   if(!user){
     return (
-      <div style={{position:'fixed',inset:0,background:EQ_NAV,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:EQ_FF,zIndex:2000}}>
-        <div style={{width:'90%',maxWidth:360,background:'#fff',borderRadius:12,padding:m?24:32}}>
+      <div className="sunrise-admin" style={{position:'fixed',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:EQ_FF,zIndex:2000}}>
+        <div style={{width:'90%',maxWidth:360,background:EQ_CARD,border:'1px solid #e65e20',borderRadius:12,padding:mob?24:32}}>
           <div style={{textAlign:'center',marginBottom:24}}>
             <div style={{fontSize:28,fontWeight:700,letterSpacing:3,fontFamily:EQ_BB}}>SRC&D</div>
             <div style={{fontSize:12,color:'#888',letterSpacing:2,fontFamily:EQ_FF}}>EQUIPMENT MANAGER</div>
@@ -1105,220 +1133,218 @@ function EquipmentManager({onExit,portalUser}){
   var navItems=[{id:'projects',label:'Projects',ico:'📁'},{id:'equipment',label:'Equipment',ico:'🚜'},{id:'tools',label:'Tools',ico:'🔧'},{id:'records',label:'Records',ico:'📊'}]
 
   var sidebar=(
-    <div style={{width:mob?260:200,background:EQ_NAV,color:'#1a1a2e',display:'flex',flexDirection:'column',flexShrink:0,fontFamily:EQ_FF,height:'100%',borderRight:'1px solid rgba(0,0,0,.08)'}}>
-      <div style={{padding:'14px 12px',borderBottom:'1px solid rgba(0,0,0,.08)'}}>
+    <div style={{width:mob?260:210,background:EQ_NAV,color:EQ_TEXT,display:'flex',flexDirection:'column',flexShrink:0,fontFamily:EQ_FF,height:'100%',borderRight:'1px solid #a7461e'}}>
+      <div style={{padding:'14px 12px',borderBottom:'1px solid '+EQ_LINE}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{fontSize:13,fontWeight:700}}>{user.name}</div>
+          <div style={{fontSize:14,fontWeight:700}}>{user.name}</div>
         </div>
-        {selProj&&<div style={{marginTop:8,padding:'4px 8px',background:selProj.color+'22',borderLeft:'3px solid '+selProj.color,borderRadius:3,fontSize:11,color:'#666'}}>{selProj.name}</div>}
+        {selProj&&<div style={{marginTop:8,padding:'5px 8px',background:'rgba(255,107,24,.1)',borderLeft:'3px solid '+EQ_GOLD,borderRadius:3,fontSize:12,color:EQ_MID}}>{selProj.name}</div>}
       </div>
       <div style={{flex:1,padding:'6px 0'}}>
         {navItems.map(function(n){return (
-          <div key={n.id} onClick={function(){setPage(n.id);setDrawer(false)}} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',cursor:'pointer',color:page===n.id?EQ_GOLD:'#666',background:page===n.id?'rgba(249,115,22,.08)':'transparent',borderRight:page===n.id?'3px solid '+EQ_GOLD:'3px solid transparent',fontSize:13,letterSpacing:1}}><span>{n.ico}</span>{n.label}</div>
+          <div key={n.id} onClick={function(){setPage(n.id);setDrawer(false)}} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',minHeight:44,cursor:'pointer',color:page===n.id?'#ff7a21':EQ_MID,background:page===n.id?'rgba(255,107,24,.12)':'transparent',borderRight:page===n.id?'3px solid '+EQ_GOLD:'3px solid transparent',fontSize:14,letterSpacing:'.12em',textTransform:'uppercase',fontWeight:600}}><span>{n.ico}</span>{n.label}</div>
         )})}
       </div>
-      <div style={{padding:10,borderTop:'1px solid rgba(0,0,0,.08)'}}>
-        <div onClick={logout} style={{padding:'6px 10px',background:'#f0ede8',borderRadius:4,textAlign:'center',cursor:'pointer',fontSize:11,color:'#666',marginBottom:4}}>Sign Out</div>
-        {onExit&&<div onClick={onExit} style={{padding:'6px 10px',background:'#f0ede8',borderRadius:4,textAlign:'center',cursor:'pointer',fontSize:11,color:'#666'}}>✕ Exit</div>}
+      <div style={{padding:10,borderTop:'1px solid '+EQ_LINE,display:'grid',gap:6}}>
+        <button type="button" onClick={logout} className="sr-button sr-button--outline" style={{minHeight:40,fontSize:'.85rem'}}>Sign Out</button>
+        {onExit&&<button type="button" onClick={onExit} className="sr-button sr-button--outline" style={{minHeight:40,fontSize:'.85rem'}}>✕ Exit</button>}
       </div>
     </div>
   )
 
   return (
-    <div style={{position:'fixed',inset:0,display:'flex',fontFamily:EQ_FF,overflow:'hidden',background:EQ_BG,zIndex:2000}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,display:'flex',fontFamily:EQ_FF,overflow:'hidden',color:EQ_TEXT,zIndex:2000}}>
       {!mob&&sidebar}
-      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-        <div style={{background:EQ_NAV,color:'#1a1a2e',padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,borderBottom:'1px solid rgba(0,0,0,.08)'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            {mob&&<span onClick={function(){setDrawer(true)}} style={{fontSize:20,cursor:'pointer'}}>☰</span>}
-            <span style={{fontWeight:700,letterSpacing:2,fontSize:14,fontFamily:EQ_BB}}>{(navItems.find(function(n){return n.id===page})||{label:''}).label.toUpperCase()}</span>
-          </div>
-          <div style={{display:'flex',gap:6,alignItems:'center'}}>
-            {selProj&&page!=='projects'&&<div onClick={exportExcel} style={{padding:'4px 10px',background:'#f0ede8',borderRadius:3,cursor:'pointer',fontSize:10,color:'#666',letterSpacing:1,fontFamily:EQ_FF}}>Export XLSX</div>}
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}}>
+        <div className="sr-module-header" style={{padding:'10px 16px'}}>
+          {mob&&<button type="button" aria-label="Menu" onClick={function(){setDrawer(true)}} className="sr-button sr-button--outline" style={{minHeight:40,padding:'6px 10px'}}><Menu size={18} /></button>}
+          <h1 className="sr-module-title">{(navItems.find(function(n){return n.id===page})||{label:''}).label}</h1>
+          <div className="sr-module-right">
+            {selProj&&page!=='projects'&&<button type="button" onClick={exportExcel} className="sr-button sr-button--outline" style={{minHeight:36,padding:'6px 12px',fontSize:'.8rem'}}>Export XLSX</button>}
           </div>
         </div>
-        <div style={{flex:1,overflow:'auto',padding:mob?12:'20px 28px'}}>
+        <div style={{flex:1,overflow:'auto',padding:mob?'12px 12px calc(24px + var(--tabbar-h, 0px))':'20px 28px'}}>
 
           {/* ═══ PROJECTS ═══ */}
           {page==='projects'&&<div>
-            <div style={{fontSize:22,fontWeight:700,letterSpacing:2,marginBottom:16,fontFamily:EQ_BB}}>PROJECTS</div>
-            <div style={{display:'flex',gap:8,marginBottom:16}}>
-              <input value={newProj} onChange={function(e){setNP(e.target.value)}} placeholder="New project" style={{flex:1,padding:'8px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:13,fontFamily:EQ_FF,outline:'none'}} onKeyDown={function(e){if(e.key==='Enter')createProj()}}/>
-              <input type="color" value={newColor} onChange={function(e){setNC(e.target.value)}} style={{width:38,height:38,border:'none',cursor:'pointer',borderRadius:4}}/>
-              <div onClick={createProj} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ CREATE</div>
+            <h2 className="sr-section-title sr-section-title--bar" style={{marginBottom:16}}>Projects</h2>
+            <div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center'}}>
+              <input value={newProj} onChange={function(e){setNP(e.target.value)}} placeholder="New project" className="sr-input" style={{flex:1}} onKeyDown={function(e){if(e.key==='Enter')createProj()}}/>
+              <input type="color" value={newColor} onChange={function(e){setNC(e.target.value)}} style={{width:44,height:44,border:'1px solid #e65e20',cursor:'pointer',borderRadius:6,background:'#091522',padding:3}}/>
+              <button type="button" onClick={createProj} className="sr-button sr-button--primary">+ Create</button>
             </div>
             {projects.map(function(p){return (
-              <div key={p.id} onClick={function(){setSelProj(p);setPage('equipment')}} style={{background:'#fff',borderRadius:8,padding:16,marginBottom:8,cursor:'pointer',borderLeft:'4px solid '+p.color,transition:'transform .15s'}} onMouseEnter={function(e){e.currentTarget.style.transform='translateY(-2px)'}} onMouseLeave={function(e){e.currentTarget.style.transform='translateY(0)'}}>
-                <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
-                <div style={{fontSize:11,color:'#888',marginTop:4}}>Created {new Date(p.createdAt).toLocaleDateString()}</div>
+              <div key={p.id} onClick={function(){setSelProj(p);setPage('equipment')}} className="sr-card sr-equipment-card" style={{marginTop:0,marginBottom:8,padding:'14px 16px',cursor:'pointer',borderLeftColor:p.color}}>
+                <div className="sr-row-title">{p.name}</div>
+                <div className="sr-meta">Created {new Date(p.createdAt).toLocaleDateString()}</div>
               </div>
             )})}
-            {projects.length===0&&<div style={{textAlign:'center',padding:30,color:'#aaa'}}>No projects yet</div>}
+            {projects.length===0&&<div className="sr-meta" style={{textAlign:'center',padding:30}}>No projects yet</div>}
           </div>}
 
           {/* ═══ EQUIPMENT ═══ */}
-          {page==='equipment'&&!selProj&&<div style={{textAlign:'center',padding:40,color:'#888'}}>Select a project<br/><span onClick={function(){setPage('projects')}} style={{color:EQ_GOLD,cursor:'pointer'}}>← Projects</span></div>}
+          {page==='equipment'&&!selProj&&<SrEmpty Icon={Wrench} title="Select a project"><button type="button" className="sr-kicker sr-back" onClick={function(){setPage('projects')}}>← Projects</button></SrEmpty>}
           {page==='equipment'&&selProj&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>{selProj.name} — EQUIPMENT</div>
-              <div onClick={function(){setEqForm({id:uid(),type:'Work Trucks',qty:1,rental:'',rep:'',phone:'',dayIn:today,dayOut:'',notes:''})}} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ Add Equipment</div>
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>{selProj.name} — Equipment</h2>
+              <button type="button" onClick={function(){setEqForm({id:uid(),type:'Work Trucks',qty:1,rental:'',rep:'',phone:'',dayIn:today,dayOut:'',notes:''})}} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>+ Add Equipment</button>
             </div>
-            {overdueEq.length>0&&<div style={{background:'#fee',border:'1px solid #fcc',borderRadius:6,padding:'10px 14px',marginBottom:12,fontSize:13,color:'#c00',display:'flex',alignItems:'center',gap:8}}>⚠ {overdueEq.length} equipment past estimated day out</div>}
-            <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-              <input value={eqSearch} onChange={function(e){setEqSearch(e.target.value)}} placeholder="Search..." style={{flex:1,minWidth:150,padding:'7px 10px',border:'1px solid #ddd',borderRadius:4,fontSize:12,fontFamily:EQ_FF,outline:'none'}}/>
-              <div onClick={function(){setEqFilter('all')}} style={{padding:'6px 12px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',background:eqFilter==='all'?EQ_GOLD:'#fff',color:eqFilter==='all'?'#fff':'#666',border:'1px solid '+(eqFilter==='all'?EQ_GOLD:'#ddd')}}>All</div>
-              {EQ_TYPES.map(function(t){return <div key={t} onClick={function(){setEqFilter(eqFilter===t?'all':t)}} style={{padding:'6px 10px',borderRadius:4,fontSize:11,fontWeight:600,cursor:'pointer',background:eqFilter===t?EQ_GOLD:'#fff',color:eqFilter===t?'#fff':'#666',border:'1px solid '+(eqFilter===t?EQ_GOLD:'#ddd')}}>{t}</div>})}
+            {overdueEq.length>0&&<div className="sr-alert" style={{marginBottom:12}}><AlertTriangle size={18} /> {overdueEq.length} equipment past estimated day out</div>}
+            <div style={{display:'flex',gap:8,marginBottom:4,flexWrap:'wrap',alignItems:'center'}}>
+              <div style={{flex:'1 1 200px',position:'relative'}}>
+                <Search size={16} style={{position:'absolute',left:14,top:'50%',transform:'translateY(-50%)',color:'#aab3c0',pointerEvents:'none'}} />
+                <input value={eqSearch} onChange={function(e){setEqSearch(e.target.value)}} placeholder="Search..." className="sr-input" style={{minHeight:46,paddingLeft:38}}/>
+              </div>
+            </div>
+            <div className="sr-filter-row">
+              <button type="button" className="sr-chip" aria-pressed={eqFilter==='all'} onClick={function(){setEqFilter('all')}}>All</button>
+              {EQ_TYPES.map(function(t){return <button type="button" key={t} className="sr-chip" aria-pressed={eqFilter===t} onClick={function(){setEqFilter(eqFilter===t?'all':t)}}>{t}</button>})}
             </div>
             {filteredEq.map(function(eq){
               var overdue=eq.dayOut&&eq.dayOut<today
               return (
-                <div key={eq.id} style={{background:'#fff',borderRadius:6,padding:'12px 16px',marginBottom:6,borderLeft:'3px solid '+(overdue?'#ef4444':EQ_GOLD)}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
-                    <div>
-                      <div style={{fontWeight:700,fontSize:14}}>{eq.type} <span style={{fontWeight:400,color:'#888'}}>× {eq.qty}</span></div>
-                      <div style={{fontSize:12,color:'#555',marginTop:2}}>{eq.rental} · {eq.rep} · {eq.phone}</div>
-                      <div style={{fontSize:11,color:'#888',marginTop:2}}>In: {eq.dayIn} → Out: {eq.dayOut||'TBD'}{overdue&&<span style={{color:'#ef4444',fontWeight:700}}> OVERDUE</span>}</div>
+                <div key={eq.id} className={'sr-card sr-equipment-card'+(overdue?' sr-equipment-card--overdue':'')} style={{marginTop:0,marginBottom:10,padding:'14px 16px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                    <div style={{minWidth:0}}>
+                      <div className="sr-row-title">{eq.type} <span style={{fontWeight:400,color:EQ_MID}}>× {eq.qty}</span></div>
+                      <div className="sr-meta">{eq.rental} · {eq.rep} · {eq.phone}</div>
+                      <div className="sr-meta sr-meta--dim">In: {eq.dayIn} → Out: {eq.dayOut||'TBD'}{overdue&&<SrBadge tone="bad" style={{marginLeft:8}}>Overdue</SrBadge>}</div>
                     </div>
-                    <div style={{display:'flex',gap:4}}>
-                      <div onClick={function(){setEqForm(Object.assign({},eq))}} style={{padding:'4px 10px',background:'#f0f0ec',borderRadius:3,cursor:'pointer',fontSize:10,fontWeight:600}}>Edit</div>
-                      <div onClick={function(){deleteEquip(eq.id)}} style={{padding:'4px 10px',background:'#fee',color:'#c00',borderRadius:3,cursor:'pointer',fontSize:10}}>Remove</div>
+                    <div className="sr-actions" style={{marginTop:0}}>
+                      <button type="button" onClick={function(){setEqForm(Object.assign({},eq))}} className="sr-button sr-button--secondary">Edit</button>
+                      <button type="button" onClick={function(){deleteEquip(eq.id)}} className="sr-button sr-button--danger">Remove</button>
                     </div>
                   </div>
-                  {eq.notes&&<div style={{fontSize:11,color:'#888',marginTop:4}}>Notes: {eq.notes}</div>}
+                  {eq.notes&&<div className="sr-meta sr-meta--dim" style={{marginTop:6}}>Notes: {eq.notes}</div>}
                 </div>
               )
             })}
-            {filteredEq.length===0&&<div style={{background:'#fff',borderRadius:6,padding:20,color:'#aaa',textAlign:'center'}}>No equipment</div>}
+            {filteredEq.length===0&&<div className="sr-meta" style={{padding:20,textAlign:'center'}}>No equipment</div>}
           </div>}
 
           {/* ═══ TOOLS ═══ */}
-          {page==='tools'&&!selProj&&<div style={{textAlign:'center',padding:40,color:'#888'}}>Select a project<br/><span onClick={function(){setPage('projects')}} style={{color:EQ_GOLD,cursor:'pointer'}}>← Projects</span></div>}
+          {page==='tools'&&!selProj&&<SrEmpty Icon={Wrench} title="Select a project"><button type="button" className="sr-kicker sr-back" onClick={function(){setPage('projects')}}>← Projects</button></SrEmpty>}
           {page==='tools'&&selProj&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>TOOLS & INVENTORY</div>
-              <div onClick={function(){setToolForm({id:uid(),name:'',serial:'',cost:'',acquired:today,status:'working',statusChangedAt:'',statusChangedBy:''})}} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>+ Add Tool</div>
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>Tools &amp; Inventory</h2>
+              <button type="button" onClick={function(){setToolForm({id:uid(),name:'',serial:'',cost:'',acquired:today,status:'working',statusChangedAt:'',statusChangedBy:''})}} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>+ Add Tool</button>
             </div>
-            <input value={toolSearch} onChange={function(e){setToolSearch(e.target.value)}} placeholder="Search tools..." style={{width:'100%',padding:'8px 12px',border:'1px solid #ddd',borderRadius:4,fontSize:12,fontFamily:EQ_FF,outline:'none',marginBottom:12,boxSizing:'border-box'}}/>
+            <input value={toolSearch} onChange={function(e){setToolSearch(e.target.value)}} placeholder="Search tools..." className="sr-input" style={{marginBottom:12,minHeight:46}}/>
             {filteredTools.map(function(t){return (
-              <div key={t.id} style={{background:'#fff',borderRadius:6,padding:'12px 16px',marginBottom:6,borderLeft:'3px solid '+(t.status==='working'?'#22c55e':'#ef4444')}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:14}}>{t.name}</div>
-                    <div style={{fontSize:12,color:'#555',marginTop:2}}>SN: {t.serial} · ${t.cost} · Acquired: {t.acquired}</div>
-                    {t.statusChangedAt&&<div style={{fontSize:10,color:'#888',marginTop:2}}>Status changed: {new Date(t.statusChangedAt).toLocaleString()} by {t.statusChangedBy}</div>}
+              <div key={t.id} className={'sr-card sr-equipment-card'+(t.status==='working'?'':' sr-equipment-card--overdue')} style={{marginTop:0,marginBottom:10,padding:'14px 16px',borderLeftColor:t.status==='working'?'#19d47b':undefined}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                  <div style={{minWidth:0}}>
+                    <div className="sr-row-title">{t.name}</div>
+                    <div className="sr-meta">SN: {t.serial} · ${t.cost} · Acquired: {t.acquired}</div>
+                    {t.statusChangedAt&&<div className="sr-meta sr-meta--dim">Status changed: {new Date(t.statusChangedAt).toLocaleString()} by {t.statusChangedBy}</div>}
                   </div>
-                  <div style={{display:'flex',gap:4,alignItems:'center'}}>
-                    <div onClick={function(){toggleToolStatus(t)}} style={{padding:'4px 12px',borderRadius:3,cursor:'pointer',fontSize:11,fontWeight:700,background:t.status==='working'?'#dcfce7':'#fee',color:t.status==='working'?'#16a34a':'#dc2626'}}>{t.status==='working'?'✓ Working':'✕ Broken'}</div>
-                    <div onClick={function(){setToolForm(Object.assign({},t))}} style={{padding:'4px 10px',background:'#f0f0ec',borderRadius:3,cursor:'pointer',fontSize:10}}>Edit</div>
+                  <div className="sr-actions" style={{marginTop:0,alignItems:'center'}}>
+                    <button type="button" onClick={function(){toggleToolStatus(t)}} className={'sr-button '+(t.status==='working'?'sr-button--success':'sr-button--danger')}>{t.status==='working'?'✓ Working':'✕ Broken'}</button>
+                    <button type="button" onClick={function(){setToolForm(Object.assign({},t))}} className="sr-button sr-button--secondary">Edit</button>
                   </div>
                 </div>
               </div>
             )})}
-            {filteredTools.length===0&&<div style={{background:'#fff',borderRadius:6,padding:20,color:'#aaa',textAlign:'center'}}>No tools</div>}
+            {filteredTools.length===0&&<div className="sr-meta" style={{padding:20,textAlign:'center'}}>No tools</div>}
           </div>}
 
           {/* ═══ RECORDS ═══ */}
           {page==='records'&&<div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
-              <div style={{fontSize:22,fontWeight:700,letterSpacing:2,fontFamily:EQ_BB}}>RECORDS & LOGS</div>
-              {selProj&&<div onClick={exportExcel} style={{padding:'8px 16px',background:EQ_GOLD,color:'#fff',borderRadius:4,cursor:'pointer',fontWeight:700,fontSize:12}}>📊 Export XLSX</div>}
+              <h2 className="sr-section-title sr-section-title--bar" style={{fontSize:'1.4rem'}}>Records &amp; Logs</h2>
+              {selProj&&<button type="button" onClick={exportExcel} className="sr-button sr-button--primary" style={{minHeight:40,padding:'6px 14px',fontSize:'.85rem'}}>Export XLSX</button>}
             </div>
-            {!selProj&&<div style={{color:'#888',textAlign:'center',padding:20}}>Select a project first</div>}
+            {!selProj&&<div className="sr-meta" style={{textAlign:'center',padding:20}}>Select a project first</div>}
             {selProj&&<div>
-              <div style={{fontSize:16,fontWeight:700,letterSpacing:1,marginBottom:8,fontFamily:EQ_BB}}>EQUIPMENT LOG ({eqLog.length})</div>
-              <div style={{background:'#fff',borderRadius:6,overflow:'hidden',marginBottom:20}}>
+              <div className="sr-kicker" style={{marginBottom:8}}>Equipment log ({eqLog.length})</div>
+              <div className="sr-list" style={{marginBottom:20}}>
                 {eqLog.slice().reverse().slice(0,30).map(function(l){return (
-                  <div key={l.id} style={{padding:'8px 12px',borderBottom:'1px solid #f0f0ec',fontSize:12,display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
+                  <div key={l.id} className="sr-list-row" style={{minHeight:0,justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
                     <div><span style={{fontWeight:600}}>{l.action}</span> — {l.item}</div>
-                    <div style={{color:'#888'}}>{l.user} · {new Date(l.date).toLocaleString()}</div>
+                    <div className="sr-meta">{l.user} · {new Date(l.date).toLocaleString()}</div>
                   </div>
                 )})}
-                {eqLog.length===0&&<div style={{padding:16,color:'#aaa',textAlign:'center'}}>No equipment logs</div>}
+                {eqLog.length===0&&<div className="sr-list-row sr-meta" style={{justifyContent:'center'}}>No equipment logs</div>}
               </div>
-              <div style={{fontSize:16,fontWeight:700,letterSpacing:1,marginBottom:8}}>TOOLING LOG ({toolLog.length})</div>
-              <div style={{background:'#fff',borderRadius:6,overflow:'hidden'}}>
+              <div className="sr-kicker" style={{marginBottom:8}}>Tooling log ({toolLog.length})</div>
+              <div className="sr-list">
                 {toolLog.slice().reverse().slice(0,30).map(function(l){return (
-                  <div key={l.id} style={{padding:'8px 12px',borderBottom:'1px solid #f0f0ec',fontSize:12,display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
+                  <div key={l.id} className="sr-list-row" style={{minHeight:0,justifyContent:'space-between',flexWrap:'wrap',gap:4}}>
                     <div><span style={{fontWeight:600}}>{l.action}</span> — {l.item}{l.serial?' ('+l.serial+')':''}</div>
-                    <div style={{color:'#888'}}>{l.user} · {new Date(l.date).toLocaleString()}</div>
+                    <div className="sr-meta">{l.user} · {new Date(l.date).toLocaleString()}</div>
                   </div>
                 )})}
-                {toolLog.length===0&&<div style={{padding:16,color:'#aaa',textAlign:'center'}}>No tooling logs</div>}
+                {toolLog.length===0&&<div className="sr-list-row sr-meta" style={{justifyContent:'center'}}>No tooling logs</div>}
               </div>
             </div>}
           </div>}
 
         </div>
-        {mob&&<div style={{background:EQ_NAV,display:'flex',justifyContent:'space-around',padding:'8px 0',borderTop:'1px solid rgba(0,0,0,.08)',flexShrink:0}}>
-          {navItems.map(function(n){return (
-            <div key={n.id} onClick={function(){setPage(n.id)}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1,cursor:'pointer',color:page===n.id?EQ_GOLD:'#888',fontSize:9}}><span style={{fontSize:16}}>{n.ico}</span>{n.label}</div>
-          )})}
-        </div>}
       </div>
 
       {/* Mobile drawer */}
       {mob&&drawer&&<div>
-        <div onClick={function(){setDrawer(false)}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:900}}/>
-        <div style={{position:'fixed',top:0,left:0,bottom:0,width:260,zIndex:901,background:EQ_NAV}}>{sidebar}</div>
+        <div onClick={function(){setDrawer(false)}} style={{position:'fixed',inset:0,background:'rgba(1,5,11,.72)',zIndex:900}}/>
+        <div style={{position:'fixed',top:0,left:0,bottom:0,width:260,zIndex:901,background:EQ_NAV,paddingTop:'var(--sat, 0px)'}}>{sidebar}</div>
       </div>}
 
       {/* Equipment form modal */}
-      {eqForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:7000,padding:16}}>
-        <div style={{background:'#fff',borderRadius:10,padding:20,width:'95vw',maxWidth:460,maxHeight:'85vh',overflow:'auto',fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
-            <div style={{fontSize:16,fontWeight:700}}>{equipment.find(function(e){return e.id===eqForm.id})?'Edit Equipment':'Add Equipment'}</div>
-            <span onClick={function(){setEqForm(null)}} style={{cursor:'pointer',color:'#888',fontSize:18}}>✕</span>
+      {eqForm&&<div className="sr-modal" style={{zIndex:7000}}>
+        <div className="sr-modal-sheet" style={{maxWidth:460,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{equipment.find(function(e){return e.id===eqForm.id})?'Edit Equipment':'Add Equipment'}</div>
+            <button type="button" aria-label="Close" onClick={function(){setEqForm(null)}} className="sr-button sr-button--outline" style={{minHeight:36,padding:'4px 10px'}}><X size={16} /></button>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>TYPE *</div>
+          <div style={EQ_LABEL}>TYPE *</div>
           <select value={eqForm.type} onChange={function(e){setEqForm(Object.assign({},eqForm,{type:e.target.value}))}} style={IS}>
             {EQ_TYPES.map(function(t){return <option key={t} value={t}>{t}</option>})}
           </select>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>QTY</div><input type="number" min="1" value={eqForm.qty} onChange={function(e){setEqForm(Object.assign({},eqForm,{qty:parseInt(e.target.value)||1}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>PHONE *</div><input value={eqForm.phone} onChange={function(e){setEqForm(Object.assign({},eqForm,{phone:e.target.value}))}} placeholder="Rep phone" style={IS}/></div>
+            <div><div style={EQ_LABEL}>QTY</div><input type="number" min="1" value={eqForm.qty} onChange={function(e){setEqForm(Object.assign({},eqForm,{qty:parseInt(e.target.value)||1}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>PHONE *</div><input value={eqForm.phone} onChange={function(e){setEqForm(Object.assign({},eqForm,{phone:e.target.value}))}} placeholder="Rep phone" style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>RENTAL COMPANY *</div>
+          <div style={EQ_LABEL}>RENTAL COMPANY *</div>
           <input value={eqForm.rental} onChange={function(e){setEqForm(Object.assign({},eqForm,{rental:e.target.value}))}} placeholder="Company name" style={IS}/>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>REPRESENTATIVE *</div>
+          <div style={EQ_LABEL}>REPRESENTATIVE *</div>
           <input value={eqForm.rep} onChange={function(e){setEqForm(Object.assign({},eqForm,{rep:e.target.value}))}} placeholder="Rep name" style={IS}/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>DAY IN</div><input type="date" value={eqForm.dayIn} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayIn:e.target.value}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>EST. DAY OUT</div><input type="date" value={eqForm.dayOut} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayOut:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>DAY IN</div><input type="date" value={eqForm.dayIn} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayIn:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>EST. DAY OUT</div><input type="date" value={eqForm.dayOut} onChange={function(e){setEqForm(Object.assign({},eqForm,{dayOut:e.target.value}))}} style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>NOTES</div>
+          <div style={EQ_LABEL}>NOTES</div>
           <textarea value={eqForm.notes||''} onChange={function(e){setEqForm(Object.assign({},eqForm,{notes:e.target.value}))}} rows={2} style={Object.assign({},IS,{resize:'vertical'})}/>
           <div style={{display:'flex',gap:8,marginTop:6}}>
-            <div onClick={function(){if(!eqForm.rental||!eqForm.rep||!eqForm.phone){toast('Fill rental company, rep, and phone','error');return}saveEquip(eqForm)}} style={{flex:1,padding:12,background:EQ_GOLD,color:'#fff',borderRadius:4,textAlign:'center',cursor:'pointer',fontWeight:700,fontSize:14}}>SAVE</div>
-            <div onClick={function(){setEqForm(null)}} style={{padding:'12px 16px',background:'#eee',borderRadius:4,cursor:'pointer',fontSize:13}}>Cancel</div>
+            <div onClick={function(){if(!eqForm.rental||!eqForm.rep||!eqForm.phone){toast('Fill rental company, rep, and phone','error');return}saveEquip(eqForm)}} className="sr-button sr-button--primary sr-button--block" style={{flex:1}}>Save</div>
+            <div onClick={function(){setEqForm(null)}} className="sr-button sr-button--outline">Cancel</div>
           </div>
         </div>
       </div>}
 
       {/* Tool form modal */}
-      {toolForm&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:7000,padding:16}}>
-        <div style={{background:'#fff',borderRadius:10,padding:20,width:'95vw',maxWidth:420,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:14}}>
-            <div style={{fontSize:16,fontWeight:700}}>{tools.find(function(t){return t.id===toolForm.id})?'Edit Tool':'Add Tool'}</div>
-            <span onClick={function(){setToolForm(null)}} style={{cursor:'pointer',color:'#888',fontSize:18}}>✕</span>
+      {toolForm&&<div className="sr-modal" style={{zIndex:7000}}>
+        <div className="sr-modal-sheet" style={{maxWidth:420,fontFamily:EQ_FF}} onClick={function(e){e.stopPropagation()}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{tools.find(function(t){return t.id===toolForm.id})?'Edit Tool':'Add Tool'}</div>
+            <button type="button" aria-label="Close" onClick={function(){setToolForm(null)}} className="sr-button sr-button--outline" style={{minHeight:36,padding:'4px 10px'}}><X size={16} /></button>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>TOOL NAME *</div>
+          <div style={EQ_LABEL}>TOOL NAME *</div>
           <input value={toolForm.name} onChange={function(e){setToolForm(Object.assign({},toolForm,{name:e.target.value}))}} placeholder="e.g. Impact Driver" style={IS}/>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>SERIAL NUMBER</div><input value={toolForm.serial} onChange={function(e){setToolForm(Object.assign({},toolForm,{serial:e.target.value}))}} style={IS}/></div>
-            <div><div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>COST ($)</div><input type="number" value={toolForm.cost} onChange={function(e){setToolForm(Object.assign({},toolForm,{cost:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>SERIAL NUMBER</div><input value={toolForm.serial} onChange={function(e){setToolForm(Object.assign({},toolForm,{serial:e.target.value}))}} style={IS}/></div>
+            <div><div style={EQ_LABEL}>COST ($)</div><input type="number" value={toolForm.cost} onChange={function(e){setToolForm(Object.assign({},toolForm,{cost:e.target.value}))}} style={IS}/></div>
           </div>
-          <div style={{fontSize:10,letterSpacing:2,color:'#888',marginBottom:4}}>DATE ACQUIRED</div>
+          <div style={EQ_LABEL}>DATE ACQUIRED</div>
           <input type="date" value={toolForm.acquired} onChange={function(e){setToolForm(Object.assign({},toolForm,{acquired:e.target.value}))}} style={IS}/>
           <div style={{display:'flex',gap:8,marginTop:6}}>
-            <div onClick={function(){if(!toolForm.name){toast('Enter tool name','error');return}saveTool(toolForm)}} style={{flex:1,padding:12,background:EQ_GOLD,color:'#fff',borderRadius:4,textAlign:'center',cursor:'pointer',fontWeight:700,fontSize:14}}>SAVE</div>
-            <div onClick={function(){setToolForm(null)}} style={{padding:'12px 16px',background:'#eee',borderRadius:4,cursor:'pointer',fontSize:13}}>Cancel</div>
+            <div onClick={function(){if(!toolForm.name){toast('Enter tool name','error');return}saveTool(toolForm)}} className="sr-button sr-button--primary sr-button--block" style={{flex:1}}>Save</div>
+            <div onClick={function(){setToolForm(null)}} className="sr-button sr-button--outline">Cancel</div>
           </div>
         </div>
       </div>}
 
       {/* Toasts */}
       <div style={{position:'fixed',top:16,right:16,zIndex:9999,display:'flex',flexDirection:'column',gap:6}}>
-        {toasts.map(function(t){return <div key={t.id} style={{background:t.type==='error'?'#dc2626':t.type==='warning'?'#d97706':'#16a34a',color:'#fff',padding:'10px 16px',borderRadius:6,fontFamily:EQ_FF,fontSize:13,boxShadow:'0 4px 16px rgba(0,0,0,.3)',minWidth:200}}>{t.msg}</div>})}
+        {toasts.map(function(t){return <div key={t.id} style={{background:t.type==='error'?'#ec3d49':t.type==='warning'?'#d97706':'#19d47b',color:t.type==='success'?'#00160a':'#fff',padding:'10px 16px',borderRadius:6,fontFamily:EQ_FF,fontSize:14,fontWeight:600,boxShadow:'0 4px 16px rgba(0,0,0,.45)',minWidth:200}}>{t.msg}</div>})}
       </div>
     </div>
   )
@@ -2352,177 +2378,178 @@ function PreConControls({onExit, portalUser}){
   const clientCounts = clients.map(c=>({...c,count:projects.filter(p=>!p.archived && (p.params.clientName||'').trim().toLowerCase()===c.name.toLowerCase()).length}));
   const archivedCount = projects.filter(p=>p.archived).length;
 
-  if(loading) return <div className="app" style={{position:"fixed",inset:0,zIndex:2000}}><div className="loading">Loading bids…</div></div>;
+  var precMob = typeof window !== 'undefined' && window.innerWidth < 768;
+  var precFrame = {position:"fixed",top:precMob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:'var(--tabbar-h, 0px)',zIndex:2000,overflow:"hidden"};
+  if(loading) return <div className="app sunrise-admin" style={precFrame}><div className="loading">Loading bids…</div></div>;
 
   return (
-    <div className="app precon-app" style={{position:"fixed",inset:0,zIndex:2000,overflow:"hidden"}}>
+    <div className="app precon-app sunrise-admin" style={precFrame}>
       <style>{`
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
-.app{font-family:'Barlow Condensed',sans-serif;background:#f5f4f0;color:#333;min-height:100vh;}
-.loading{display:flex;align-items:center;justify-content:center;height:100vh;font-size:16px;color:#888;}
+.app{font-family:'Barlow',sans-serif;background:linear-gradient(180deg, rgba(2,8,17,.55) 0%, rgba(2,8,17,.35) 100%);color:#f6f3ec;min-height:100vh;}
+.loading{display:flex;align-items:center;justify-content:center;height:100vh;font-size:16px;color:#aab3c0;}
 
 /* DASHBOARD */
 .dash{max-width:1200px;margin:0 auto;padding:20px;}
 .dash-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;flex-wrap:wrap;gap:12px;}
-.dash-head h1{font-family:'Bebas Neue',sans-serif;font-size:28px;font-weight:400;color:#1a1a2e;letter-spacing:2px;text-transform:uppercase;}
-.dash-sub{font-size:13px;color:#888;margin-top:2px;letter-spacing:1px;}
-.btn-new{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:10px 20px;border:none;border-radius:4px;background:#F97316;color:#fff;cursor:pointer;transition:all .2s;letter-spacing:1px;text-transform:uppercase;}
-.btn-new:hover{background:#e0650f;box-shadow:0 4px 16px rgba(196,30,46,.25);}
+.dash-head h1{font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:700;color:#f6f3ec;letter-spacing:2px;text-transform:uppercase;}
+.dash-sub{font-size:13px;color:#aab3c0;margin-top:2px;letter-spacing:1px;}
+.btn-new{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:10px 20px;border:none;border-radius:6px;background:#ff6b18;color:#120a04;cursor:pointer;transition:all .2s;letter-spacing:1px;text-transform:uppercase;}
+.btn-new:hover{background:#ff7a21;box-shadow:0 4px 16px rgba(255,107,24,.35);}
 .btn-new.lg{padding:14px 32px;font-size:16px;}
 
 .dash-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px;}
 @media(max-width:700px){.dash-stats{grid-template-columns:repeat(3,1fr);}}
-.ds{background:#fff;border:1px solid #e8e6e0;border-radius:8px;padding:14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.ds.accent{border-color:#F97316;background:#fffdf5;}
-.ds-v{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#1a1a1a;}
-.ds.accent .ds-v{color:#F97316;}
-.ds-l{font-size:11px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:1px;}
+.ds{background:#07121e;border:1px solid #2b3949;border-radius:8px;padding:14px;text-align:center;box-shadow:none;}
+.ds.accent{border-color:#ff6b18;background:#0a1826;}
+.ds-v{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:#f6f3ec;}
+.ds.accent .ds-v{color:#ff6b18;}
+.ds-l{font-size:11px;color:#aab3c0;margin-top:2px;text-transform:uppercase;letter-spacing:1px;}
 
 .empty-state{text-align:center;padding:80px 20px;}
 .empty-icon{font-size:48px;margin-bottom:16px;}
-.empty-state h2{font-size:20px;color:#1a1a1a;margin-bottom:6px;}
-.empty-state p{color:#888;margin-bottom:20px;}
+.empty-state h2{font-size:20px;color:#f6f3ec;margin-bottom:6px;}
+.empty-state p{color:#aab3c0;margin-bottom:20px;}
 
 .proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
-.proj-card{background:#fff;border:1px solid #e8e6e0;border-radius:10px;padding:18px;cursor:pointer;transition:all .2s;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.proj-card:hover{border-color:#F97316;transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.08);}
+.proj-card{background:#07121e;border:1px solid #2b3949;border-radius:10px;padding:18px;cursor:pointer;transition:all .2s;position:relative;box-shadow:none;}
+.proj-card:hover{border-color:#ff6b18;transform:translateY(-2px);box-shadow:0 6px 20px #2b3949;}
 .pc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .pc-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1px;}
 .pc-actions{display:flex;gap:4px;}
-.pc-actions button{font-size:14px;background:transparent;border:1px solid #e8e6e0;color:#aaa;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
-.pc-actions button:hover{border-color:#F97316;color:#F97316;}
-.pc-actions button.del:hover{border-color:#F97316;color:#F97316;}
-.pc-name{font-family:'Bebas Neue',sans-serif;font-size:19px;font-weight:400;color:#1a1a2e;margin-bottom:3px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.pc-loc{font-size:12px;color:#888;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.pc-client{font-size:12px;color:#aaa;margin-bottom:12px;}
+.pc-actions button{font-size:14px;background:transparent;border:1px solid #2b3949;color:#717d8d;width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.pc-actions button:hover{border-color:#ff6b18;color:#ff6b18;}
+.pc-actions button.del:hover{border-color:#ff6b18;color:#ff6b18;}
+.pc-name{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:700;color:#f6f3ec;margin-bottom:3px;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pc-loc{font-size:12px;color:#aab3c0;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pc-client{font-size:12px;color:#717d8d;margin-bottom:12px;}
 .pc-metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
-.pc-mv{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#333;}
-.pc-ml{font-size:10px;color:#aaa;margin-left:4px;text-transform:uppercase;}
-.pc-price{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#F97316;}
-.pc-watt{font-family:'JetBrains Mono',monospace;font-size:12px;color:#F97316;margin-top:2px;}
-.pc-date{font-size:11px;color:#ccc;margin-top:8px;}
+.pc-mv{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;color:#f6f3ec;}
+.pc-ml{font-size:10px;color:#717d8d;margin-left:4px;text-transform:uppercase;}
+.pc-price{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:#ff6b18;}
+.pc-watt{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:#ff6b18;margin-top:2px;}
+.pc-date{font-size:11px;color:#717d8d;margin-top:8px;}
 
 /* CONFIRM MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;}
-.modal{background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:28px;max-width:380px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.15);}
-.modal h3{font-size:17px;color:#1a1a1a;margin-bottom:8px;letter-spacing:1px;}
-.modal p{font-size:13px;color:#888;margin-bottom:20px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(1,5,11,.72);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;}
+.modal{background:#07121e;border:1px solid #2b3949;border-radius:12px;padding:28px;max-width:380px;width:100%;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.6);}
+.modal h3{font-size:17px;color:#f6f3ec;margin-bottom:8px;letter-spacing:1px;}
+.modal p{font-size:13px;color:#aab3c0;margin-bottom:20px;}
 .modal-btns{display:flex;gap:10px;justify-content:center;}
 .modal-btns button{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;padding:9px 20px;border:none;border-radius:6px;cursor:pointer;letter-spacing:1px;}
-.btn-cancel{background:#f0ede8;color:#666;}
-.btn-danger{background:#F97316;color:#fff;}
-.btn-danger:hover{background:#e0650f;}
-.btn-exit{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;border:1px solid #e0d0d0;border-radius:6px;background:transparent;color:#F97316;cursor:pointer;transition:all .15s;white-space:nowrap;}
-.btn-exit:hover{border-color:#F97316;background:#fef5f5;}
+.btn-cancel{background:transparent;color:#aab3c0;border:1px solid #2b3949 !important;}
+.btn-danger{background:#ff4655;color:#fff;border-radius:6px;}
+.btn-danger:hover{background:#ff5f6b;}
+.btn-exit{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;padding:7px 14px;border:1px solid #2b3949;border-radius:6px;background:transparent;color:#ff6b18;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-exit:hover{border-color:#ff6b18;background:rgba(255,107,24,.12);}
 
 /* EDITOR */
 .editor{min-height:100vh;}
-.ed-top{display:flex;align-items:center;gap:16px;padding:12px 20px;background:#fff;border-bottom:1px solid #e8e6e0;position:sticky;top:0;z-index:100;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.04);}
-.btn-back{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:7px 14px;border:1px solid #e8e6e0;border-radius:6px;background:transparent;color:#888;cursor:pointer;transition:all .15s;white-space:nowrap;}
-.btn-back:hover{border-color:#F97316;color:#1a1a1a;}
+.ed-top{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(7,18,30,.92);border-bottom:1px solid #2b3949;position:sticky;top:0;z-index:100;flex-wrap:wrap;box-shadow:none;}
+.btn-back{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:7px 14px;border:1px solid #2b3949;border-radius:6px;background:transparent;color:#aab3c0;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-back:hover{border-color:#ff6b18;color:#f6f3ec;}
 .ed-title{flex:1;min-width:120px;}
-.ed-title h2{font-family:'Bebas Neue',sans-serif;font-size:20px;font-weight:400;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:1px;}
-.ed-mw{font-family:'JetBrains Mono',monospace;font-size:12px;color:#888;}
+.ed-title h2{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:#f6f3ec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:1px;}
+.ed-mw{font-family:'Barlow Condensed',sans-serif;font-size:12px;color:#aab3c0;}
 .ed-actions{display:flex;align-items:center;gap:12px;}
-.ed-price{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#F97316;}
-.btn-save{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;padding:8px 16px;border:none;border-radius:6px;background:#f0ede8;color:#888;cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:1px;}
-.btn-save.pulse{background:#F97316;color:#fff;animation:pulse-glow 2s infinite;}
-@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 rgba(196,30,46,0);}50%{box-shadow:0 0 12px rgba(196,30,46,.35);}}
+.ed-price{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:#ff6b18;}
+.btn-save{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;padding:8px 16px;border:none;border-radius:6px;background:#0a1826;color:#aab3c0;cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:1px;}
+.btn-save.pulse{background:#ff6b18;color:#120a04;animation:pulse-glow 2s infinite;}
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 0 rgba(255,107,24,0);}50%{box-shadow:0 0 12px rgba(255,107,24,.45);}}
 
-.tabs{display:flex;gap:2px;padding:6px 14px;background:#faf9f6;overflow-x:auto;border-bottom:1px solid #e8e6e0;-ms-overflow-style:none;scrollbar-width:none;}
+.tabs{display:flex;gap:2px;padding:6px 14px;background:rgba(10,24,38,.85);overflow-x:auto;border-bottom:1px solid #2b3949;-ms-overflow-style:none;scrollbar-width:none;}
 .tabs::-webkit-scrollbar{display:none;}
-.tabs button{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:8px 14px;border:none;border-radius:6px;background:transparent;color:#aaa;cursor:pointer;white-space:nowrap;transition:all .15s;letter-spacing:1px;}
-.tabs button:hover{color:#666;background:#f0ede8;}
-.tabs button.active{color:#1a1a1a;background:#fff;box-shadow:inset 0 -2px 0 #F97316;}
+.tabs button{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;padding:8px 14px;border:none;border-radius:6px;background:transparent;color:#717d8d;cursor:pointer;white-space:nowrap;transition:all .15s;letter-spacing:1px;}
+.tabs button:hover{color:#aab3c0;background:#0a1826;}
+.tabs button.active{color:#ff7a21;background:#0a1826;box-shadow:inset 0 -2px 0 #ff6b18;}
 
 .ed-body{padding:16px;max-width:1100px;margin:0 auto;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .g4{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;}
 @media(max-width:700px){.g2,.g4{grid-template-columns:1fr;}.g4{grid-template-columns:repeat(3,1fr);}}
 
-.card{background:#fff;border:1px solid #e8e6e0;border-top:3px solid #F97316;border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.03);}
-.card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#F97316;margin-bottom:12px;}
+.card{background:#07121e;border:1px solid #2b3949;border-top:3px solid #ff6b18;border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:none;}
+.card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#ff6b18;margin-bottom:12px;}
 
-.stat-box{background:#faf9f6;border:1px solid #e8e6e0;border-radius:8px;padding:10px;text-align:center;}
-.stat-box.met{border-color:#2a8a3a;background:#f0faf2;}.stat-box.met .stat-val{color:#1a7a2e;}
-.stat-box.unmet{border-color:#F97316;background:#fef5f5;}.stat-box.unmet .stat-val{color:#F97316;}
-.stat-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#1a1a1a;}
-.stat-lbl{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.stat-box{background:#0a1826;border:1px solid #2b3949;border-radius:8px;padding:10px;text-align:center;}
+.stat-box.met{border-color:#19d47b;background:rgba(25,212,123,.1);}.stat-box.met .stat-val{color:#19d47b;}
+.stat-box.unmet{border-color:#ff6b18;background:rgba(255,107,24,.12);}.stat-box.unmet .stat-val{color:#ff6b18;}
+.stat-val{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:#f6f3ec;}
+.stat-lbl{font-size:10px;color:#717d8d;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
 
 .fld{margin-bottom:8px;}
-.fld label{display:block;font-size:12px;font-weight:600;color:#888;margin-bottom:2px;letter-spacing:.5px;}
-.fld.chk label{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#555;}
-.fld.chk input[type=checkbox]{width:15px;height:15px;accent-color:#F97316;}
-.inp-w{display:flex;align-items:center;background:#faf9f6;border:1px solid #e0ddd6;border-radius:6px;overflow:hidden;transition:border .15s;}
-.inp-w:focus-within{border-color:#F97316;}
-.inp-w .fx{font-size:11px;color:#bbb;padding:0 7px;font-family:'JetBrains Mono',monospace;}
-.inp-w input,select{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#333;background:transparent;border:none;outline:none;padding:7px 9px;width:100%;}
-select{background:#faf9f6;border:1px solid #e0ddd6;border-radius:6px;padding:7px 9px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#333;}
+.fld label{display:block;font-size:12px;font-weight:600;color:#aab3c0;margin-bottom:2px;letter-spacing:.5px;}
+.fld.chk label{display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:#e8e2d8;}
+.fld.chk input[type=checkbox]{width:15px;height:15px;accent-color:#ff6b18;}
+.inp-w{display:flex;align-items:center;background:#0a1826;border:1px solid #2b3949;border-radius:6px;overflow:hidden;transition:border .15s;}
+.inp-w:focus-within{border-color:#ff6b18;}
+.inp-w .fx{font-size:11px;color:#717d8d;padding:0 7px;font-family:'Barlow Condensed',sans-serif;}
+.inp-w input,select{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#f6f3ec;background:transparent;border:none;outline:none;padding:7px 9px;width:100%;}
+select{background:#0a1826;border:1px solid #2b3949;border-radius:6px;padding:7px 9px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#f6f3ec;}
 input[type=number]::-webkit-inner-spin-button{opacity:.3;}
-input[type=date]{color:#333;}
-input[type=date]::-webkit-calendar-picker-indicator{filter:none;}
+input[type=date]{color:#f6f3ec;color-scheme:dark;}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1) opacity(.7);}
 
-.rrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0ede8;font-size:14px;}
-.rrow.sub{padding-left:12px;}.rrow.sub .rl{color:#ccc;font-size:13px;}
-.rrow .rl{color:#888;}.rrow .rv{font-family:'JetBrains Mono',monospace;font-weight:600;color:#444;font-size:13px;}
-.rrow.hl{background:#fffdf5;border-radius:6px;padding:7px 10px;margin:3px -10px;border:1px solid #f0e8d0;}.rrow.hl .rl{color:#1a1a1a;font-weight:700;}.rrow.hl .rv{color:#F97316;font-size:14px;}
-.rrow.warn .rv{color:#F97316;}
-.div{border:none;border-top:1px solid #f0ede8;margin:10px 0;}
+.rrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #2b3949;font-size:14px;}
+.rrow.sub{padding-left:12px;}.rrow.sub .rl{color:#717d8d;font-size:13px;}
+.rrow .rl{color:#aab3c0;}.rrow .rv{font-family:'Barlow Condensed',sans-serif;font-weight:600;color:#f6f3ec;font-size:13px;}
+.rrow.hl{background:#0a1826;border-radius:6px;padding:7px 10px;margin:3px -10px;border:1px solid #a7461e;}.rrow.hl .rl{color:#f6f3ec;font-weight:700;}.rrow.hl .rv{color:#ff6b18;font-size:14px;}
+.rrow.warn .rv{color:#ff6b18;}
+.div{border:none;border-top:1px solid #2b3949;margin:10px 0;}
 
-.hero{background:#fff;border:1px solid #e8e6e0;border-radius:12px;padding:28px;text-align:center;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.04);}
-.hero-label{font-size:11px;color:#F97316;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
-.hero-big{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;color:#F97316;margin:4px 0;}
-.hero-sub{font-family:'JetBrains Mono',monospace;font-size:14px;color:#F97316;margin:2px 0;}
-.hero-bond{font-size:12px;color:#aaa;margin-top:10px;}
-.hero-bond strong{color:#F97316;}
+.hero{background:#07121e;border:1px solid #2b3949;border-radius:12px;padding:28px;text-align:center;margin-bottom:16px;box-shadow:none;}
+.hero-label{font-size:11px;color:#ff6b18;text-transform:uppercase;letter-spacing:2px;font-weight:700;}
+.hero-big{font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:700;color:#ff6b18;margin:4px 0;}
+.hero-sub{font-family:'Barlow Condensed',sans-serif;font-size:14px;color:#ff6b18;margin:2px 0;}
+.hero-bond{font-size:12px;color:#717d8d;margin-top:10px;}
+.hero-bond strong{color:#ff6b18;}
 
 .scope-bar{display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden;margin:14px 0 6px;}
 .scope-bar div{min-width:3px;transition:width .3s;}
 .scope-leg{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:center;}
-.scope-leg span{font-size:10px;color:#888;display:flex;align-items:center;gap:4px;}
+.scope-leg span{font-size:10px;color:#aab3c0;display:flex;align-items:center;gap:4px;}
 .scope-leg i{width:7px;height:7px;border-radius:2px;display:inline-block;}
 
 /* ── PRECON LAYOUT + SIDEBAR ── */
-.precon-app{display:flex;flex-direction:column;height:100vh;}
+.precon-app{display:flex;flex-direction:column;height:100%;}
 .precon-layout{flex:1;display:flex;min-height:0;}
-.precon-side{width:240px;flex-shrink:0;background:#ffffff;color:#1a1a2e;display:flex;flex-direction:column;overflow-y:auto;border-right:1px solid rgba(0,0,0,.08);}
-.precon-main{flex:1;min-width:0;overflow:auto;background:#f5f2ee;}
-.ps-top{padding:14px 14px 10px;border-bottom:1px solid rgba(0,0,0,.08);}
-.ps-back{width:100%;background:#f0ede8;color:#F97316;border:1px solid rgba(0,0,0,.1);border-radius:4px;padding:8px 10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-bottom:10px;}
-.ps-back:hover{background:#e8e5e0;border-color:#F97316;color:#e0650f;}
-.ps-brand-t{font-family:'Bebas Neue',sans-serif;font-size:22px;font-weight:400;color:#1a1a2e;letter-spacing:2px;text-transform:uppercase;line-height:1;}
-.ps-brand-s{font-size:10px;color:#888;letter-spacing:1.5px;text-transform:uppercase;margin-top:3px;}
-.ps-newbid{margin:14px 14px 0;background:#F97316;color:#fff;border:none;border-radius:4px;padding:11px 12px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
-.ps-newbid:hover{background:#e0650f;box-shadow:0 2px 12px rgba(196,30,46,.2);}
-.ps-section{padding:18px 0 6px;border-top:1px solid rgba(0,0,0,.08);margin-top:14px;}
+.precon-side{width:240px;flex-shrink:0;background:rgba(7,18,30,.9);color:#f6f3ec;display:flex;flex-direction:column;overflow-y:auto;border-right:1px solid #2b3949;}
+.precon-main{flex:1;min-width:0;overflow:auto;background:transparent;}
+.ps-top{padding:14px 14px 10px;border-bottom:1px solid #2b3949;}
+.ps-back{width:100%;background:transparent;color:#ff7a21;border:1px solid #e65e20;border-radius:6px;padding:8px 10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-bottom:10px;}
+.ps-back:hover{background:#0f2033;border-color:#ff6b18;color:#ff7a21;}
+.ps-brand-t{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:700;color:#f6f3ec;letter-spacing:2px;text-transform:uppercase;line-height:1;}
+.ps-brand-s{font-size:10px;color:#aab3c0;letter-spacing:1.5px;text-transform:uppercase;margin-top:3px;}
+.ps-newbid{margin:14px 14px 0;background:#ff6b18;color:#120a04;border:none;border-radius:6px;padding:11px 12px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+.ps-newbid:hover{background:#ff7a21;box-shadow:0 2px 12px rgba(255,107,24,.3);}
+.ps-section{padding:18px 0 6px;border-top:1px solid #2b3949;margin-top:14px;}
 .ps-section:first-of-type{border-top:none;margin-top:6px;}
-.ps-h{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#888;font-weight:700;padding:0 14px 6px;}
-.ps-link{width:calc(100% - 8px);margin:1px 4px;background:transparent;color:#1a1a2e;border:none;text-align:left;padding:7px 10px;font-family:'Barlow Condensed',sans-serif;font-size:13px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;transition:all .12s;letter-spacing:.5px;}
-.ps-link:hover{background:#f0ede8;color:#1a1a2e;}
-.ps-link.on{background:#f5f2ee;color:#F97316;border-left:2px solid #F97316;padding-left:8px;}
+.ps-h{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#aab3c0;font-weight:700;padding:0 14px 6px;}
+.ps-link{width:calc(100% - 8px);margin:1px 4px;background:transparent;color:#f6f3ec;border:none;text-align:left;padding:7px 10px;font-family:'Barlow Condensed',sans-serif;font-size:13px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;transition:all .12s;letter-spacing:.5px;}
+.ps-link:hover{background:#0a1826;color:#f6f3ec;}
+.ps-link.on{background:rgba(255,107,24,.12);color:#ff7a21;border-left:2px solid #ff6b18;padding-left:8px;}
 .ps-link.sm{padding:5px 10px;font-size:12px;}
 .ps-link-col{display:flex;flex-direction:column;flex:1;min-width:0;}
 .ps-link-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ps-link-sub{font-size:10px;color:#888;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
-.ps-ico{color:#999;width:14px;flex-shrink:0;text-align:center;font-size:12px;}
-.ps-link.on .ps-ico{color:#F97316;}
-.ps-count{margin-left:auto;background:#f0ede8;color:#888;font-size:10px;padding:1px 7px;border-radius:10px;font-family:'JetBrains Mono',monospace;flex-shrink:0;}
-.ps-link.on .ps-count{background:#F97316;color:#fff;}
-.ps-empty{padding:4px 14px;font-size:11px;color:#999;font-style:italic;}
+.ps-link-sub{font-size:10px;color:#aab3c0;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
+.ps-ico{color:#717d8d;width:14px;flex-shrink:0;text-align:center;font-size:12px;}
+.ps-link.on .ps-ico{color:#ff6b18;}
+.ps-count{margin-left:auto;background:#0a1826;color:#aab3c0;font-size:10px;padding:1px 7px;border-radius:10px;font-family:'Barlow Condensed',sans-serif;flex-shrink:0;}
+.ps-link.on .ps-count{background:#ff6b18;color:#120a04;}
+.ps-empty{padding:4px 14px;font-size:11px;color:#717d8d;font-style:italic;}
 .ps-cli{display:flex;align-items:center;}
 .ps-cli .ps-link{flex:1;}
-.ps-del{background:transparent;border:none;color:#999;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:4px;transition:all .12s;}
-.ps-del:hover{color:#F97316;background:#f0ede8;}
+.ps-del{background:transparent;border:none;color:#717d8d;font-size:13px;cursor:pointer;padding:4px 10px;border-radius:4px;transition:all .12s;}
+.ps-del:hover{color:#ff6b18;background:#0a1826;}
 .ps-addcli{display:flex;gap:4px;padding:6px 14px 14px;}
-.ps-addcli input{flex:1;min-width:0;background:#f9f7f5;border:1px solid rgba(0,0,0,.12);color:#1a1a2e;padding:6px 9px;border-radius:4px;font-size:12px;font-family:'Barlow Condensed',sans-serif;outline:none;}
-.ps-addcli input:focus{border-color:#F97316;}
-.ps-addcli button{background:#F97316;color:#fff;border:none;border-radius:4px;width:28px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;}
-.ps-addcli button:hover{background:#e0650f;}
+.ps-addcli input{flex:1;min-width:0;background:#091522;border:1px solid #2b3949;color:#f6f3ec;padding:6px 9px;border-radius:4px;font-size:12px;font-family:'Barlow Condensed',sans-serif;outline:none;}
+.ps-addcli input:focus{border-color:#ff6b18;}
+.ps-addcli button{background:#ff6b18;color:#120a04;border:none;border-radius:4px;width:28px;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s;}
+.ps-addcli button:hover{background:#ff7a21;}
 
-.dash-eyebrow{font-size:11px;color:#F97316;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:4px;}
-.proj-card .pc-actions button.arch:hover{border-color:#F97316;color:#F97316;}
-.proj-card.archived{opacity:.7;background:#fafaf6;}
+.dash-eyebrow{font-size:11px;color:#ff6b18;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:4px;}
+.proj-card .pc-actions button.arch:hover{border-color:#ff6b18;color:#ff6b18;}
+.proj-card.archived{opacity:.7;background:#07121e;}
 .proj-card.archived:hover{opacity:1;}
 
 @media(max-width:760px){
@@ -2618,10 +2645,10 @@ function ComplianceCenter({ onExit }) {
     return function() { window.removeEventListener('resize', onResize); };
   }, []);
 
-  var BB = { fontFamily: "'Bebas Neue',sans-serif" };
+  var BB = { fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 };
   var NB = { fontFamily: "'Barlow Condensed',sans-serif" };
-  var cardBg = '#ffffff';
-  var borderC = 'rgba(0,0,0,.08)';
+  var cardBg = '#07121e';
+  var borderC = '#2b3949';
   var cuid = function() { return 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); };
 
   useEffect(function() {
@@ -2787,26 +2814,26 @@ function ComplianceCenter({ onExit }) {
   var doneItems = items.filter(function(i) { return i.status === 'complete'; }).length;
   var criticalPending = items.filter(function(i) { return i.priority === 'critical' && i.status !== 'complete'; }).length;
 
-  var IST = { width: '100%', background: '#f9f7f5', border: '1px solid rgba(0,0,0,.12)', color: '#1a1a2e', padding: '10px 14px', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none', borderRadius: 0, WebkitAppearance: 'none' };
-  var priColors = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#6b7280' };
+  var IST = { width: '100%', background: '#091522', border: '1px solid #e65e20', color: '#f6f3ec', padding: '10px 14px', fontFamily: "'Barlow',sans-serif", fontSize: 14, outline: 'none', borderRadius: 6, WebkitAppearance: 'none' };
+  var priColors = { critical: '#ff4655', high: '#ff6b18', medium: '#f4d457', low: '#717d8d' };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: '#f5f2ee', display: 'flex', fontFamily: "'Barlow',sans-serif" }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: mob ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, display: 'flex', fontFamily: "'Barlow',sans-serif" }}>
       <input type="file" ref={fileRef} style={{ display: 'none' }} accept=".pdf,.txt,.doc,.docx,.png,.jpg,.jpeg" onChange={handleContractUpload} />
 
       {/* SIDEBAR */}
-      <div style={{ width: mob ? (sideOpen ? '100%' : 0) : 280, flexShrink: 0, background: '#ffffff', borderRight: '1px solid ' + borderC, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width .2s' }}>
+      <div style={{ width: mob ? (sideOpen ? '100%' : 0) : 280, flexShrink: 0, background: 'rgba(7,18,30,.92)', borderRight: '1px solid ' + borderC, display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width .2s' }}>
         <div style={{ padding: '20px 16px 12px' }}>
-          <div onClick={onExit} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#F97316', marginBottom: 12 }}>← Dashboard</div>
-          <div style={{ ...BB, fontSize: 22, letterSpacing: 2, color: '#1a1a2e' }}>COMPLIANCE CENTER</div>
+          <div onClick={onExit} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff6b18', marginBottom: 12 }}>← Dashboard</div>
+          <div style={{ ...BB, fontSize: 22, letterSpacing: 2, color: '#f6f3ec' }}>COMPLIANCE CENTER</div>
         </div>
         <div style={{ padding: '0 16px 12px' }}>
-          <div onClick={function() { setShowKey(!showKey); }} style={{ cursor: 'pointer', ...NB, fontSize: 11, letterSpacing: '1px', color: apiKey ? '#22c55e' : '#ef4444', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div onClick={function() { setShowKey(!showKey); }} style={{ cursor: 'pointer', ...NB, fontSize: 11, letterSpacing: '1px', color: apiKey ? '#19d47b' : '#ff4655', display: 'flex', alignItems: 'center', gap: 6 }}>
             {apiKey ? '● AI Connected' : '○ Set API Key'} <ChevronDown size={12} style={{ transform: showKey ? 'rotate(180deg)' : '', transition: '.2s' }} />
           </div>
           {showKey && <div style={{ marginTop: 8 }}>
             <input type="password" value={apiKey} onChange={function(e) { saveKey(e.target.value); }} placeholder="Anthropic API Key" style={{ ...IST, fontSize: 12, padding: '8px 10px' }} />
-            <div style={{ ...NB, fontSize: 10, color: '#666', marginTop: 4 }}>Used for AI checklist generation & contract scanning</div>
+            <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginTop: 4 }}>Used for AI checklist generation & contract scanning</div>
           </div>}
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 16px' }}>
@@ -2815,49 +2842,49 @@ function ComplianceCenter({ onExit }) {
             var done = pItems.filter(function(i) { return i.status === 'complete'; }).length;
             var total = pItems.length;
             var active = p.id === selId;
-            return <div key={p.id} onClick={function() { setSelId(p.id); if (mob) setSideOpen(false); }} style={{ padding: '12px 12px', cursor: 'pointer', background: active ? 'rgba(249,115,22,.1)' : 'transparent', borderLeft: active ? '3px solid #F97316' : '3px solid transparent', marginBottom: 2, transition: 'all .15s' }}>
-              <div style={{ ...NB, fontSize: 14, fontWeight: 600, color: active ? '#1a1a2e' : '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-              <div style={{ ...NB, fontSize: 11, color: '#666', marginTop: 2 }}>{p.state || 'No state set'} {total > 0 ? '• ' + done + '/' + total + ' done' : ''}</div>
+            return <div key={p.id} onClick={function() { setSelId(p.id); if (mob) setSideOpen(false); }} style={{ padding: '12px 12px', cursor: 'pointer', background: active ? 'rgba(255,107,24,.1)' : 'transparent', borderLeft: active ? '3px solid #ff6b18' : '3px solid transparent', marginBottom: 2, transition: 'all .15s' }}>
+              <div style={{ ...NB, fontSize: 14, fontWeight: 600, color: active ? '#f6f3ec' : '#aab3c0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+              <div style={{ ...NB, fontSize: 11, color: '#aab3c0', marginTop: 2 }}>{p.state || 'No state set'} {total > 0 ? '• ' + done + '/' + total + ' done' : ''}</div>
             </div>;
           })}
-          {projects.length === 0 && <div style={{ ...NB, fontSize: 13, color: '#666', padding: 16 }}>No projects yet. Create bids in PreCon to auto-populate.</div>}
+          {projects.length === 0 && <div style={{ ...NB, fontSize: 13, color: '#aab3c0', padding: 16 }}>No projects yet. Create bids in PreCon to auto-populate.</div>}
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div style={{ flex: 1, overflowY: 'auto', padding: mob ? '16px' : '28px 36px 60px' }}>
-        {mob && <div onClick={function() { setSideOpen(true); }} style={{ cursor: 'pointer', ...NB, fontSize: 12, color: '#F97316', marginBottom: 12 }}>☰ Projects</div>}
+        {mob && <div onClick={function() { setSideOpen(true); }} style={{ cursor: 'pointer', ...NB, fontSize: 12, color: '#ff6b18', marginBottom: 12 }}>☰ Projects</div>}
 
         {!proj ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ ...BB, fontSize: 28, color: '#444' }}>SELECT A PROJECT</div>
-              <div style={{ ...NB, fontSize: 14, color: '#666', marginTop: 8 }}>Choose a project from the sidebar to manage compliance items</div>
+              <div style={{ ...BB, fontSize: 28, color: '#e8e2d8' }}>SELECT A PROJECT</div>
+              <div style={{ ...NB, fontSize: 14, color: '#aab3c0', marginTop: 8 }}>Choose a project from the sidebar to manage compliance items</div>
             </div>
           </div>
         ) : (
           <div>
             {/* PROJECT HEADER */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ ...BB, fontSize: mob ? 28 : 36, letterSpacing: 2, color: '#1a1a2e', lineHeight: 1 }}>{proj.name}</div>
-              <div style={{ ...NB, fontSize: 12, color: '#666', marginTop: 4 }}>{proj.systemSizeMW} MW • {(proj.scopes || []).join(', ')}</div>
+              <div style={{ ...BB, fontSize: mob ? 28 : 36, letterSpacing: 2, color: '#f6f3ec', lineHeight: 1 }}>{proj.name}</div>
+              <div style={{ ...NB, fontSize: 12, color: '#aab3c0', marginTop: 4 }}>{proj.systemSizeMW} MW • {(proj.scopes || []).join(', ')}</div>
             </div>
 
             {/* LOCATION FIELDS */}
             <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 24 }}>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>State *</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>State *</div>
                 <select value={proj.state} onChange={function(e) { updateField('state', e.target.value); }} style={{ ...IST }}>
                   <option value="">Select State</option>
                   {US_STATES.map(function(s) { return <option key={s} value={s}>{s}</option>; })}
                 </select>
               </div>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>County</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>County</div>
                 <input value={proj.county || ''} onChange={function(e) { updateField('county', e.target.value); }} placeholder="e.g. Harris County" style={IST} />
               </div>
               <div>
-                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#666', marginBottom: 4 }}>Location / City</div>
+                <div style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 4 }}>Location / City</div>
                 <input value={proj.location || ''} onChange={function(e) { updateField('location', e.target.value); }} placeholder="e.g. Houston" style={IST} />
               </div>
             </div>
@@ -2865,48 +2892,48 @@ function ComplianceCenter({ onExit }) {
             {/* STATS BAR */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Items</div>
-                <div style={{ ...BB, fontSize: 24, color: '#1a1a2e' }}>{totalItems}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Items</div>
+                <div style={{ ...BB, fontSize: 24, color: '#f6f3ec' }}>{totalItems}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Completed</div>
-                <div style={{ ...BB, fontSize: 24, color: '#22c55e' }}>{doneItems}{totalItems > 0 ? <span style={{ fontSize: 14, color: '#666' }}> / {totalItems}</span> : ''}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Completed</div>
+                <div style={{ ...BB, fontSize: 24, color: '#19d47b' }}>{doneItems}{totalItems > 0 ? <span style={{ fontSize: 14, color: '#aab3c0' }}> / {totalItems}</span> : ''}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Critical Pending</div>
-                <div style={{ ...BB, fontSize: 24, color: criticalPending > 0 ? '#ef4444' : '#22c55e' }}>{criticalPending}</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Critical Pending</div>
+                <div style={{ ...BB, fontSize: 24, color: criticalPending > 0 ? '#ff4655' : '#19d47b' }}>{criticalPending}</div>
               </div>
               <div style={{ background: cardBg, border: '1px solid ' + borderC, padding: '12px 18px', flex: '1 1 120px' }}>
-                <div style={{ ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' }}>Progress</div>
-                <div style={{ ...BB, fontSize: 24, color: '#F97316' }}>{totalItems > 0 ? Math.round(doneItems / totalItems * 100) : 0}%</div>
+                <div style={{ ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' }}>Progress</div>
+                <div style={{ ...BB, fontSize: 24, color: '#ff6b18' }}>{totalItems > 0 ? Math.round(doneItems / totalItems * 100) : 0}%</div>
               </div>
             </div>
 
             {/* ACTION BUTTONS */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-              <div onClick={generating ? null : generateChecklist} style={{ cursor: generating ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: generating ? 'rgba(249,115,22,.3)' : '#F97316', color: '#fff', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px', transition: 'all .2s' }}>
+              <div onClick={generating ? null : generateChecklist} style={{ cursor: generating ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: generating ? 'rgba(255,107,24,.3)' : '#ff6b18', color: '#f6f3ec', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px', transition: 'all .2s' }}>
                 {generating ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generating...</> : <><FlaskConical size={14} /> Generate Compliance Checklist</>}
               </div>
               <div onClick={scanning ? null : function() { fileRef.current && fileRef.current.click(); }} style={{ cursor: scanning ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(99,102,241,.15)', border: '1px solid rgba(99,102,241,.3)', color: '#818cf8', ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1px' }}>
                 {scanning ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Scanning...</> : <><Upload size={14} /> Upload Contract</>}
               </div>
-              <div onClick={addManualItem} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(0,0,0,.03)', border: '1px solid ' + borderC, color: '#666', ...NB, fontSize: 13, letterSpacing: '1px' }}>
+              <div onClick={addManualItem} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'rgba(255,255,255,.04)', border: '1px solid ' + borderC, color: '#aab3c0', ...NB, fontSize: 13, letterSpacing: '1px' }}>
                 <Plus size={14} /> Add Item
               </div>
             </div>
 
             {/* ERROR */}
-            {error && <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#ef4444', ...NB, fontSize: 13, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {error && <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#ff4655', ...NB, fontSize: 13, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {error} <X size={14} style={{ cursor: 'pointer' }} onClick={function() { setError(''); }} />
             </div>}
 
             {/* CONTRACTS */}
             {(proj.contracts || []).length > 0 && <div style={{ marginBottom: 20 }}>
-              <div style={{ ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 8 }}>UPLOADED CONTRACTS</div>
+              <div style={{ ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 8 }}>UPLOADED CONTRACTS</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {(proj.contracts || []).map(function(c) {
                   return <div key={c.id} style={{ padding: '6px 12px', background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.2)', ...NB, fontSize: 12, color: '#818cf8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <FileText size={12} /> {c.name} <span style={{ color: '#666' }}>({c.itemCount || 0} items)</span>
+                    <FileText size={12} /> {c.name} <span style={{ color: '#aab3c0' }}>({c.itemCount || 0} items)</span>
                   </div>;
                 })}
               </div>
@@ -2914,13 +2941,13 @@ function ComplianceCenter({ onExit }) {
 
             {/* FILTERS */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16, alignItems: 'center' }}>
-              <div style={{ ...NB, fontSize: 10, color: '#666', marginRight: 4 }}>STATUS:</div>
+              <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginRight: 4 }}>STATUS:</div>
               {[['all', 'All'], ['pending', 'Pending'], ['in-progress', 'In Progress'], ['complete', 'Complete']].map(function(f) {
                 var active = filter === f[0];
-                return <div key={f[0]} onClick={function() { setFilter(f[0]); }} style={{ cursor: 'pointer', padding: '4px 12px', background: active ? 'rgba(249,115,22,.15)' : 'rgba(0,0,0,.02)', border: '1px solid ' + (active ? 'rgba(249,115,22,.3)' : borderC), color: active ? '#F97316' : '#888', ...NB, fontSize: 11 }}>{f[1]}</div>;
+                return <div key={f[0]} onClick={function() { setFilter(f[0]); }} style={{ cursor: 'pointer', padding: '4px 12px', background: active ? 'rgba(255,107,24,.15)' : 'rgba(255,255,255,.03)', border: '1px solid ' + (active ? 'rgba(255,107,24,.3)' : borderC), color: active ? '#ff6b18' : '#aab3c0', ...NB, fontSize: 11 }}>{f[1]}</div>;
               })}
               <div style={{ width: 1, height: 16, background: borderC, margin: '0 4px' }} />
-              <div style={{ ...NB, fontSize: 10, color: '#666', marginRight: 4 }}>CATEGORY:</div>
+              <div style={{ ...NB, fontSize: 10, color: '#aab3c0', marginRight: 4 }}>CATEGORY:</div>
               <select value={catFilter} onChange={function(e) { setCatFilter(e.target.value); }} style={{ ...IST, width: 'auto', padding: '4px 10px', fontSize: 11 }}>
                 <option value="all">All Categories</option>
                 {Object.keys(COMP_CATEGORIES).map(function(c) { return <option key={c} value={c}>{c}</option>; })}
@@ -2930,43 +2957,43 @@ function ComplianceCenter({ onExit }) {
             {/* CHECKLIST */}
             {Object.keys(grouped).length === 0 && totalItems === 0 && (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-                <div style={{ ...BB, fontSize: 24, color: '#444' }}>NO COMPLIANCE ITEMS</div>
-                <div style={{ ...NB, fontSize: 14, color: '#666', marginTop: 8 }}>Set the state and click "Generate Compliance Checklist" to auto-populate requirements using AI, or upload a contract to scan for obligations.</div>
+                <div style={{ ...BB, fontSize: 24, color: '#e8e2d8' }}>NO COMPLIANCE ITEMS</div>
+                <div style={{ ...NB, fontSize: 14, color: '#aab3c0', marginTop: 8 }}>Set the state and click "Generate Compliance Checklist" to auto-populate requirements using AI, or upload a contract to scan for obligations.</div>
               </div>
             )}
             {Object.keys(grouped).sort().map(function(cat) {
               var catInfo = COMP_CATEGORIES[cat] || COMP_CATEGORIES.Other;
               return <div key={cat} style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 4, background: catInfo.color, display: 'flex', alignItems: 'center', justifyContent: 'center', ...BB, fontSize: 12, color: '#fff' }}>{catInfo.icon}</div>
+                  <div style={{ width: 22, height: 22, borderRadius: 4, background: catInfo.color, display: 'flex', alignItems: 'center', justifyContent: 'center', ...BB, fontSize: 12, color: '#f6f3ec' }}>{catInfo.icon}</div>
                   <div style={{ ...NB, fontSize: 13, fontWeight: 600, letterSpacing: '1.5px', textTransform: 'uppercase', color: catInfo.color }}>{cat}</div>
-                  <div style={{ ...NB, fontSize: 11, color: '#666' }}>({grouped[cat].length})</div>
+                  <div style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>({grouped[cat].length})</div>
                 </div>
                 {grouped[cat].map(function(it) {
-                  var priC = priColors[it.priority] || '#6b7280';
+                  var priC = priColors[it.priority] || '#717d8d';
                   var statusIcon = it.status === 'complete' ? '✓' : it.status === 'in-progress' ? '◐' : '○';
-                  var statusColor = it.status === 'complete' ? '#22c55e' : it.status === 'in-progress' ? '#eab308' : '#666';
+                  var statusColor = it.status === 'complete' ? '#19d47b' : it.status === 'in-progress' ? '#f4d457' : '#aab3c0';
                   return <div key={it.id} style={{ display: 'flex', gap: 12, padding: '12px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 3 }}>
                     <div onClick={function() { toggleStatus(it.id); }} style={{ cursor: 'pointer', fontSize: 18, color: statusColor, flexShrink: 0, width: 24, textAlign: 'center', lineHeight: '24px', userSelect: 'none' }}>{statusIcon}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <input value={it.title} onChange={function(e) { updateItem(it.id, 'title', e.target.value); }} style={{ background: 'transparent', border: 'none', color: it.status === 'complete' ? '#999' : '#1a1a2e', ...NB, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 120, outline: 'none', textDecoration: it.status === 'complete' ? 'line-through' : 'none' }} />
+                        <input value={it.title} onChange={function(e) { updateItem(it.id, 'title', e.target.value); }} style={{ background: 'transparent', border: 'none', color: it.status === 'complete' ? '#717d8d' : '#f6f3ec', ...NB, fontSize: 14, fontWeight: 600, flex: 1, minWidth: 120, outline: 'none', textDecoration: it.status === 'complete' ? 'line-through' : 'none' }} />
                         <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: priC + '22', color: priC, border: '1px solid ' + priC + '44', textTransform: 'uppercase', letterSpacing: '1px', flexShrink: 0 }}>{it.priority}</span>
                         {it.source === 'contract' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(99,102,241,.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,.2)', flexShrink: 0 }}>CONTRACT</span>}
-                        {it.source === 'ai' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(249,115,22,.1)', color: '#F97316', border: '1px solid rgba(249,115,22,.2)', flexShrink: 0 }}>AI</span>}
+                        {it.source === 'ai' && <span style={{ ...NB, fontSize: 10, padding: '2px 8px', background: 'rgba(255,107,24,.1)', color: '#ff6b18', border: '1px solid rgba(255,107,24,.2)', flexShrink: 0 }}>AI</span>}
                       </div>
-                      <textarea value={it.description} onChange={function(e) { updateItem(it.id, 'description', e.target.value); }} rows={2} style={{ ...IST, marginTop: 6, fontSize: 12, color: '#666', resize: 'vertical', minHeight: 36 }} />
+                      <textarea value={it.description} onChange={function(e) { updateItem(it.id, 'description', e.target.value); }} rows={2} style={{ ...IST, marginTop: 6, fontSize: 12, color: '#aab3c0', resize: 'vertical', minHeight: 36 }} />
                       <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                        {it.agency && <span style={{ ...NB, fontSize: 11, color: '#666' }}>Agency: {it.agency}</span>}
+                        {it.agency && <span style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>Agency: {it.agency}</span>}
                         {it.contractRef && <span style={{ ...NB, fontSize: 11, color: '#818cf8' }}>Ref: {it.contractRef}</span>}
-                        {it.estimatedDays > 0 && <span style={{ ...NB, fontSize: 11, color: '#666' }}>~{it.estimatedDays} business days</span>}
+                        {it.estimatedDays > 0 && <span style={{ ...NB, fontSize: 11, color: '#aab3c0' }}>~{it.estimatedDays} business days</span>}
                         <select value={it.priority} onChange={function(e) { updateItem(it.id, 'priority', e.target.value); }} style={{ ...IST, width: 'auto', padding: '2px 8px', fontSize: 11 }}>
                           <option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
                         </select>
                         <select value={it.category} onChange={function(e) { updateItem(it.id, 'category', e.target.value); }} style={{ ...IST, width: 'auto', padding: '2px 8px', fontSize: 11 }}>
                           {Object.keys(COMP_CATEGORIES).map(function(c) { return <option key={c} value={c}>{c}</option>; })}
                         </select>
-                        <Trash2 size={12} style={{ cursor: 'pointer', color: '#666', marginLeft: 'auto' }} onClick={function() { deleteItem(it.id); }} />
+                        <Trash2 size={12} style={{ cursor: 'pointer', color: '#aab3c0', marginLeft: 'auto' }} onClick={function() { deleteItem(it.id); }} />
                       </div>
                     </div>
                   </div>;
@@ -3004,8 +3031,8 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
   const [editId, setEditId] = useState(null);
   const [draftNotes, setDraftNotes] = useState('');
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.08)';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';
   const userName=(portalUser&&portalUser.name)||'Admin';
 
   useEffect(function(){var h=function(){setMob(window.innerWidth<768)};window.addEventListener('resize',h);return function(){window.removeEventListener('resize',h)}},[]);
@@ -3179,32 +3206,32 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
 
   function clearFilters(){setSearch('');setSortBy('newest');setFStatus('');setFPosition('');setFExperience('');setFRange('');setFStage('')}
 
-  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'14px':'18px 22px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,borderRadius:12,padding:mob?'14px':'18px 22px'};
   var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:4,display:'block'};
-  var selStyle={...NB,fontSize:13,padding:'8px 10px',background:CARD,border:'1px solid '+BORDER,color:TEXT,cursor:'pointer',outline:'none'};
+  var selStyle={...NB,fontSize:13,padding:'8px 10px',background:'#091522',border:'1px solid #e65e20',borderRadius:6,color:TEXT,cursor:'pointer',outline:'none'};
   var counts={applicants:items.filter(function(x){return x.kind==='career'}).length,partners:items.filter(function(x){return x.kind==='partner'}).length};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:1200,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:20,transition:'opacity .2s'}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:4}}>
           <div style={{...BB,fontSize:mob?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2}}>CRM</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            <button onClick={exportPDF} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:filtered.length?A:'rgba(249,115,22,.3)',color:filtered.length?'#1a1206':'#888',border:'none',cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export PDF</button>
-            <button onClick={exportExcel} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',color:filtered.length?A:'#888',border:'1px solid '+(filtered.length?A:'rgba(0,0,0,.15)'),cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export Excel</button>
+            <button onClick={exportPDF} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:filtered.length?A:'rgba(255,107,24,.3)',color:filtered.length?'#120a04':'#aab3c0',border:'none',cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export PDF</button>
+            <button onClick={exportExcel} disabled={filtered.length===0} style={{padding:'9px 16px',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',color:filtered.length?A:'#aab3c0',border:'1px solid '+(filtered.length?A:'#2b3949'),cursor:filtered.length?'pointer':'default',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)'}}>Export Excel</button>
           </div>
         </div>
         <div style={{...NB,fontSize:13,color:MID,letterSpacing:'1.5px',marginBottom:24}}>Cloud-saved applicant & partner inquiry tracking · auto-sorted most-recent · timestamped activity log</div>
 
         <div style={{display:'flex',gap:0,marginBottom:18,borderBottom:'1px solid '+BORDER}}>
           {[{k:'applicants',l:'Applicants Looking For Work ('+counts.applicants+')'},{k:'partners',l:'Clients Reaching Out ('+counts.partners+')'}].map(function(t){
-            return <button key={t.k} onClick={function(){setTab(t.k);clearFilters();setOpenId(null)}} style={{padding:mob?'9px 12px':'11px 18px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,background:tab===t.k?A:'transparent',color:tab===t.k?'#fff':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>
+            return <button key={t.k} onClick={function(){setTab(t.k);clearFilters();setOpenId(null)}} style={{padding:mob?'9px 12px':'11px 18px',cursor:'pointer',fontSize:11,letterSpacing:'2px',textTransform:'uppercase',fontWeight:700,background:tab===t.k?A:'transparent',color:tab===t.k?'#120a04':MID,border:'none',borderBottom:tab===t.k?'2px solid '+A:'2px solid transparent',...NB}}>{t.l}</button>
           })}
         </div>
 
         <div style={{display:'grid',gridTemplateColumns:mob?'1fr':'minmax(220px,1fr) repeat(auto-fit,minmax(150px,1fr))',gap:10,marginBottom:8}}>
-          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search name, email, phone, company, position…" style={{padding:'10px 14px',background:CARD,border:'1px solid '+BORDER,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
+          <input value={search} onChange={function(e){setSearch(e.target.value)}} placeholder="Search name, email, phone, company, position…" style={{padding:'10px 14px',background:'#091522',border:'1px solid #e65e20',borderRadius:6,color:TEXT,...NB,fontSize:14,outline:'none'}}/>
           <select value={sortBy} onChange={function(e){setSortBy(e.target.value)}} style={selStyle}>
             <option value="newest">Sort: Most Recent</option>
             <option value="oldest">Sort: Oldest First</option>
@@ -3256,7 +3283,7 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
           <div style={{display:'grid',gap:12}}>
             {filtered.map(function(x){
               var st=x.status||'New';
-              var stColor=st==='Closed'?DIM:st==='Contacted'?'#3b82f6':st==='In Progress'?'#22c55e':A;
+              var stColor=st==='Closed'?DIM:st==='Contacted'?'#2c7dff':st==='In Progress'?'#19d47b':A;
               var isApp=x.kind==='career';
               var displayName=isApp?(x.name||'—'):((((x.firstName||'')+' '+(x.lastName||'')).trim())||'—');
               return (
@@ -3332,15 +3359,15 @@ function CRMModule({ onExit, portalUser, sendOnboardingInvite }) {
                       <div style={{marginTop:12,paddingTop:10,borderTop:'1px dashed '+BORDER}}>
                         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
                           <span style={labelStyle}>Hiring Stage</span>
-                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#16a34a',color:'#fff',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
+                          {hired&&<span style={{...NB,fontSize:10,letterSpacing:'2px',padding:'3px 10px',background:'#19d47b',color:'#03110a',fontWeight:700,letterSpacing:'1.5px'}}>HIRED · {x.hiredAt?new Date(x.hiredAt).toLocaleDateString():'now'}</span>}
                           {hired&&<button onClick={resendInvite} style={{marginLeft:'auto',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'5px 12px',background:'transparent',color:A,border:'1px solid '+A,cursor:'pointer',clipPath:'polygon(7px 0%,100% 0%,calc(100% - 7px) 100%,0% 100%)'}}>Resend Onboarding Invite</button>}
-                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#16a34a',color:hired?'#16a34a':'#fff',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
+                          <button onClick={hireToggle} style={{marginLeft:hired?0:'auto',...NB,fontSize:12,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'6px 14px',background:hired?'transparent':'#19d47b',color:hired?'#19d47b':'#03110a',border:'1px solid #16a34a',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{hired?'Unhire':'Mark as Hired →'}</button>
                         </div>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {STAGES_DEF.map(function(s){
                             var on=(s.k==='unavailable')?!!x.unavailableUntil:!!sg[s.k];
                             var labelText=s.l+(s.k==='unavailable'&&x.unavailableUntil?(' '+x.unavailableUntil):'');
-                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),background:on?'rgba(249,115,22,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
+                            return <label key={s.k} style={{display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',padding:'5px 11px',border:'1px solid '+(on?A:'#2b3949'),background:on?'rgba(255,107,24,.12)':'transparent',color:on?A:MID,...NB,fontSize:12,letterSpacing:'.5px'}}>
                               <input type="checkbox" checked={on} onChange={function(){toggle(s.k)}} style={{accentColor:A,margin:0}}/>{labelText}
                             </label>
                           })}
@@ -3410,8 +3437,8 @@ function scalePhoto(file, maxDim, quality){
 }
 
 function OnboardingPage({ portalUser, onComplete, onExit }){
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';const OK='#16a34a';
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';const OK='#19d47b';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -3419,7 +3446,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
   const [sigName, setSigName] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [msg, setMsg] = useState('');
-  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+  const mob = useIsMobile();
 
   useEffect(function(){
     var alive = true;
@@ -3473,16 +3500,16 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
   var completedAt = doc && doc.completedAt;
 
   var labelStyle={...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:6,display:'block'};
-  var cardStyle={background:CARD,border:'1px solid '+BORDER,padding:mob?'18px':'24px',marginBottom:14};
+  var cardStyle={background:CARD,border:'1px solid '+BORDER,borderRadius:12,padding:mob?'18px':'24px',marginBottom:14};
   var stepHead=function(n,t,done){return (
     <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
-      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(0,0,0,.06)',color:done?'#fff':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
+      <div style={{width:32,height:32,borderRadius:'50%',background:done?OK:'rgba(255,255,255,.08)',color:done?'#03110a':MID,display:'flex',alignItems:'center',justifyContent:'center',...BB,fontSize:16}}>{done?'✓':n}</div>
       <div style={{...BB,fontSize:22,letterSpacing:1,color:TEXT}}>{t}</div>
     </div>
   )};
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px':'48px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'24px 14px calc(24px + var(--sab, 0px))':'48px'}}>
       <div style={{maxWidth:780,margin:'0 auto'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18,flexWrap:'wrap',gap:10}}>
           <div>
@@ -3493,7 +3520,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
           {onExit&&<button onClick={onExit} style={{...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',background:'transparent',border:'1px solid '+BORDER,color:MID,padding:'8px 14px',cursor:'pointer'}}>Sign Out</button>}
         </div>
 
-        {completedAt&&<div style={{background:'rgba(22,163,74,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
+        {completedAt&&<div style={{background:'rgba(25,212,123,.1)',border:'1px solid '+OK,padding:'14px 18px',marginBottom:18,...NB,fontSize:14,color:OK}}>✓ Onboarding completed on {new Date(completedAt).toLocaleString()}. Your records have been submitted to HR.</div>}
         {!completedAt&&<div style={{...NB,fontSize:14,color:MID,marginBottom:18,lineHeight:1.6}}>Please complete the three steps below. Your documents are stored securely and used only for employment verification and HR records.</div>}
 
         <div style={cardStyle}>
@@ -3509,7 +3536,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
               </div>
             </div>
           ):(
-            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(255,107,24,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
               📷 Upload Social Security Card Photo
               <input type="file" accept="image/*" hidden onChange={uploadPhoto('ssn')}/>
             </label>
@@ -3533,7 +3560,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
               </div>
             </div>
           ):(
-            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(249,115,22,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
+            <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'rgba(255,107,24,.06)',border:'1px dashed '+A,cursor:'pointer',...NB,fontSize:14,color:A,letterSpacing:'1px'}}>
               📷 Upload {idKind==='license'?"Driver's License":'Passport'} Photo
               <input type="file" accept="image/*" hidden onChange={uploadPhoto('id')}/>
             </label>
@@ -3544,7 +3571,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
           {stepHead(3,'Employee Handbook Acknowledgement', hasSig)}
           <div style={{...NB,fontSize:13,color:TEXT,whiteSpace:'pre-wrap',lineHeight:1.6,background:'#fafafa',border:'1px solid '+BORDER,padding:'14px 16px',maxHeight:260,overflowY:'auto',marginBottom:12}}>{HANDBOOK_TEXT}</div>
           {hasSig?(
-            <div style={{padding:'12px 14px',background:'rgba(22,163,74,.08)',border:'1px solid '+OK}}>
+            <div style={{padding:'12px 14px',background:'rgba(25,212,123,.08)',border:'1px solid '+OK}}>
               <div style={{...NB,fontSize:13,color:TEXT}}>Signed by <strong>{doc.handbook.signedName}</strong></div>
               <div style={{...NB,fontSize:11,color:MID}}>on {new Date(doc.handbook.signedAt).toLocaleString()}</div>
             </div>
@@ -3555,7 +3582,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
             </label>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
               <input value={sigName} onChange={function(e){setSigName(e.target.value)}} placeholder="Type your full legal name as signature" style={{flex:1,minWidth:200,...NB,fontSize:15,padding:'10px 12px',background:CARD,border:'1px solid '+BORDER,color:TEXT,outline:'none'}}/>
-              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(249,115,22,.3)',color:agreed&&sigName.trim()?'#1a1206':'#888',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
+              <button onClick={signHandbook} disabled={!agreed||!sigName.trim()} style={{...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',padding:'10px 18px',background:agreed&&sigName.trim()?A:'rgba(255,107,24,.3)',color:agreed&&sigName.trim()?'#120a04':'#aab3c0',border:'none',cursor:agreed&&sigName.trim()?'pointer':'default'}}>Sign & Acknowledge</button>
             </div>
           </>)}
         </div>
@@ -3563,7 +3590,7 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
         {msg&&<div style={{...NB,fontSize:12,color:msg.indexOf('failed')>=0||msg.indexOf('Try')>=0||msg.indexOf('Could not')>=0||msg.indexOf('Please')>=0||msg.indexOf('Tick')>=0||msg.indexOf('Type')>=0?'#dc2626':MID,marginBottom:10}}>{msg}</div>}
 
         {!completedAt&&!all&&<div style={{...NB,fontSize:13,color:MID,padding:'14px 0',textAlign:'center',fontStyle:'italic'}}>Complete all three steps to finish onboarding. {!hasSSN&&'· Upload SSN '}{!hasID&&'· Upload ID '}{!hasSig&&'· Sign handbook'}</div>}
-        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#1a1206',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
+        {completedAt&&onComplete&&<button onClick={onComplete} style={{...NB,fontSize:15,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'16px 0',width:'100%',background:A,color:'#120a04',border:'none',cursor:'pointer',clipPath:'polygon(12px 0%,100% 0%,calc(100% - 12px) 100%,0% 100%)'}}>Continue to Portal →</button>}
       </div>
     </div>
   );
@@ -3571,13 +3598,13 @@ function OnboardingPage({ portalUser, onComplete, onExit }){
 
 /* MY TIME CARD — employee-facing weekly calendar of their own punches */
 function MyTimeCard({ portalUser, onExit }){
-  const A='#F97316';const BG='#f5f2ee';const CARD='#ffffff';const TEXT='#1a1a2e';const MID='#666';const DIM='#999';const BORDER='rgba(0,0,0,.1)';
-  const BB={fontFamily:"'Bebas Neue',sans-serif"};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
+  const A='#ff6b18';const BG='transparent';const CARD='#07121e';const TEXT='#f6f3ec';const MID='#aab3c0';const DIM='#717d8d';const BORDER='#2b3949';
+  const BB={fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};const NB={fontFamily:"'Barlow Condensed',sans-serif"};
   const [worker, setWorker] = useState(null);
   const [punches, setPunches] = useState({});
   const [loading, setLoading] = useState(true);
   const [weekStart, setWeekStart] = useState(function(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d});
-  const mob = typeof window !== 'undefined' && window.innerWidth < 768;
+  const mob = useIsMobile();
 
   useEffect(function(){
     var alive=true;setLoading(true);
@@ -3620,7 +3647,7 @@ function MyTimeCard({ portalUser, onExit }){
   var DAY_NAMES=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,overflowY:'auto',background:BG,color:TEXT,padding:mob?'20px 14px':'40px 48px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflowY:'auto',color:TEXT,padding:mob?'20px 14px':'40px 48px',paddingBottom:mob?'calc(24px + var(--tabbar-h, 0px) + var(--sab, 0px))':'40px'}}>
       <div style={{maxWidth:960,margin:'0 auto'}}>
         <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:18}} onClick={onExit}>← Back to Dashboard</div>
         <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:6}}>
@@ -3646,7 +3673,7 @@ function MyTimeCard({ portalUser, onExit }){
             <button onClick={function(){shiftWeek(1)}} disabled={weekEnd>=today} style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',padding:'8px 14px',background:'transparent',color:weekEnd>=today?DIM:A,border:'1px solid '+(weekEnd>=today?BORDER:A),cursor:weekEnd>=today?'default':'pointer',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>Next Week →</button>
           </div>
 
-          <div style={{background:CARD,border:'1px solid '+BORDER,marginBottom:16}}>
+          <div style={{background:CARD,border:'1px solid #e65e20',borderRadius:12,overflow:'hidden',marginBottom:16}}>
             {days.map(function(d,di){return (
               <div key={d.key} style={{display:'grid',gridTemplateColumns:mob?'80px 1fr 64px':'140px 1fr 90px',gap:12,padding:'14px 16px',borderTop:di===0?'none':'1px solid '+BORDER,background:d.isToday?'rgba(249,115,22,.05)':'transparent'}}>
                 <div>
@@ -3659,7 +3686,7 @@ function MyTimeCard({ portalUser, onExit }){
                     <div style={{...NB,fontSize:12,color:DIM,fontStyle:'italic'}}>{d.isFuture?'—':'No punches recorded'}</div>
                   ):d.punches.map(function(p,pi){return (
                     <div key={pi} style={{...NB,fontSize:13,color:TEXT,display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(34,197,94,.15)':'rgba(239,68,68,.12)',color:p.type==='in'?'#16a34a':'#dc2626',fontWeight:700,textTransform:'uppercase'}}>{p.type==='in'?'IN':'OUT'}</span>
+                      <span style={{...NB,fontSize:9,letterSpacing:'1px',padding:'2px 6px',background:p.type==='in'?'rgba(25,212,123,.15)':'rgba(255,70,85,.15)',color:p.type==='in'?'#4fe3a1':'#ff8a94',fontWeight:700,textTransform:'uppercase',borderRadius:3}}>{p.type==='in'?'IN':'OUT'}</span>
                       {fmtTime(p.time)}
                     </div>
                   )})}
@@ -3691,7 +3718,7 @@ function MyTimeCard({ portalUser, onExit }){
 // ═══════════════════════════════════════════════════════════════════════
 //  TIMEKEEPING MODULE
 // ═══════════════════════════════════════════════════════════════════════
-function TimekeepingModule({ onExit, portalUser }) {
+function TimekeepingModule({ onExit, portalUser, allUsers }) {
   const [tab, setTab] = useState('clock');
   const [mob, setMob] = useState(window.innerWidth < 768);
   const [workers, setWorkers] = useState([]);
@@ -3712,13 +3739,20 @@ function TimekeepingModule({ onExit, portalUser }) {
   const [inviteName, setInviteName] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
   const [payrollWorker, setPayrollWorker] = useState(null);
+  // admin time clock: filter the clock by project and put any portal user on it
+  const [clockProject, setClockProject] = useState('');
+  const [showPickUser, setShowPickUser] = useState(false);
+  const [pickQ, setPickQ] = useState('');
+  const [pickProject, setPickProject] = useState('');
+  const [pickUsers, setPickUsers] = useState(allUsers || []);
+  useEffect(function(){ if (allUsers && allUsers.length) setPickUsers(allUsers); }, [allUsers]);
   const geoWatch = useRef(null);
   const isAdmin = portalUser && (portalUser.role === 'admin' || portalUser.accountType === 'admin');
   const today = new Date().toISOString().slice(0,10);
-  const BB = {fontFamily:"'Bebas Neue',sans-serif"};
+  const BB = {fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700};   // SUNRISE dark skin: condensed display type
   const NB = {fontFamily:"'Barlow Condensed',sans-serif"};
-  const A = '#F97316';
-  const TK_BG='#f5f2ee';const TK_CARD='#ffffff';const TK_TEXT='#1a1a2e';const TK_MID='#666';const TK_DIM='#999';const TK_BORDER='rgba(0,0,0,.08)';
+  const A = '#ff6b18';
+  const TK_BG='transparent';const TK_CARD='#07121e';const TK_TEXT='#f6f3ec';const TK_MID='#aab3c0';const TK_DIM='#717d8d';const TK_BORDER='#2b3949';
 
   useEffect(function(){
     var h = function(){ setMob(window.innerWidth < 768); };
@@ -3931,46 +3965,54 @@ function TimekeepingModule({ onExit, portalUser }) {
 
   function getLocation() {
     return new Promise(function(resolve, reject) {
-      if (!navigator.geolocation) return reject('Geolocation not supported');
-      navigator.geolocation.getCurrentPosition(
+      if (!geoSupported()) return reject('Geolocation not supported');
+      // geo.js uses @capacitor/geolocation in the Android app (runtime permission
+      // prompt, fused provider) and navigator.geolocation on the web.
+      geoGetCurrentPosition(
         function(pos) { resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() }); },
-        function(err) { reject(err.message); },
+        function(err) { reject((err && err.message) || String(err)); },
         { enableHighAccuracy: true, timeout: 15000 }
       );
     });
   }
 
-  function punchIn(workerId) {
+  function recordPunch(workerId, type, loc, meta, track) {
+    var key = workerId + '_' + today;
+    var dayPunches = (punches[key] || []).slice();
+    var p = { type: type, time: new Date().toISOString(), location: loc || null };   // location is null for admin punches
+    if (meta) Object.assign(p, meta);
+    dayPunches.push(p);
+    var next = Object.assign({}, punches);
+    next[key] = dayPunches;
+    savePunches(next);
+    if (track) { if (type === 'in') startTracking(workerId); else stopTracking(workerId); }
+  }
+  function adminMeta(extra) {
+    return Object.assign({ by: 'admin', byId: portalUser && portalUser.id, byName: (portalUser && (portalUser.name || portalUser.email)) || 'admin', projectId: clockProject || null }, extra || {});
+  }
+  function isSelf(w) {
+    return !!(w && portalUser && String(w.email||'').toLowerCase() === String(portalUser.email||'').toLowerCase());
+  }
+  /* Admins can clock anyone in or out from the office without the GPS lock —
+     the punch is stamped with who recorded it and carries no location, and
+     the admin's own device is never tracked on the worker's behalf. Everyone
+     else keeps the hard GPS gate. */
+  function punch(workerId, type) {
+    var w = workers.find(function(x){ return x.id === workerId });
+    if (isAdmin && !isSelf(w)) { recordPunch(workerId, type, null, adminMeta({ noGps: true }), false); return; }
     getLocation().then(function(loc) {
-      var key = workerId + '_' + today;
-      var dayPunches = (punches[key] || []).slice();
-      dayPunches.push({ type: 'in', time: new Date().toISOString(), location: loc });
-      var next = Object.assign({}, punches);
-      next[key] = dayPunches;
-      savePunches(next);
-      startTracking(workerId);
+      recordPunch(workerId, type, loc, isAdmin ? adminMeta() : null, true);
     }).catch(function(err) {
-      alert('GPS required to punch in. Error: ' + err);
+      if (isAdmin) { recordPunch(workerId, type, null, adminMeta({ noGps: true, gpsError: String(err) }), false); return; }
+      alert('GPS required to punch ' + type + '. Error: ' + err);
     });
   }
-
-  function punchOut(workerId) {
-    getLocation().then(function(loc) {
-      var key = workerId + '_' + today;
-      var dayPunches = (punches[key] || []).slice();
-      dayPunches.push({ type: 'out', time: new Date().toISOString(), location: loc });
-      var next = Object.assign({}, punches);
-      next[key] = dayPunches;
-      savePunches(next);
-      stopTracking(workerId);
-    }).catch(function(err) {
-      alert('GPS required to punch out. Error: ' + err);
-    });
-  }
+  function punchIn(workerId) { punch(workerId, 'in'); }
+  function punchOut(workerId) { punch(workerId, 'out'); }
 
   function startTracking(workerId) {
-    if (geoWatch.current) navigator.geolocation.clearWatch(geoWatch.current);
-    geoWatch.current = navigator.geolocation.watchPosition(
+    if (geoWatch.current) geoClearWatch(geoWatch.current);
+    geoWatch.current = geoWatchPosition(
       function(pos) {
         var key = workerId + '_' + today;
         sGet('tk_breadcrumbs').then(function(allB) {
@@ -3987,7 +4029,7 @@ function TimekeepingModule({ onExit, portalUser }) {
   }
 
   function stopTracking() {
-    if (geoWatch.current) { navigator.geolocation.clearWatch(geoWatch.current); geoWatch.current = null; }
+    if (geoWatch.current) { geoClearWatch(geoWatch.current); geoWatch.current = null; }
   }
 
   useEffect(function(){ return function(){ stopTracking(); }; }, []);
@@ -4014,6 +4056,38 @@ function TimekeepingModule({ onExit, portalUser }) {
       total += (Date.now() - new Date(dp[dp.length-1].time).getTime());
     }
     return (total / 3600000).toFixed(2);
+  }
+
+  // every project the clock can be filtered by / assigned to (same merge as the assign modal)
+  var allProjects = fieldProjects.map(function(p){return Object.assign({},p,{source:'Field Manager'})}).concat(eqProjects.map(function(p){return Object.assign({},p,{source:'Equipment Mgr'})}));
+  function workerForEmail(email) {
+    var em = String(email||'').trim().toLowerCase();
+    return em ? workers.find(function(w){ return String(w.email||'').trim().toLowerCase() === em }) : null;
+  }
+  /* Put a portal user on the time clock: reuse their worker record (matched by
+     email, the same contract My Time Card uses) or create one, and optionally
+     assign the chosen project. Returns the worker. */
+  function ensureWorkerForUser(u, proj) {
+    var existing = workerForEmail(u.email);
+    var link = proj && !(existing && (existing.projects||[]).some(function(p){return p.id===proj.id}))
+      ? [{ id: proj.id, name: proj.name, source: proj.source, assignedAt: new Date().toISOString() }] : [];
+    if (existing) {
+      updateWorker(existing.id, { userId: existing.userId || u.id, projects: (existing.projects||[]).concat(link) });
+      return existing;
+    }
+    var w = {
+      id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+      userId: u.id, name: u.name || u.email, email: u.email, phone: u.phone || '', address: '',
+      role: 'Apprentice',
+      directDeposit: { bankName:'', routingNumber:'', accountNumber:'', accountType:'checking' },
+      projects: link, equipment: [], createdAt: new Date().toISOString(), source: 'portal'
+    };
+    saveWorkers(workers.concat([w]));
+    return w;
+  }
+  function openPickUser() {
+    setPickQ(''); setPickProject(clockProject); setShowPickUser(true);
+    if (!(pickUsers && pickUsers.length)) sGet('portal_users').then(function(us){ if (Array.isArray(us)) setPickUsers(us); });
   }
 
   function assignProject(workerId, projectId, projectName, source) {
@@ -4060,69 +4134,65 @@ function TimekeepingModule({ onExit, portalUser }) {
   };
 
   var cardStyle = {
-    background: TK_CARD, border: '1px solid '+TK_BORDER,
-    padding: mob ? 14 : 20, marginBottom: 12, borderRadius: 4, boxShadow:'0 1px 4px rgba(0,0,0,.06)'
+    background: 'linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))', border: '1px solid #e65e20',
+    padding: mob ? 16 : 20, marginBottom: 12, borderRadius: 12
   };
 
   var btnPrimary = {
-    background: A, color: '#fff', border: 'none', padding: '10px 22px', cursor: 'pointer',
-    fontSize: 12, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, borderRadius: 4, ...NB
+    background: 'linear-gradient(135deg,#ff6b18,#ff7a21)', color: '#120a04', border: '1px solid #ff7a21', padding: '10px 18px', cursor: 'pointer',
+    fontSize: 13, letterSpacing: '.12em', textTransform: 'uppercase', fontWeight: 700, borderRadius: 6, minHeight: 44, ...NB
   };
 
   var btnSecondary = {
-    background: 'transparent', color: A, border: '1px solid ' + A, padding: '8px 18px', cursor: 'pointer',
-    fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 600, borderRadius: 4, ...NB
+    background: 'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))', color: TK_TEXT, border: '1px solid #e65e20', padding: '8px 16px', cursor: 'pointer',
+    fontSize: 13, letterSpacing: '.12em', textTransform: 'uppercase', fontWeight: 600, borderRadius: 6, minHeight: 44, ...NB
   };
 
   var inputStyle = {
-    width: '100%', padding: '10px 14px', background: '#fff', border: '1px solid rgba(0,0,0,.15)',
-    color: TK_TEXT, fontSize: 14, borderRadius: 4, outline: 'none', ...NB
+    width: '100%', padding: '12px 14px', background: '#091522', border: '1px solid #e65e20',
+    color: TK_TEXT, fontSize: 16, borderRadius: 6, outline: 'none', minHeight: 48, fontFamily: "'Barlow',sans-serif"
   };
 
-  var labelStyle = { ...NB, fontSize: 10, letterSpacing: '2px', textTransform: 'uppercase', color: A, marginBottom: 4, display: 'block' };
+  var labelStyle = { ...NB, fontSize: 12, letterSpacing: '.2em', textTransform: 'uppercase', color: '#ff7a21', marginBottom: 5, display: 'block', fontWeight: 600 };
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:2000,background:TK_BG,overflow:'auto',color:TK_TEXT}}>
-      <div style={{padding: mob ? '14px 16px' : '16px 32px', borderBottom: '1px solid '+TK_BORDER, background:TK_CARD, display:'flex', alignItems:'center', gap: 14, flexWrap:'wrap', boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
-        <div onClick={onExit} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:6,...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,transition:'opacity .2s'}}
-          onMouseEnter={function(e){e.currentTarget.style.opacity='.7'}} onMouseLeave={function(e){e.currentTarget.style.opacity='1'}}>
-          ← Dashboard
-        </div>
-        <div style={{width:1,height:20,background:TK_BORDER}}/>
-        <div style={{...BB,fontSize: mob ? 18 : 24, letterSpacing: '2px', color: TK_TEXT}}>TIMEKEEPING</div>
-        <div style={{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap'}}>
-          {['clock','roster','gps','payroll','invites','admin'].map(function(t){
-            if (['admin','payroll','invites'].indexOf(t) >= 0 && !isAdmin) return null;
-            var labels = {clock:'Time Clock',roster:'Roster',gps:'GPS Trail',payroll:'Payroll',invites:'Invites',admin:'Manage'};
-            return <button key={t} onClick={function(){setTab(t)}} style={tBarStyle(t)}>{labels[t]}</button>;
-          })}
-        </div>
-      </div>
-
-      <div style={{maxWidth:1200,margin:'0 auto',padding: mob ? '20px 14px' : '32px 32px'}}>
+    <div className="sunrise-admin" style={{position:'fixed',top:mob?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflow:'auto',color:TK_TEXT,paddingBottom:'calc(24px + var(--tabbar-h, 0px))'}}>
+      <SrModuleHeader onBack={onExit} title="Timekeeping" />
+      <div className="sr-content--wide">
+        <SrModuleTabs value={tab} onChange={setTab} items={['clock','roster','gps','payroll','invites','admin'].filter(function(t){return !(['admin','payroll','invites'].indexOf(t) >= 0 && !isAdmin)}).map(function(t){return [t,{clock:'Time Clock',roster:'Roster',gps:'GPS Trail',payroll:'Payroll',invites:'Invites',admin:'Manage'}[t]]})} />
 
         {/* ═══ TIME CLOCK TAB ═══ */}
         {tab === 'clock' && (
           <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
               <div>
-                <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>TIME CLOCK</div>
-                <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px'}}>{new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+                <h2 className="sr-section-title">Time Clock</h2>
+                <div className="sr-section-sub">{new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
               </div>
+              {isAdmin && (
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',width:mob?'100%':'auto'}}>
+                  <select className="sr-select" value={clockProject} onChange={function(e){setClockProject(e.target.value)}} aria-label="Project time clock" style={{flex:mob?1:'none',minWidth:170}}>
+                    <option value="">All projects</option>
+                    {allProjects.map(function(p){return <option key={p.id+p.source} value={p.id}>{p.name}</option>})}
+                  </select>
+                  <button type="button" className="sr-button sr-button--primary" onClick={openPickUser}>+ Add Portal User</button>
+                </div>
+              )}
             </div>
-            {workers.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{fontSize:48,marginBottom:16}}>&#128337;</div>
-                <div style={{...NB,fontSize:16,letterSpacing:'1px'}}>No workers registered yet</div>
-                <div style={{...NB,fontSize:12,color:TK_MID,marginTop:8}}>Go to the Roster tab to add employees</div>
-              </div>
-            ) : (
+            {(function(){
+              var visible = clockProject ? workers.filter(function(w){ return (w.projects||[]).some(function(p){ return p.id === clockProject }) }) : workers;
+              if (workers.length === 0) return <SrEmpty Icon={Clock} title="No workers registered yet" hint={isAdmin ? 'Add a portal user above or go to the Roster tab to add employees' : 'Go to the Roster tab to add employees'} />;
+              if (visible.length === 0) return <SrEmpty Icon={Clock} title="Nobody on this project's clock yet" hint="Use + Add Portal User to assign someone to it" />;
+              return (
               <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
-                {workers.map(function(w) {
+                {visible.map(function(w) {
                   var active = isPunchedIn(w.id);
                   var hours = getTotalHours(w.id);
+                  var dayP = punches[w.id + '_' + today] || [];
+                  var lastP = dayP[dayP.length - 1];
+                  var adminFor = isAdmin && !isSelf(w);
                   return (
-                    <div key={w.id} style={{...cardStyle, borderLeft: '3px solid ' + (active ? '#22c55e' : '#555')}}>
+                    <div key={w.id} className="sr-state-card" data-state={active ? 'clocked-in' : 'off'}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                         <div>
                           <div style={{...BB,fontSize:20,letterSpacing:1}}>{w.name}</div>
@@ -4130,22 +4200,25 @@ function TimekeepingModule({ onExit, portalUser }) {
                           {(w.projects||[]).length > 0 && <div style={{...NB,fontSize:10,color:A,marginTop:4}}>{(w.projects||[]).map(function(p){return p.name}).join(', ')}</div>}
                         </div>
                         <div style={{textAlign:'right'}}>
-                          <div style={{...NB,fontSize:10,letterSpacing:'1px',color: active ? '#22c55e' : '#ef4444',textTransform:'uppercase',fontWeight:700}}>{active ? '● Clocked In' : '○ Off'}</div>
-                          <div style={{...BB,fontSize:24,color:TK_TEXT,marginTop:4}}>{hours}h</div>
+                          <span className={'sr-state-label ' + (active ? 'sr-state-label--on' : 'sr-state-label--off')}>{active ? 'Clocked In' : 'Off'}</span>
+                          <div className="sr-time-dur" style={{fontSize:'1.9rem',marginTop:6,marginLeft:0}}>{hours}H</div>
+                          {lastP && lastP.by === 'admin' && <div className="sr-meta" style={{marginTop:4}}>Punched by {lastP.byName || 'admin'}</div>}
                         </div>
                       </div>
-                      <div style={{display:'flex',gap:8,marginTop:14}}>
+                      <div style={{display:'flex',gap:8}}>
                         {!active ? (
-                          <button onClick={function(){punchIn(w.id)}} style={{...btnPrimary,background:'#22c55e',flex:1}}>&#9654; Clock In</button>
+                          <button onClick={function(){punchIn(w.id)}} className="sr-button sr-clock-action sr-clock-action--in">&#9654; Clock In{adminFor ? ' · Admin' : ''}</button>
                         ) : (
-                          <button onClick={function(){punchOut(w.id)}} style={{...btnPrimary,background:'#ef4444',flex:1}}>&#9632; Clock Out</button>
+                          <button onClick={function(){punchOut(w.id)}} className="sr-button sr-clock-action sr-clock-action--out">&#9632; Clock Out{adminFor ? ' · Admin' : ''}</button>
                         )}
                       </div>
+                      {adminFor && <div className="sr-meta" style={{marginTop:8}}>No GPS lock · recorded as an admin punch</div>}
                     </div>
                   );
                 })}
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -4153,13 +4226,13 @@ function TimekeepingModule({ onExit, portalUser }) {
         {tab === 'roster' && (
           <div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
-              <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>EMPLOYEE ROSTER</div>
-              {isAdmin && <button onClick={function(){setShowAdd(true)}} style={btnPrimary}>+ Add Employee</button>}
+              <h2 className="sr-section-title sr-section-title--bar">Employee Roster</h2>
+              {isAdmin && <button onClick={function(){setShowAdd(true)}} className="sr-button sr-button--primary">+ Add Employee</button>}
             </div>
 
             {showAdd && (
               <div style={{...cardStyle,marginBottom:24,border:'1px solid '+A}}>
-                <div style={{...BB,fontSize:18,letterSpacing:1,marginBottom:16}}>NEW EMPLOYEE</div>
+                <div className="sr-card-title" style={{fontSize:'1.2rem',marginBottom:16}}>New Employee</div>
                 <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : '1fr 1fr',gap:14}}>
                   <div><label style={labelStyle}>Full Name *</label><input value={addForm.name} onChange={function(e){setAddForm(Object.assign({},addForm,{name:e.target.value}))}} style={inputStyle} placeholder="John Smith"/></div>
                   <div><label style={labelStyle}>Email *</label><input value={addForm.email} onChange={function(e){setAddForm(Object.assign({},addForm,{email:e.target.value}))}} style={inputStyle} placeholder="john@company.com" type="email"/></div>
@@ -4193,27 +4266,23 @@ function TimekeepingModule({ onExit, portalUser }) {
             )}
 
             {workers.length === 0 ? (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{...NB,fontSize:14}}>No employees registered. Click "+ Add Employee" to get started.</div>
-              </div>
+              <SrEmpty Icon={Users} title="No employees registered" hint={'Click "+ Add Employee" to get started.'} />
             ) : (
               <div>
                 {workers.map(function(w) {
                   var expanded = selWorker && selWorker.id === w.id;
                   return (
                     <div key={w.id} style={cardStyle}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}} onClick={function(){setSelWorker(expanded ? null : w)}}>
-                        <div style={{display:'flex',alignItems:'center',gap:14}}>
-                          <div style={{width:36,height:36,borderRadius:'50%',background:'rgba(249,115,22,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:A}}>{w.name.charAt(0)}</div>
-                          <div>
-                            <div style={{...BB,fontSize:18,letterSpacing:1}}>{w.name}</div>
-                            <div style={{...NB,fontSize:11,color:TK_MID}}>{w.role} · {w.email}</div>
-                          </div>
+                      <div className="sr-roster-summary" role="button" aria-expanded={!!expanded} onClick={function(){setSelWorker(expanded ? null : w)}}>
+                        <div className="sr-avatar">{w.name.charAt(0)}</div>
+                        <div style={{minWidth:0}}>
+                          <div className="sr-user-name">{w.name}</div>
+                          <div className="sr-meta">{w.role} · {w.email}</div>
                         </div>
-                        <div style={{...NB,fontSize:18,color:TK_MID}}>{expanded ? '▲' : '▼'}</div>
+                        {expanded ? <ChevronUp size={22} color="#aab3c0" /> : <ChevronDown size={22} color="#aab3c0" />}
                       </div>
                       {expanded && (
-                        <div style={{marginTop:16,paddingTop:16,borderTop:'1px solid '+TK_BORDER}}>
+                        <div className="sr-roster-details">
                           <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : '1fr 1fr 1fr',gap:12,marginBottom:16}}>
                             <div><span style={labelStyle}>Phone</span><div style={{...NB,fontSize:14}}>{w.phone || '—'}</div></div>
                             <div><span style={labelStyle}>Email</span><div style={{...NB,fontSize:14}}>{w.email || '—'}</div></div>
@@ -4222,7 +4291,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                           <div style={{marginBottom:14}}>
                             <span style={labelStyle}>Role</span>
                             {isAdmin ? (
-                              <select value={w.role||'Apprentice'} onChange={function(e){e.stopPropagation();var updated=workers.map(function(wk){return wk.id===w.id?Object.assign({},wk,{role:e.target.value}):wk});saveWorkers(updated)}} style={{...NB,fontSize:14,padding:'6px 10px',background:TK_CARD,border:'1px solid '+TK_BORDER,color:TK_TEXT,outline:'none',cursor:'pointer'}}>
+                              <select value={w.role||'Apprentice'} onChange={function(e){e.stopPropagation();var updated=workers.map(function(wk){return wk.id===w.id?Object.assign({},wk,{role:e.target.value}):wk});saveWorkers(updated)}} style={{...inputStyle,width:'auto',minWidth:220,cursor:'pointer'}}>
                                 {ROLES.map(function(r){return <option key={r} value={r}>{r}</option>})}
                               </select>
                             ) : (
@@ -4234,9 +4303,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                             {(w.projects||[]).length === 0 ? <div style={{...NB,fontSize:12,color:TK_DIM}}>None assigned</div> : (
                               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
                                 {(w.projects||[]).map(function(p){return (
-                                  <span key={p.id} style={{...NB,fontSize:11,padding:'4px 10px',background:'rgba(249,115,22,.12)',color:A,borderRadius:3,display:'inline-flex',alignItems:'center',gap:6}}>
-                                    {p.name} <span style={{fontSize:9,color:TK_MID}}>({p.source})</span>
-                                    {isAdmin && <span onClick={function(e){e.stopPropagation();unassignProject(w.id,p.id)}} style={{cursor:'pointer',color:'#ef4444',fontWeight:700}}>✕</span>}
+                                  <span key={p.id} className="sr-chip sr-chip--meta" style={{display:'inline-flex',alignItems:'center',gap:6,color:'#ff7a21',borderColor:'#e65e20'}}>
+                                    {p.name} <span style={{fontSize:'.75rem',color:TK_MID}}>({p.source})</span>
+                                    {isAdmin && <button type="button" className="sr-chip-x" aria-label="Unassign" onClick={function(e){e.stopPropagation();unassignProject(w.id,p.id)}}>✕</button>}
                                   </span>
                                 )})}
                               </div>
@@ -4247,9 +4316,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                             {(w.equipment||[]).length === 0 ? <div style={{...NB,fontSize:12,color:TK_DIM}}>None assigned</div> : (
                               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
                                 {(w.equipment||[]).map(function(eq){return (
-                                  <span key={eq.id} style={{...NB,fontSize:11,padding:'4px 10px',background:'rgba(34,197,94,.12)',color:'#22c55e',borderRadius:3,display:'inline-flex',alignItems:'center',gap:6}}>
+                                  <span key={eq.id} className="sr-chip sr-chip--meta sr-chip--green" style={{display:'inline-flex',alignItems:'center',gap:6}}>
                                     {eq.type} {eq.serial && '('+eq.serial+')'}
-                                    {isAdmin && <span onClick={function(e){e.stopPropagation();unassignEquipment(w.id,eq.id)}} style={{cursor:'pointer',color:'#ef4444',fontWeight:700}}>✕</span>}
+                                    {isAdmin && <button type="button" className="sr-chip-x" aria-label="Unassign" onClick={function(e){e.stopPropagation();unassignEquipment(w.id,eq.id)}}>✕</button>}
                                   </span>
                                 )})}
                               </div>
@@ -4257,9 +4326,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                           </div>
                           {isAdmin && (
                             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('project')}} style={btnSecondary}>Assign Project</button>
-                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('equipment')}} style={{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Assign Equipment</button>
-                              <button onClick={function(){removeWorker(w.id)}} style={{...btnSecondary,color:'#ef4444',borderColor:'#ef4444',marginLeft:'auto'}}>Remove</button>
+                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('project')}} className="sr-button sr-button--assign">Assign Project</button>
+                              <button onClick={function(){setSelWorker(w);setShowAssign(true);setAssignTab('equipment')}} className="sr-button sr-button--success">Assign Equipment</button>
+                              <button onClick={function(){removeWorker(w.id)}} className="sr-button sr-button--danger" style={{marginLeft:'auto'}}>Remove</button>
                             </div>
                           )}
                         </div>
@@ -4275,19 +4344,19 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ GPS TRAIL TAB ═══ */}
         {tab === 'gps' && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>GPS TRAIL</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>View worker location breadcrumbs by day</div>
+            <h2 className="sr-section-title">GPS Trail</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>View worker location breadcrumbs by day</div>
             <div style={{display:'flex',gap:14,marginBottom:20,flexWrap:'wrap',alignItems:'flex-end'}}>
               <div>
                 <label style={labelStyle}>Employee</label>
-                <select value={mapWorker||''} onChange={function(e){setMapWorker(e.target.value)}} style={{...inputStyle,width:220,cursor:'pointer'}}>
+                <select value={mapWorker||''} onChange={function(e){setMapWorker(e.target.value)}} className="sr-select" style={{minWidth:220}}>
                   <option value="">Select worker...</option>
                   {workers.map(function(w){return <option key={w.id} value={w.id}>{w.name}</option>})}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>Date</label>
-                <input type="date" value={mapDate} onChange={function(e){setMapDate(e.target.value)}} style={{...inputStyle,width:180}}/>
+                <input type="date" value={mapDate} onChange={function(e){setMapDate(e.target.value)}} style={{...inputStyle,width:190}}/>
               </div>
             </div>
             {mapWorker ? (function(){
@@ -4299,16 +4368,16 @@ function TimekeepingModule({ onExit, portalUser }) {
                 <div>
                   <div style={{...cardStyle,marginBottom:16}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                      <div style={{...BB,fontSize:20,letterSpacing:1}}>{wName}</div>
-                      <div style={{...NB,fontSize:12,color:A}}>{trail.length} GPS points · {getTotalHours(mapWorker, mapDate)}h worked</div>
+                      <div className="sr-card-title" style={{fontSize:'1.3rem'}}>{wName}</div>
+                      <div className="sr-meta" style={{color:'#ff7a21'}}>{trail.length} GPS points · {getTotalHours(mapWorker, mapDate)}h worked</div>
                     </div>
                     {dayPunches.length > 0 && (
                       <div style={{marginBottom:12}}>
                         <span style={labelStyle}>Punch Log</span>
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {dayPunches.map(function(p, i){
-                            return <span key={i} style={{...NB,fontSize:11,padding:'4px 10px',background: p.type==='in'?'rgba(34,197,94,.12)':'rgba(239,68,68,.12)',color: p.type==='in'?'#22c55e':'#ef4444',borderRadius:3}}>
-                              {p.type==='in'?'▶ IN':'■ OUT'} {new Date(p.time).toLocaleTimeString()} ({p.location.lat.toFixed(4)}, {p.location.lng.toFixed(4)})
+                            return <span key={i} className={'sr-badge ' + (p.type==='in' ? 'sr-badge--ok' : 'sr-badge--bad')} style={{textTransform:'none',letterSpacing:0,fontFamily:"'Barlow',sans-serif",fontSize:'.85rem'}}>
+                              {p.type==='in'?'▶ IN':'■ OUT'} {new Date(p.time).toLocaleTimeString()} {p.location ? '(' + p.location.lat.toFixed(4) + ', ' + p.location.lng.toFixed(4) + ')' : (p.by === 'admin' ? '· admin punch, no GPS' : '· no GPS')}
                             </span>;
                           })}
                         </div>
@@ -4316,31 +4385,29 @@ function TimekeepingModule({ onExit, portalUser }) {
                     )}
                   </div>
                   {trail.length === 0 ? (
-                    <div style={{textAlign:'center',padding:40,color:TK_DIM}}>
-                      <div style={{...NB,fontSize:14}}>No GPS breadcrumbs recorded for this date</div>
-                    </div>
+                    <SrEmpty Icon={MapPin} title="No GPS breadcrumbs recorded for this date" />
                   ) : (
                     <div style={{...cardStyle}}>
                       <span style={labelStyle}>Location Trail</span>
-                      <div style={{maxHeight:400,overflowY:'auto',marginTop:8}}>
-                        <table style={{width:'100%',borderCollapse:'collapse'}}>
+                      <div className="sr-data-scroll" style={{maxHeight:400,overflowY:'auto',marginTop:8}}>
+                        <table className="sr-data-table sr-data-table--compact">
                           <thead>
-                            <tr style={{borderBottom:'1px solid '+TK_BORDER}}>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>#</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>TIME</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>LATITUDE</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>LONGITUDE</th>
-                              <th style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'8px 10px',textAlign:'left'}}>ACCURACY</th>
+                            <tr>
+                              <th>#</th>
+                              <th>Time</th>
+                              <th>Latitude</th>
+                              <th>Longitude</th>
+                              <th>Accuracy</th>
                             </tr>
                           </thead>
                           <tbody>
                             {trail.map(function(pt, i){
-                              return <tr key={i} style={{borderBottom:'1px solid '+TK_BORDER}}>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:TK_MID}}>{i+1}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px'}}>{new Date(pt.ts).toLocaleTimeString()}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:A}}>{pt.lat.toFixed(6)}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:A}}>{pt.lng.toFixed(6)}</td>
-                                <td style={{...NB,fontSize:12,padding:'6px 10px',color:TK_MID}}>±{pt.acc.toFixed(0)}m</td>
+                              return <tr key={i}>
+                                <td className="sr-data-dim">{i+1}</td>
+                                <td>{new Date(pt.ts).toLocaleTimeString()}</td>
+                                <td className="sr-data-accent">{pt.lat.toFixed(6)}</td>
+                                <td className="sr-data-accent">{pt.lng.toFixed(6)}</td>
+                                <td className="sr-data-dim">±{pt.acc.toFixed(0)}m</td>
                               </tr>;
                             })}
                           </tbody>
@@ -4364,10 +4431,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                 </div>
               );
             })() : (
-              <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
-                <div style={{fontSize:48,marginBottom:16}}>&#128205;</div>
-                <div style={{...NB,fontSize:14}}>Select an employee to view their GPS trail</div>
-              </div>
+              <SrEmpty Icon={MapPin} title="Select an employee to view their GPS trail" />
             )}
           </div>
         )}
@@ -4386,30 +4450,30 @@ function TimekeepingModule({ onExit, portalUser }) {
             <div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24,flexWrap:'wrap',gap:12}}>
                 <div>
-                  <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2}}>WEEKLY PAYROLL</div>
-                  <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px'}}>Hours summary by project · Mon–Sun</div>
+                  <h2 className="sr-section-title">Weekly Payroll</h2>
+                  <div className="sr-section-sub">Hours summary by project · Mon–Sun</div>
                 </div>
-                <button onClick={exportWeekly} style={btnPrimary}>↓ Export XLSX</button>
+                <button onClick={exportWeekly} className="sr-button sr-button--primary">↓ Export XLSX</button>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:24}}>
-                <button onClick={function(){setWeekOffset(weekOffset-1)}} style={btnSecondary}>← Prev</button>
-                <div style={{...BB,fontSize:20,letterSpacing:1,minWidth:220,textAlign:'center'}}>{weekLabel}</div>
-                <button onClick={function(){setWeekOffset(weekOffset+1)}} style={{...btnSecondary,opacity:weekOffset>=0?.4:1}} disabled={weekOffset>=0}>Next →</button>
-                {weekOffset!==0 && <button onClick={function(){setWeekOffset(0)}} style={{...NB,fontSize:10,color:A,background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Current Week</button>}
+              <div className="sr-week-nav">
+                <button onClick={function(){setWeekOffset(weekOffset-1)}} className="sr-button sr-button--outline">← Prev</button>
+                <div className="sr-week-label">{weekLabel}</div>
+                <button onClick={function(){setWeekOffset(weekOffset+1)}} className="sr-button sr-button--outline" disabled={weekOffset>=0}>Next →</button>
+                {weekOffset!==0 && <button onClick={function(){setWeekOffset(0)}} className="sr-kicker" style={{background:'none',border:'none',cursor:'pointer',textDecoration:'underline',width:'100%',textAlign:'center'}}>Current Week</button>}
               </div>
 
               {workers.length === 0 ? (
-                <div style={{textAlign:'center',padding:60,color:TK_DIM}}><div style={{...NB,fontSize:14}}>No employees registered</div></div>
+                <SrEmpty Icon={Users} title="No employees registered" />
               ) : (
                 <div>
-                  <div style={{...cardStyle,overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:700}}>
+                  <div className="sr-data-scroll" style={{...cardStyle,padding:mob?'6px 4px':'10px 12px'}}>
+                    <table className="sr-data-table">
                       <thead>
-                        <tr style={{borderBottom:'2px solid '+A}}>
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:A,padding:'10px 12px',textAlign:'left'}}>EMPLOYEE</th>
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:TK_MID,padding:'10px 8px',textAlign:'left'}}>ROLE</th>
-                          {weekDates.map(function(d){return <th key={d} style={{...NB,fontSize:10,letterSpacing:'1px',color:TK_MID,padding:'10px 8px',textAlign:'center'}}>{new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'})}</th>})}
-                          <th style={{...NB,fontSize:10,letterSpacing:'1.5px',color:A,padding:'10px 8px',textAlign:'center',fontWeight:700}}>TOTAL</th>
+                        <tr>
+                          <th className="sr-th-accent">Employee</th>
+                          <th>Role</th>
+                          {weekDates.map(function(d){return <th key={d} className="sr-th-center">{new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'})}</th>})}
+                          <th className="sr-th-accent sr-th-center">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4417,21 +4481,21 @@ function TimekeepingModule({ onExit, portalUser }) {
                           var dailyH = weekDates.map(function(d){return parseFloat(getTotalHours(w.id,d))});
                           var total = dailyH.reduce(function(s,h){return s+h},0);
                           return (
-                            <tr key={w.id} style={{borderBottom:'1px solid '+TK_BORDER,cursor:'pointer',background: payrollWorker===w.id?'rgba(249,115,22,.06)':'transparent'}} onClick={function(){setPayrollWorker(payrollWorker===w.id?null:w.id)}}>
-                              <td style={{...NB,fontSize:13,padding:'10px 12px',fontWeight:600}}>{w.name}</td>
-                              <td style={{...NB,fontSize:12,padding:'10px 8px',color:TK_MID}}>{w.role}</td>
-                              {dailyH.map(function(h,i){return <td key={i} style={{...NB,fontSize:13,padding:'10px 8px',textAlign:'center',color:h>0?TK_TEXT:'#999'}}>{h>0?h.toFixed(2):'—'}</td>})}
-                              <td style={{...BB,fontSize:18,padding:'10px 8px',textAlign:'center',color:total>0?A:'#444'}}>{total.toFixed(2)}</td>
+                            <tr key={w.id} aria-selected={payrollWorker===w.id} style={{cursor:'pointer'}} onClick={function(){setPayrollWorker(payrollWorker===w.id?null:w.id)}}>
+                              <td style={{fontWeight:600}}>{w.name}</td>
+                              <td className="sr-data-dim">{w.role}</td>
+                              {dailyH.map(function(h,i){return <td key={i} className={'sr-td-center' + (h>0?'':' sr-data-dim')}>{h>0?h.toFixed(2):'—'}</td>})}
+                              <td className={'sr-td-center sr-data-strong' + (total>0?' sr-data-accent':' sr-data-dim')}>{total.toFixed(2)}</td>
                             </tr>
                           );
                         })}
-                        <tr style={{borderTop:'2px solid '+A}}>
-                          <td colSpan={2} style={{...BB,fontSize:14,padding:'10px 12px',color:A}}>TOTALS</td>
+                        <tr className="sr-data-total">
+                          <td colSpan={2}>TOTALS</td>
                           {weekDates.map(function(d,di){
                             var dayTotal = workers.reduce(function(s,w){return s+parseFloat(getTotalHours(w.id,d))},0);
-                            return <td key={di} style={{...BB,fontSize:14,padding:'10px 8px',textAlign:'center',color:dayTotal>0?TK_TEXT:'#999'}}>{dayTotal>0?dayTotal.toFixed(2):'—'}</td>;
+                            return <td key={di} className="sr-td-center" style={{color:dayTotal>0?TK_TEXT:TK_DIM}}>{dayTotal>0?dayTotal.toFixed(2):'—'}</td>;
                           })}
-                          <td style={{...BB,fontSize:20,padding:'10px 8px',textAlign:'center',color:A}}>
+                          <td className="sr-td-center" style={{fontSize:'1.2rem'}}>
                             {workers.reduce(function(s,w){return s+parseFloat(getWeeklyHours(w.id,weekDates))},0).toFixed(2)}
                           </td>
                         </tr>
@@ -4444,13 +4508,13 @@ function TimekeepingModule({ onExit, portalUser }) {
                     if(!w) return null;
                     var dd = w.directDeposit || {};
                     return (
-                      <div style={{...cardStyle,marginTop:16,border:'1px solid '+A}}>
+                      <div style={{...cardStyle,marginTop:16}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
                           <div>
-                            <div style={{...BB,fontSize:22,letterSpacing:1}}>{w.name}</div>
-                            <div style={{...NB,fontSize:11,color:TK_MID}}>{w.role} · {w.phone}</div>
+                            <div className="sr-card-title" style={{fontSize:'1.35rem'}}>{w.name}</div>
+                            <div className="sr-meta">{w.role} · {w.phone}</div>
                           </div>
-                          <div style={{...BB,fontSize:28,color:A}}>{getWeeklyHours(w.id,weekDates)}h</div>
+                          <div className="sr-time-dur" style={{fontSize:'1.9rem',color:'#ff7a21'}}>{getWeeklyHours(w.id,weekDates)}H</div>
                         </div>
                         <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid '+TK_BORDER}}>
                           <div style={{...BB,fontSize:14,letterSpacing:1,color:A,marginBottom:10}}>DIRECT DEPOSIT</div>
@@ -4474,7 +4538,7 @@ function TimekeepingModule({ onExit, portalUser }) {
 
                   {projNames.length > 0 && (
                     <div style={{marginTop:24}}>
-                      <div style={{...BB,fontSize:20,letterSpacing:1,marginBottom:14}}>HOURS BY PROJECT</div>
+                      <h3 className="sr-section-title" style={{fontSize:'1.3rem',marginBottom:14}}>Hours by Project</h3>
                       {projNames.map(function(pn){
                         var projWorkers = workers.filter(function(w){
                           return (w.projects||[]).some(function(p){return p.name===pn}) || (pn==='Unassigned' && (w.projects||[]).length===0);
@@ -4490,31 +4554,29 @@ function TimekeepingModule({ onExit, portalUser }) {
                         return (
                           <div key={pn} style={{...cardStyle,marginBottom:10}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                              <div style={{...BB,fontSize:16,letterSpacing:1,color:A}}>{pn}</div>
-                              <div style={{...BB,fontSize:22}}>{projTotal.toFixed(2)}h</div>
+                              <div className="sr-card-title" style={{fontSize:'1.15rem',color:'#ff7a21'}}>{pn}</div>
+                              <div className="sr-time-dur" style={{fontSize:'1.5rem'}}>{projTotal.toFixed(2)}H</div>
                             </div>
                             {trackedHrs > 0 && (
-                              <div style={{marginBottom:10,padding:'10px 14px',background:belowTarget?'rgba(239,68,68,.08)':'rgba(34,197,94,.08)',border:'1px solid '+(belowTarget?'rgba(239,68,68,.25)':'rgba(34,197,94,.25)'),display:'flex',flexDirection:mob?'column':'row',gap:mob?8:20,alignItems:mob?'flex-start':'center',justifyContent:'space-between'}}>
+                              <div className={'sr-ratio-alert' + (belowTarget ? '' : ' sr-ratio-alert--ok')} style={{marginTop:0,marginBottom:10}}>
                                 <div>
-                                  <div style={{...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:belowTarget?'#ef4444':'#22c55e',marginBottom:4}}>APPRENTICE RATIO</div>
+                                  <div className="sr-label" style={{color:'inherit',fontSize:'.72rem',marginBottom:4}}>Apprentice Ratio</div>
                                   <div style={{display:'flex',alignItems:'baseline',gap:8}}>
-                                    <span style={{...BB,fontSize:24,color:belowTarget?'#ef4444':'#22c55e'}}>{(ratio*100).toFixed(1)}%</span>
-                                    <span style={{...NB,fontSize:11,color:TK_MID}}>target: {(target*100)}%</span>
+                                    <span className="sr-ratio-value">{(ratio*100).toFixed(1)}%</span>
+                                    <span className="sr-meta">target: {(target*100)}%</span>
                                   </div>
-                                  <div style={{...NB,fontSize:11,color:TK_MID,marginTop:2}}>Apprentice: {appHrs.toFixed(1)}h · Journeyman: {jourHrs.toFixed(1)}h</div>
+                                  <div className="sr-meta" style={{marginTop:2}}>Apprentice: {appHrs.toFixed(1)}h · Journeyman: {jourHrs.toFixed(1)}h</div>
                                 </div>
                                 {belowTarget && (
-                                  <div style={{...NB,fontSize:12,color:'#ef4444',fontWeight:600,textAlign:mob?'left':'right'}}>
-                                    ⚠ Below 15% — needs ~{deficit}h more apprentice hours
-                                  </div>
+                                  <div className="sr-ratio-note"><AlertTriangle size={16} /> Below 15% — needs ~{deficit}h more apprentice hours</div>
                                 )}
                               </div>
                             )}
                             {projWorkers.map(function(w){
                               var hrs = getWeeklyHours(w.id,weekDates);
-                              return <div key={w.id} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',...NB,fontSize:12}}>
+                              return <div key={w.id} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:'1px solid '+TK_BORDER,fontSize:'.95rem'}}>
                                 <span>{w.name} <span style={{color:TK_MID}}>({w.role})</span></span>
-                                <span style={{color:parseFloat(hrs)>0?TK_TEXT:'#999'}}>{hrs}h</span>
+                                <span style={{color:parseFloat(hrs)>0?TK_TEXT:TK_DIM,fontVariantNumeric:'tabular-nums'}}>{hrs}h</span>
                               </div>;
                             })}
                           </div>
@@ -4531,36 +4593,33 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ INVITES TAB ═══ */}
         {tab === 'invites' && isAdmin && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>PHONE INVITES</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>Invite workers to Timekeeping via phone number</div>
+            <h2 className="sr-section-title">Phone Invites</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>Invite workers to Timekeeping via phone number</div>
 
-            <div style={{...cardStyle,marginBottom:24,border:'1px solid '+A}}>
-              <div style={{...BB,fontSize:16,letterSpacing:1,marginBottom:14}}>SEND INVITE</div>
+            <div style={{...cardStyle,marginBottom:24}}>
+              <div className="sr-card-title" style={{fontSize:'1.2rem',marginBottom:14}}>Send Invite</div>
               <div style={{display:'grid',gridTemplateColumns: mob?'1fr':'1fr 1fr auto',gap:14,alignItems:'flex-end'}}>
                 <div><label style={labelStyle}>Phone Number *</label><input value={invitePhone} onChange={function(e){setInvitePhone(e.target.value)}} style={inputStyle} placeholder="(555) 123-4567" type="tel"/></div>
                 <div><label style={labelStyle}>Name (optional)</label><input value={inviteName} onChange={function(e){setInviteName(e.target.value)}} style={inputStyle} placeholder="Worker name"/></div>
-                <button onClick={sendInvite} style={{...btnPrimary,height:44}}>Send Invite</button>
+                <button onClick={sendInvite} className="sr-button sr-button--primary" style={{minHeight:52}}>Send Invite</button>
               </div>
             </div>
 
             {tkInvites.length === 0 ? (
-              <div style={{textAlign:'center',padding:40,color:TK_DIM}}><div style={{...NB,fontSize:14}}>No invites sent yet</div></div>
+              <SrEmpty Icon={Send} title="No invites sent yet" />
             ) : (
               <div>
-                <div style={{...NB,fontSize:10,letterSpacing:'1.5px',color:TK_MID,marginBottom:10}}>{tkInvites.length} INVITE{tkInvites.length!==1?'S':''} SENT</div>
+                <div className="sr-kicker" style={{marginBottom:10}}>{tkInvites.length} Invite{tkInvites.length!==1?'s':''} sent</div>
                 {tkInvites.map(function(inv){
                   return (
-                    <div key={inv.id} style={{...cardStyle,marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div key={inv.id} className="sr-list-row sr-list-row--stack" style={{borderBottom:'1px solid '+TK_BORDER}}>
                       <div>
-                        <div style={{...NB,fontSize:14,fontWeight:600}}>{inv.phone} {inv.name && <span style={{color:TK_MID}}>· {inv.name}</span>}</div>
-                        <div style={{...NB,fontSize:10,color:TK_MID}}>Sent {new Date(inv.sentAt).toLocaleDateString()} by {inv.sentBy}</div>
+                        <div className="sr-row-title">{inv.phone} {inv.name && <span style={{color:TK_MID,fontWeight:400}}>· {inv.name}</span>}</div>
+                        <div className="sr-meta">Sent {new Date(inv.sentAt).toLocaleDateString()} by {inv.sentBy}</div>
                       </div>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <span style={{...NB,fontSize:10,letterSpacing:'1px',textTransform:'uppercase',padding:'4px 10px',borderRadius:3,
-                          background: inv.status==='accepted'?'rgba(34,197,94,.12)':'rgba(234,179,8,.12)',
-                          color: inv.status==='accepted'?'#22c55e':'#eab308'
-                        }}>{inv.status}</span>
-                        <button onClick={function(){revokeInvite(inv.id)}} style={{...NB,fontSize:10,background:'none',border:'1px solid #ef4444',color:'#ef4444',padding:'4px 10px',borderRadius:3,cursor:'pointer'}}>Revoke</button>
+                      <div className="sr-actions" style={{alignItems:'center'}}>
+                        <SrBadge tone={inv.status==='accepted'?'ok':'warn'}>{inv.status}</SrBadge>
+                        <button onClick={function(){revokeInvite(inv.id)}} className="sr-button sr-button--danger" style={{minHeight:36,padding:'6px 12px',fontSize:'.85rem'}}>Revoke</button>
                       </div>
                     </div>
                   );
@@ -4573,8 +4632,8 @@ function TimekeepingModule({ onExit, portalUser }) {
         {/* ═══ ADMIN / MANAGE TAB ═══ */}
         {tab === 'admin' && isAdmin && (
           <div>
-            <div style={{...BB,fontSize: mob ? 28 : 36,letterSpacing:2,marginBottom:6}}>MANAGE ASSIGNMENTS</div>
-            <div style={{...NB,fontSize:12,color:TK_MID,letterSpacing:'1px',marginBottom:24}}>Assign workers to projects and equipment</div>
+            <h2 className="sr-section-title">Manage Assignments</h2>
+            <div className="sr-section-sub" style={{marginBottom:20}}>Assign workers to projects and equipment</div>
 
             {workers.length === 0 ? (
               <div style={{textAlign:'center',padding:60,color:TK_DIM}}>
@@ -4600,7 +4659,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                       <div style={{...BB,fontSize:18,letterSpacing:1,marginBottom:14,color:A}}>ASSIGN TO {selWorker.name.toUpperCase()}</div>
                       <div style={{display:'flex',gap:8,marginBottom:16}}>
                         <button onClick={function(){setAssignTab('project')}} style={assignTab==='project'?btnPrimary:btnSecondary}>Projects</button>
-                        <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#22c55e'}:{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Equipment</button>
+                        <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#19d47b',borderColor:'#53efaa',color:'#00160a'}:{...btnSecondary,color:'#7cf0bb',borderColor:'#19d47b'}}>Equipment</button>
                       </div>
 
                       {assignTab === 'project' && (
@@ -4610,11 +4669,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                             fieldProjects.map(function(fp){
                               var already = (selWorker.projects||[]).some(function(p){return p.id===fp.id});
                               return (
-                                <div key={fp.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                                <div key={fp.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                   <span style={{...NB,fontSize:13}}>{fp.name}</span>
                                   {already ?
-                                    <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                    <button onClick={function(){assignProject(selWorker.id,fp.id,fp.name,'Field Manager')}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                    <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                    <button onClick={function(){assignProject(selWorker.id,fp.id,fp.name,'Field Manager')}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                   }
                                 </div>
                               );
@@ -4625,11 +4684,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                             eqProjects.map(function(ep){
                               var already = (selWorker.projects||[]).some(function(p){return p.id===ep.id});
                               return (
-                                <div key={ep.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                                <div key={ep.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                   <span style={{...NB,fontSize:13}}>{ep.name}</span>
                                   {already ?
-                                    <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                    <button onClick={function(){assignProject(selWorker.id,ep.id,ep.name,'Equipment Mgr')}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                    <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                    <button onClick={function(){assignProject(selWorker.id,ep.id,ep.name,'Equipment Mgr')}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                   }
                                 </div>
                               );
@@ -4648,11 +4707,11 @@ function TimekeepingModule({ onExit, portalUser }) {
                           {eqForProject.length > 0 && eqForProject.map(function(eq, i){
                             var already = (selWorker.equipment||[]).some(function(e){return e.type===eq.type&&e.serial===(eq.serial||eq.name||'')});
                             return (
-                              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                                 <span style={{...NB,fontSize:13}}>{eq.type || eq.name} {eq.serial ? '('+eq.serial+')' : eq.qty ? '(qty: '+eq.qty+')' : ''}</span>
                                 {already ?
-                                  <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓ Assigned</span> :
-                                  <button onClick={function(){assignEquipment(selWorker.id,eq)}} style={{...NB,fontSize:10,padding:'4px 12px',background:'#22c55e',color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                                  <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓ Assigned</span> :
+                                  <button onClick={function(){assignEquipment(selWorker.id,eq)}} style={{...NB,fontSize:12,padding:'6px 12px',background:'#19d47b',color:'#00160a',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                                 }
                               </div>
                             );
@@ -4675,21 +4734,21 @@ function TimekeepingModule({ onExit, portalUser }) {
 
       {/* ═══ ASSIGN MODAL ═══ */}
       {showAssign && selWorker && (
-        <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowAssign(false)}}>
-          <div style={{background:'#fff',border:'1px solid '+A,borderRadius:6,padding:28,maxWidth:500,width:'100%',maxHeight:'80vh',overflowY:'auto'}} onClick={function(e){e.stopPropagation()}}>
-            <div style={{...BB,fontSize:22,letterSpacing:1,marginBottom:4}}>ASSIGN TO {selWorker.name.toUpperCase()}</div>
+        <div className="sr-modal" onClick={function(){setShowAssign(false)}}>
+          <div className="sr-modal-sheet" style={{maxWidth:500}} onClick={function(e){e.stopPropagation()}}>
+            <div className="sr-card-title" style={{marginBottom:12}}>Assign to {selWorker.name}</div>
             <div style={{display:'flex',gap:8,marginBottom:16}}>
               <button onClick={function(){setAssignTab('project')}} style={assignTab==='project'?btnPrimary:btnSecondary}>Projects</button>
-              <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#22c55e'}:{...btnSecondary,color:'#22c55e',borderColor:'#22c55e'}}>Equipment</button>
+              <button onClick={function(){setAssignTab('equipment')}} style={assignTab==='equipment'?{...btnPrimary,background:'#19d47b',borderColor:'#53efaa',color:'#00160a'}:{...btnSecondary,color:'#7cf0bb',borderColor:'#19d47b'}}>Equipment</button>
             </div>
             {assignTab==='project' && (
               <div>
-                {[...fieldProjects.map(function(p){return Object.assign({},p,{source:'Field Manager'})}),...eqProjects.map(function(p){return Object.assign({},p,{source:'Equipment Mgr'})})].map(function(p){
+                {allProjects.map(function(p){
                   var already = (selWorker.projects||[]).some(function(x){return x.id===p.id});
-                  return <div key={p.id+p.source} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                  return <div key={p.id+p.source} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                     <span style={{...NB,fontSize:13}}>{p.name} <span style={{fontSize:9,color:TK_MID}}>({p.source})</span></span>
-                    {already ? <span style={{...NB,fontSize:10,color:'#22c55e'}}>✓</span> :
-                      <button onClick={function(){assignProject(selWorker.id,p.id,p.name,p.source);setSelWorker(Object.assign({},selWorker,{projects:(selWorker.projects||[]).concat([{id:p.id,name:p.name,source:p.source}])}))}} style={{...NB,fontSize:10,padding:'4px 12px',background:A,color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>}
+                    {already ? <span style={{...NB,fontSize:12,color:'#4fe3a1'}}>✓</span> :
+                      <button onClick={function(){assignProject(selWorker.id,p.id,p.name,p.source);setSelWorker(Object.assign({},selWorker,{projects:(selWorker.projects||[]).concat([{id:p.id,name:p.name,source:p.source}])}))}} style={{...NB,fontSize:12,padding:'6px 12px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>}
                   </div>;
                 })}
               </div>
@@ -4701,9 +4760,9 @@ function TimekeepingModule({ onExit, portalUser }) {
                   {eqProjects.map(function(ep){return <option key={ep.id} value={ep.id}>{ep.name}</option>})}
                 </select>
                 {eqForProject.map(function(eq,i){
-                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(0,0,0,.03)',borderRadius:3}}>
+                  return <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                     <span style={{...NB,fontSize:13}}>{eq.type||eq.name}</span>
-                    <button onClick={function(){assignEquipment(selWorker.id,eq);}} style={{...NB,fontSize:10,padding:'4px 12px',background:'#22c55e',color:'#fff',border:'none',borderRadius:3,cursor:'pointer'}}>Assign</button>
+                    <button onClick={function(){assignEquipment(selWorker.id,eq);}} style={{...NB,fontSize:12,padding:'6px 12px',background:'#19d47b',color:'#00160a',border:'none',borderRadius:4,cursor:'pointer',minHeight:32}}>Assign</button>
                   </div>;
                 })}
               </div>
@@ -4712,6 +4771,47 @@ function TimekeepingModule({ onExit, portalUser }) {
           </div>
         </div>
       )}
+
+      {/* ═══ ADD PORTAL USER TO THE TIME CLOCK (admin) ═══ */}
+      {showPickUser && isAdmin && (function(){
+        var q = pickQ.trim().toLowerCase();
+        var proj = allProjects.find(function(p){ return p.id === pickProject }) || null;
+        var list = (pickUsers || []).filter(function(u){
+          if (!u || !u.email || u.role === 'client') return false;
+          if (!q) return true;
+          return String(u.name||'').toLowerCase().indexOf(q) >= 0 || String(u.email||'').toLowerCase().indexOf(q) >= 0;
+        });
+        return (
+        <div className="sr-modal" onClick={function(){setShowPickUser(false)}}>
+          <div className="sr-modal-sheet" style={{maxWidth:520}} onClick={function(e){e.stopPropagation()}}>
+            <div className="sr-card-title" style={{marginBottom:4}}>Add Portal User to Time Clock</div>
+            <div className="sr-meta" style={{marginBottom:14}}>Anyone with a portal account can be put on a project's clock and punched in or out by an admin without the GPS lock.</div>
+            <input value={pickQ} onChange={function(e){setPickQ(e.target.value)}} placeholder="Search name or email…" className="sr-input" style={{marginBottom:10}}/>
+            <select className="sr-select" value={pickProject} onChange={function(e){setPickProject(e.target.value)}} style={{marginBottom:14,width:'100%'}}>
+              <option value="">No project (roster only)</option>
+              {allProjects.map(function(p){return <option key={p.id+p.source} value={p.id}>{p.name} ({p.source})</option>})}
+            </select>
+            <div style={{maxHeight:'42vh',overflowY:'auto'}}>
+              {list.length === 0 && <div className="sr-meta" style={{padding:'12px 0'}}>{(pickUsers||[]).length ? 'No portal users match.' : 'Loading portal users…'}</div>}
+              {list.map(function(u){
+                var w = workerForEmail(u.email);
+                var onProj = !!(w && proj && (w.projects||[]).some(function(p){ return p.id === proj.id }));
+                var label = !w ? 'Add' : (proj && !onProj ? 'Assign' : null);
+                return <div key={u.id || u.email} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{...NB,fontSize:14,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{u.name || u.email}</div>
+                    <div style={{...NB,fontSize:11,color:TK_MID,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{u.email} · {u.role || 'member'}{w ? ' · on roster' : ''}</div>
+                  </div>
+                  {label ? <button onClick={function(){ensureWorkerForUser(u, proj)}} style={{...NB,fontSize:12,padding:'8px 14px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:36,flexShrink:0}}>{label}</button>
+                    : <span style={{...NB,fontSize:12,color:'#4fe3a1',flexShrink:0}}>{proj ? 'On clock ✓' : 'On roster ✓'}</span>}
+                </div>;
+              })}
+            </div>
+            <button onClick={function(){setShowPickUser(false)}} style={{...btnSecondary,marginTop:16,width:'100%'}}>Close</button>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 }
@@ -4766,7 +4866,7 @@ function StakeholderReports({ onExit }) {
           id: proj.id,
           name: proj.name,
           company: proj.company || '',
-          color: proj.color || '#1565C0',
+          color: proj.color || '#2c7dff',
           fromPreCon: proj.fromPreCon || false,
           systemSizeMW: proj.systemSizeMW || 0,
           location: proj.location || '',
@@ -4801,10 +4901,10 @@ function StakeholderReports({ onExit }) {
 
   if (!data) return null;
 
-  var BB = { fontFamily: "'Bebas Neue',sans-serif" };
+  var BB = { fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700 };
   var NB = { fontFamily: "'Barlow Condensed',sans-serif" };
-  var cardBg = '#ffffff';
-  var borderC = 'rgba(0,0,0,.08)';
+  var cardBg = '#07121e';
+  var borderC = '#2b3949';
 
   var totalRevenue = data.projects.reduce(function(s, p) { return s + p.totalBid; }, 0);
   var totalCost = data.projects.reduce(function(s, p) { return s + p.totalCost; }, 0);
@@ -4835,7 +4935,7 @@ function StakeholderReports({ onExit }) {
     return Math.max(0, Math.min(100, score));
   }
 
-  function healthColor(s) { return s >= 80 ? '#22c55e' : s >= 60 ? '#eab308' : '#ef4444'; }
+  function healthColor(s) { return s >= 80 ? '#19d47b' : s >= 60 ? '#f4d457' : '#ff4655'; }
 
   var tabs = [
     { id: 'overview', label: 'Overview' },
@@ -4846,9 +4946,9 @@ function StakeholderReports({ onExit }) {
 
   function MetricCard({ label, value, sub, color }) {
     return React.createElement('div', { style: { background: cardBg, border: '1px solid ' + borderC, padding: '20px 24px', flex: '1 1 200px', minWidth: 180 } },
-      React.createElement('div', { style: { ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 8 } }, label),
-      React.createElement('div', { style: { ...BB, fontSize: 32, color: color || '#1a1a2e', lineHeight: 1 } }, value),
-      sub ? React.createElement('div', { style: { ...NB, fontSize: 12, color: '#666', marginTop: 6 } }, sub) : null
+      React.createElement('div', { style: { ...NB, fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 8 } }, label),
+      React.createElement('div', { style: { ...BB, fontSize: 32, color: color || '#f6f3ec', lineHeight: 1 } }, value),
+      sub ? React.createElement('div', { style: { ...NB, fontSize: 12, color: '#aab3c0', marginTop: 6 } }, sub) : null
     );
   }
 
@@ -4858,21 +4958,21 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 6 } },
       React.createElement('div', { style: { width: 10, height: 10, borderRadius: '50%', background: healthColor(hs), flexShrink: 0 } }),
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-        React.createElement('div', { style: { ...NB, fontSize: 15, fontWeight: 600, color: '#1a1a2e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, p.company + (p.location ? ' • ' + p.location : '') + (p.systemSizeMW ? ' • ' + p.systemSizeMW + ' MW' : ''))
+        React.createElement('div', { style: { ...NB, fontSize: 15, fontWeight: 600, color: '#f6f3ec', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.name),
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, p.company + (p.location ? ' • ' + p.location : '') + (p.systemSizeMW ? ' • ' + p.systemSizeMW + ' MW' : ''))
       ),
       React.createElement('div', { style: { textAlign: 'right', minWidth: 80 } },
-        React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, fmt$(p.totalBid)),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: p.profitMargin > 15 ? '#22c55e' : p.profitMargin > 8 ? '#eab308' : '#ef4444' } }, p.profitMargin.toFixed(1) + '% margin')
+        React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, fmt$(p.totalBid)),
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: p.profitMargin > 15 ? '#19d47b' : p.profitMargin > 8 ? '#f4d457' : '#ff4655' } }, p.profitMargin.toFixed(1) + '% margin')
       ),
       React.createElement('div', { style: { textAlign: 'center', minWidth: 70 } },
         React.createElement('div', { style: { ...BB, fontSize: 20, color: healthColor(hs) } }, hs),
-        React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666' } }, 'HEALTH')
+        React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0' } }, 'HEALTH')
       ),
-      React.createElement('div', { style: { width: 100, height: 6, background: '#fff', borderRadius: 3, overflow: 'hidden' } },
-        React.createElement('div', { style: { width: pct + '%', height: '100%', background: 'linear-gradient(90deg, #F97316, #EAB308)', borderRadius: 3 } })
+      React.createElement('div', { style: { width: 100, height: 6, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden' } },
+        React.createElement('div', { style: { width: pct + '%', height: '100%', background: 'linear-gradient(90deg, #ff6b18, #f4d457)', borderRadius: 3 } })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666', minWidth: 40, textAlign: 'right' } }, pct + '%')
+      React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0', minWidth: 40, textAlign: 'right' } }, pct + '%')
     );
   }
 
@@ -4881,20 +4981,20 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Active Projects', value: data.projects.length, sub: totalMW.toFixed(1) + ' MW total capacity' }),
-        React.createElement(MetricCard, { label: 'Total Revenue', value: fmt$(totalRevenue), color: '#22c55e', sub: fmt$(totalProfit) + ' projected profit' }),
-        React.createElement(MetricCard, { label: 'Avg Margin', value: avgMargin.toFixed(1) + '%', color: avgMargin > 15 ? '#22c55e' : '#eab308' }),
+        React.createElement(MetricCard, { label: 'Total Revenue', value: fmt$(totalRevenue), color: '#19d47b', sub: fmt$(totalProfit) + ' projected profit' }),
+        React.createElement(MetricCard, { label: 'Avg Margin', value: avgMargin.toFixed(1) + '%', color: avgMargin > 15 ? '#19d47b' : '#f4d457' }),
         React.createElement(MetricCard, { label: 'Man-Hours', value: fmtN(totalMH), sub: fmtN(weekActivity) + ' entries this week' }),
-        React.createElement(MetricCard, { label: 'Site Completion', value: ttk.overall.toFixed(1) + '%', color: '#F97316', sub: ttk.total.toLocaleString() + ' piles · Task Tracker' })
+        React.createElement(MetricCard, { label: 'Site Completion', value: ttk.overall.toFixed(1) + '%', color: '#ff6b18', sub: ttk.total.toLocaleString() + ' piles · Task Tracker' })
       ),
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
-        React.createElement(MetricCard, { label: 'Tasks In Progress', value: allInProgress, color: '#F97316' }),
-        React.createElement(MetricCard, { label: 'Tasks Completed', value: allCompleted, color: '#22c55e' }),
+        React.createElement(MetricCard, { label: 'Tasks In Progress', value: allInProgress, color: '#ff6b18' }),
+        React.createElement(MetricCard, { label: 'Tasks Completed', value: allCompleted, color: '#19d47b' }),
         React.createElement(MetricCard, { label: 'Active Bids', value: data.bids.length, sub: 'in PreCon pipeline' }),
         React.createElement(MetricCard, { label: 'Quarter Activity', value: quarterActivity, sub: 'reports filed this quarter' })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PROJECT HEALTH'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PROJECT HEALTH'),
       data.projects.length === 0
-        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#666', padding: 20 } }, 'No projects yet. Create bids in PreCon or projects in Field Reporting.')
+        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#aab3c0', padding: 20 } }, 'No projects yet. Create bids in PreCon or projects in Field Reporting.')
         : data.projects.map(function(p) { return React.createElement(ProjectRow, { key: p.id, p: p }); })
     );
   }
@@ -4907,8 +5007,8 @@ function StakeholderReports({ onExit }) {
         return React.createElement('div', { key: p.id, style: { background: cardBg, border: '1px solid ' + borderC, padding: 24, marginBottom: 16 } },
           React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 } },
             React.createElement('div', null,
-              React.createElement('div', { style: { ...BB, fontSize: 24, color: '#1a1a2e' } }, p.name),
-              React.createElement('div', { style: { ...NB, fontSize: 12, color: '#666' } }, [p.company, p.location, p.systemSizeMW ? p.systemSizeMW + ' MW' : ''].filter(Boolean).join(' • '))
+              React.createElement('div', { style: { ...BB, fontSize: 24, color: '#f6f3ec' } }, p.name),
+              React.createElement('div', { style: { ...NB, fontSize: 12, color: '#aab3c0' } }, [p.company, p.location, p.systemSizeMW ? p.systemSizeMW + ' MW' : ''].filter(Boolean).join(' • '))
             ),
             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
               React.createElement('div', { style: { width: 12, height: 12, borderRadius: '50%', background: healthColor(hs) } }),
@@ -4916,45 +5016,45 @@ function StakeholderReports({ onExit }) {
             )
           ),
           React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 } },
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Contract'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, fmt$(p.totalBid))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Contract'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, fmt$(p.totalBid))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Profit'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#22c55e' } }, fmt$(p.projectedProfit))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Profit'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#19d47b' } }, fmt$(p.projectedProfit))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Man-Hours'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, fmtN(p.totalManHours))
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Man-Hours'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, fmtN(p.totalManHours))
             ),
-            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(0,0,0,.02)', border: '1px solid rgba(0,0,0,.06)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Duration'),
-              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#1a1a2e' } }, p.workingDays + ' days')
+            React.createElement('div', { style: { padding: '10px 12px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } }, 'Duration'),
+              React.createElement('div', { style: { ...BB, fontSize: 18, color: '#f6f3ec' } }, p.workingDays + ' days')
             )
           ),
           ev ? React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 } },
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'SPI'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.spi || 1) >= 0.95 ? '#22c55e' : '#ef4444' } }, (ev.spi || 1).toFixed(2))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'SPI'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.spi || 1) >= 0.95 ? '#19d47b' : '#ff4655' } }, (ev.spi || 1).toFixed(2))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'CPI'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.cpi || 1) >= 0.95 ? '#22c55e' : '#ef4444' } }, (ev.cpi || 1).toFixed(2))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'CPI'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: (ev.cpi || 1) >= 0.95 ? '#19d47b' : '#ff4655' } }, (ev.cpi || 1).toFixed(2))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'EV'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#1a1a2e' } }, fmt$(ev.ev || 0))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'EV'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#f6f3ec' } }, fmt$(ev.ev || 0))
             ),
-            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(249,115,22,.08)', border: '1px solid rgba(249,115,22,.2)' } },
-              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#F97316', textTransform: 'uppercase' } }, 'EAC'),
-              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#1a1a2e' } }, fmt$(ev.eac || 0))
+            React.createElement('div', { style: { padding: '8px 10px', background: 'rgba(255,107,24,.08)', border: '1px solid rgba(255,107,24,.2)' } },
+              React.createElement('div', { style: { ...NB, fontSize: 9, color: '#ff6b18', textTransform: 'uppercase' } }, 'EAC'),
+              React.createElement('div', { style: { ...BB, fontSize: 16, color: '#f6f3ec' } }, fmt$(ev.eac || 0))
             )
           ) : null,
           React.createElement('div', { style: { display: 'flex', gap: 16, marginTop: 14, ...NB, fontSize: 12 } },
-            React.createElement('span', { style: { color: '#666' } }, p.totalEntries + ' total reports'),
-            React.createElement('span', { style: { color: p.thisWeekEntries > 0 ? '#22c55e' : '#ef4444' } }, p.thisWeekEntries + ' this week'),
-            React.createElement('span', { style: { color: '#666' } }, p.inProgressTasks + ' in-progress / ' + p.completedTasks + ' done')
+            React.createElement('span', { style: { color: '#aab3c0' } }, p.totalEntries + ' total reports'),
+            React.createElement('span', { style: { color: p.thisWeekEntries > 0 ? '#19d47b' : '#ff4655' } }, p.thisWeekEntries + ' this week'),
+            React.createElement('span', { style: { color: '#aab3c0' } }, p.inProgressTasks + ' in-progress / ' + p.completedTasks + ' done')
           )
         );
       })
@@ -4965,13 +5065,13 @@ function StakeholderReports({ onExit }) {
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
         React.createElement(MetricCard, { label: 'Total Pipeline', value: fmt$(totalRevenue + data.bids.reduce(function(s, b) { var r = computeAll(b.params || {}); return s + (r.preBondTotal || 0); }, 0)), color: '#818cf8' }),
-        React.createElement(MetricCard, { label: 'Awarded Revenue', value: fmt$(totalRevenue), color: '#22c55e' }),
-        React.createElement(MetricCard, { label: 'Total Costs', value: fmt$(totalCost), color: '#ef4444' }),
-        React.createElement(MetricCard, { label: 'Net Profit', value: fmt$(totalProfit), color: totalProfit > 0 ? '#22c55e' : '#ef4444' })
+        React.createElement(MetricCard, { label: 'Awarded Revenue', value: fmt$(totalRevenue), color: '#19d47b' }),
+        React.createElement(MetricCard, { label: 'Total Costs', value: fmt$(totalCost), color: '#ff4655' }),
+        React.createElement(MetricCard, { label: 'Net Profit', value: fmt$(totalProfit), color: totalProfit > 0 ? '#19d47b' : '#ff4655' })
       ),
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PROJECT FINANCIALS'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PROJECT FINANCIALS'),
       React.createElement('div', { style: { background: cardBg, border: '1px solid ' + borderC, overflow: 'hidden' } },
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '10px 16px', background: 'rgba(255,255,255,.03)', borderBottom: '1px solid ' + borderC, ...NB, fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '1px' } },
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '10px 16px', background: 'rgba(255,255,255,.03)', borderBottom: '1px solid ' + borderC, ...NB, fontSize: 10, color: '#aab3c0', textTransform: 'uppercase', letterSpacing: '1px' } },
           React.createElement('div', null, 'Project'),
           React.createElement('div', { style: { textAlign: 'right' } }, 'Revenue'),
           React.createElement('div', { style: { textAlign: 'right' } }, 'Cost'),
@@ -4980,30 +5080,30 @@ function StakeholderReports({ onExit }) {
         ),
         data.projects.map(function(p) {
           return React.createElement('div', { key: p.id, style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', borderBottom: '1px solid ' + borderC } },
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', textAlign: 'right' } }, fmt$(p.totalBid)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#ef4444', textAlign: 'right' } }, fmt$(p.totalCost)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#22c55e', textAlign: 'right' } }, fmt$(p.projectedProfit)),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: p.profitMargin > 15 ? '#22c55e' : '#eab308', textAlign: 'right' } }, p.profitMargin.toFixed(1) + '%')
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', textAlign: 'right' } }, fmt$(p.totalBid)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#ff4655', textAlign: 'right' } }, fmt$(p.totalCost)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#19d47b', textAlign: 'right' } }, fmt$(p.projectedProfit)),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: p.profitMargin > 15 ? '#19d47b' : '#f4d457', textAlign: 'right' } }, p.profitMargin.toFixed(1) + '%')
           );
         }),
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', background: 'rgba(249,115,22,.05)', ...NB, fontSize: 13, fontWeight: 700 } },
-          React.createElement('div', { style: { color: '#F97316' } }, 'TOTAL'),
-          React.createElement('div', { style: { textAlign: 'right', color: '#1a1a2e' } }, fmt$(totalRevenue)),
-          React.createElement('div', { style: { textAlign: 'right', color: '#ef4444' } }, fmt$(totalCost)),
-          React.createElement('div', { style: { textAlign: 'right', color: '#22c55e' } }, fmt$(totalProfit)),
-          React.createElement('div', { style: { textAlign: 'right', color: avgMargin > 15 ? '#22c55e' : '#eab308' } }, avgMargin.toFixed(1) + '%')
+        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 16px', background: 'rgba(255,107,24,.05)', ...NB, fontSize: 13, fontWeight: 700 } },
+          React.createElement('div', { style: { color: '#ff6b18' } }, 'TOTAL'),
+          React.createElement('div', { style: { textAlign: 'right', color: '#f6f3ec' } }, fmt$(totalRevenue)),
+          React.createElement('div', { style: { textAlign: 'right', color: '#ff4655' } }, fmt$(totalCost)),
+          React.createElement('div', { style: { textAlign: 'right', color: '#19d47b' } }, fmt$(totalProfit)),
+          React.createElement('div', { style: { textAlign: 'right', color: avgMargin > 15 ? '#19d47b' : '#f4d457' } }, avgMargin.toFixed(1) + '%')
         )
       ),
       data.bids.length > 0 ? React.createElement('div', { style: { marginTop: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'PIPELINE — ACTIVE BIDS'),
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'PIPELINE — ACTIVE BIDS'),
         data.bids.map(function(b) {
           var p = b.params || {};
           var r = computeAll(p);
           return React.createElement('div', { key: b.id, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 4 } },
             React.createElement('div', null,
-              React.createElement('div', { style: { ...NB, fontSize: 14, color: '#1a1a2e' } }, p.projectName || 'Untitled'),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, [p.clientName, p.systemSizeMW ? p.systemSizeMW + ' MW' : '', p.status || 'Draft'].filter(Boolean).join(' • '))
+              React.createElement('div', { style: { ...NB, fontSize: 14, color: '#f6f3ec' } }, p.projectName || 'Untitled'),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, [p.clientName, p.systemSizeMW ? p.systemSizeMW + ' MW' : '', p.status || 'Draft'].filter(Boolean).join(' • '))
             ),
             React.createElement('div', { style: { ...BB, fontSize: 18, color: '#818cf8' } }, fmt$(r.preBondTotal || 0))
           );
@@ -5044,54 +5144,54 @@ function StakeholderReports({ onExit }) {
 
     return React.createElement('div', null,
       React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 } },
-        React.createElement(MetricCard, { label: 'Active Tasks', value: active.length, color: '#F97316' }),
-        React.createElement(MetricCard, { label: 'Completed', value: done.length, color: '#22c55e' }),
-        React.createElement(MetricCard, { label: 'Stale (5+ days)', value: stale.length, color: stale.length > 0 ? '#ef4444' : '#22c55e' }),
+        React.createElement(MetricCard, { label: 'Active Tasks', value: active.length, color: '#ff6b18' }),
+        React.createElement(MetricCard, { label: 'Completed', value: done.length, color: '#19d47b' }),
+        React.createElement(MetricCard, { label: 'Stale (5+ days)', value: stale.length, color: stale.length > 0 ? '#ff4655' : '#19d47b' }),
         React.createElement(MetricCard, { label: 'Week Reports', value: weekActivity })
       ),
       stale.length > 0 ? React.createElement('div', { style: { marginBottom: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ef4444', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } },
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff4655', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 } },
           React.createElement(AlertTriangle, { size: 14 }), 'ENGAGEMENT ALERTS — NO ACTIVITY 5+ DAYS'
         ),
         stale.map(function(t, i) {
-          return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'rgba(239,68,68,.06)', border: '1px solid rgba(239,68,68,.2)', marginBottom: 4 } },
-            React.createElement('div', { style: { width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 2s infinite' } }),
+          return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'rgba(255,70,85,.06)', border: '1px solid rgba(255,70,85,.2)', marginBottom: 4 } },
+            React.createElement('div', { style: { width: 8, height: 8, borderRadius: '50%', background: '#ff4655', animation: 'pulse 2s infinite' } }),
             React.createElement('div', { style: { flex: 1 } },
-              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, t.task),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project)
+              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, t.task),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project)
             ),
-            React.createElement('div', { style: { ...NB, fontSize: 12, color: '#ef4444' } }, t.daysSince + ' days idle'),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.pct + '% complete')
+            React.createElement('div', { style: { ...NB, fontSize: 12, color: '#ff4655' } }, t.daysSince + ' days idle'),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.pct + '% complete')
           );
         })
       ) : null,
-      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#666', marginBottom: 12 } }, 'ALL IN-PROGRESS TASKS'),
+      React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#aab3c0', marginBottom: 12 } }, 'ALL IN-PROGRESS TASKS'),
       active.length === 0
-        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#666', padding: 20 } }, 'No tasks currently in progress.')
+        ? React.createElement('div', { style: { ...NB, fontSize: 14, color: '#aab3c0', padding: 20 } }, 'No tasks currently in progress.')
         : active.map(function(t, i) {
           return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 4 } },
-            React.createElement('div', { style: { width: 4, height: 28, background: t.taskColor || '#F97316', borderRadius: 2 } }),
+            React.createElement('div', { style: { width: 4, height: 28, background: t.taskColor || '#ff6b18', borderRadius: 2 } }),
             React.createElement('div', { style: { flex: 1, minWidth: 0 } },
-              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e' } }, t.task),
-              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project)
+              React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec' } }, t.task),
+              React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project)
             ),
-            React.createElement('div', { style: { width: 80, height: 5, background: '#fff', borderRadius: 3, overflow: 'hidden' } },
-              React.createElement('div', { style: { width: t.pct + '%', height: '100%', background: t.taskColor || '#F97316', borderRadius: 3 } })
+            React.createElement('div', { style: { width: 80, height: 5, background: 'rgba(255,255,255,.12)', borderRadius: 3, overflow: 'hidden' } },
+              React.createElement('div', { style: { width: t.pct + '%', height: '100%', background: t.taskColor || '#ff6b18', borderRadius: 3 } })
             ),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666', minWidth: 55, textAlign: 'right' } }, t.pct + '% • ' + Math.round(t.worked) + 'h'),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0', minWidth: 55, textAlign: 'right' } }, t.pct + '% • ' + Math.round(t.worked) + 'h'),
             t.weekEntries === 0 && t.daysSince !== null && t.daysSince >= 3
-              ? React.createElement(AlertTriangle, { size: 12, color: '#eab308', style: { flexShrink: 0 } })
+              ? React.createElement(AlertTriangle, { size: 12, color: '#f4d457', style: { flexShrink: 0 } })
               : null
           );
         }),
       done.length > 0 ? React.createElement('div', { style: { marginTop: 28 } },
-        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#22c55e', marginBottom: 12 } }, 'COMPLETED THIS QUARTER (' + done.length + ')'),
+        React.createElement('div', { style: { ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#19d47b', marginBottom: 12 } }, 'COMPLETED THIS QUARTER (' + done.length + ')'),
         done.slice(0, 20).map(function(t, i) {
           return React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: cardBg, border: '1px solid ' + borderC, marginBottom: 3, opacity: 0.7 } },
-            React.createElement(Check, { size: 14, color: '#22c55e' }),
-            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#1a1a2e', flex: 1 } }, t.task),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, t.project),
-            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#22c55e' } }, Math.round(t.worked) + 'h')
+            React.createElement(Check, { size: 14, color: '#19d47b' }),
+            React.createElement('div', { style: { ...NB, fontSize: 13, color: '#f6f3ec', flex: 1 } }, t.task),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, t.project),
+            React.createElement('div', { style: { ...NB, fontSize: 11, color: '#19d47b' } }, Math.round(t.worked) + 'h')
           );
         })
       ) : null
@@ -5104,19 +5204,19 @@ function StakeholderReports({ onExit }) {
   else if (tab === 'financial') content = React.createElement(FinancialTab, null);
   else content = React.createElement(ActivityTab, null);
 
-  return React.createElement('div', { style: { position: 'fixed', inset: 0, zIndex: 2000, background: '#f5f2ee', overflow: 'auto', fontFamily: "'Barlow',sans-serif" } },
-    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px clamp(14px,4vw,32px) 60px' } },
+  return React.createElement('div', { className: 'sunrise-admin', style: { position: 'fixed', top: (typeof window !== 'undefined' && window.innerWidth < 768) ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 0, zIndex: 2000, overflow: 'auto', fontFamily: "'Barlow',sans-serif" } },
+    React.createElement('div', { style: { maxWidth: 1400, margin: '0 auto', padding: '24px clamp(14px,4vw,32px) calc(60px + var(--tabbar-h, 0px))' } },
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 32 } },
         React.createElement('div', null,
-          React.createElement('div', { onClick: onExit, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#F97316', marginBottom: 12, transition: 'opacity .2s' }, onMouseEnter: function(e){e.currentTarget.style.opacity='.7'}, onMouseLeave: function(e){e.currentTarget.style.opacity='1'} }, '← Back to Dashboard'),
-          React.createElement('div', { style: { ...BB, fontSize: 'clamp(32px,5vw,52px)', letterSpacing: 2, color: '#1a1a2e', lineHeight: 1 } }, 'STAKEHOLDER REPORTS')
+          React.createElement('div', { onClick: onExit, style: { cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: '#ff6b18', marginBottom: 12, transition: 'opacity .2s' }, onMouseEnter: function(e){e.currentTarget.style.opacity='.7'}, onMouseLeave: function(e){e.currentTarget.style.opacity='1'} }, '← Back to Dashboard'),
+          React.createElement('div', { style: { ...BB, fontSize: 'clamp(32px,5vw,52px)', letterSpacing: 2, color: '#f6f3ec', lineHeight: 1 } }, 'STAKEHOLDER REPORTS')
         ),
-        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#666' } }, 'Last refreshed: ' + new Date().toLocaleTimeString())
+        React.createElement('div', { style: { ...NB, fontSize: 11, color: '#aab3c0' } }, 'Last refreshed: ' + new Date().toLocaleTimeString())
       ),
       React.createElement('div', { style: { display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid ' + borderC, overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
         tabs.map(function(t) {
           var active = t.id === tab;
-          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 20px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#F97316' : '#888', borderBottom: active ? '2px solid #F97316' : '2px solid transparent', transition: 'all .2s' } }, t.label);
+          return React.createElement('div', { key: t.id, onClick: function() { setTab(t.id); }, style: { padding: '12px 20px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, ...NB, fontSize: 13, letterSpacing: '1.5px', textTransform: 'uppercase', color: active ? '#ff6b18' : '#aab3c0', borderBottom: active ? '2px solid #ff6b18' : '2px solid transparent', transition: 'all .2s' } }, t.label);
         })
       ),
       content
@@ -5130,9 +5230,14 @@ export default function App(){
   const[prog,setProg]=useState(0)
   const[scrollY,setScrollY]=useState(0)
   const[totalH,setTotalH]=useState(4000)
-  const[mob,setMob]=useState(typeof window!=='undefined'?window.innerWidth<768:false)
-  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}return 'landing'})
-  const[user,setUser]=useState(null)
+  // The Android shell is always "mobile", whatever the screen width.
+  const[mob,setMob]=useState(isNative||(typeof window!=='undefined'?window.innerWidth<768:false))
+  // A saved session (see src/native/session.js) skips the landing page on
+  // reload / app launch. URL-driven entry points still win.
+  const[user,setUser]=useState(function(){return loadSession()})
+  // The Android app is the employee portal, not the marketing site: with no
+  // saved session it opens straight on the login page.
+  const[page,setPage]=useState(function(){try{var f=new URLSearchParams(window.location.search).get('form');if(f==='employee')return 'employeeform';if(f==='admin')return 'employeeadmin'}catch(e){}var s=loadSession();return s?homePageFor(s):(isNative?'login':'landing')})
   const[lang,setLangState]=useState(function(){try{var v=localStorage.getItem('site-lang');return v==='en'||v==='es'?v:null}catch(e){return null}})
   function setLang(L){setLangState(L);try{localStorage.setItem('site-lang',L)}catch(e){}}
   const T=function(k){return tt(k,lang||'en')}
@@ -5152,7 +5257,7 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
   const[invMsg,setInvMsg]=useState(null)
   const[assignUser,setAssignUser]=useState(null)
   const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
@@ -5177,7 +5282,7 @@ export default function App(){
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
@@ -5186,6 +5291,40 @@ export default function App(){
       // a signing link stands on its own — no account, no landing page
       var signTok=params.get('sign');if(signTok){setSignToken(signTok)}}catch(e3){}sGet('portal_site').then(function(s){if(s)setSiteSettings(function(prev){return Object.assign({},prev,s)})})
     try{fetch('/.netlify/functions/pileplan?registry=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&Array.isArray(j.projects)&&j.projects.length)setProjOpts(j.projects)}).catch(function(){})}catch(e4){}
+  },[])
+
+  // Keep the signed-in user across reloads and app launches. One effect
+  // covers every sign-in/sign-out path (login, invite signup, password change,
+  // the four sign-out buttons) instead of touching each call site.
+  useEffect(function(){
+    if(user){saveSession(user);window.__auditUser={name:user.name,email:user.email,role:user.role}}
+    else clearSession()
+  },[user])
+
+  // A restored session is only trusted until the live user list arrives —
+  // if the account was removed or its role/tools changed, follow the server.
+  useEffect(function(){
+    if(!user||!portalUsers||!portalUsers.length)return
+    var fresh=portalUsers.find(function(x){return nEmail(x.email)===nEmail(user.email)})
+    if(!fresh){setUser(null);setPage('landing');return}
+    if(fresh.passwordHash!==user.passwordHash||fresh.role!==user.role||JSON.stringify(fresh.tools||[])!==JSON.stringify(user.tools||[])||fresh.onboardingComplete!==user.onboardingComplete){setUser(fresh)}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[portalUsers])
+
+  // Deep links delivered by the Android shell (intent → appUrlOpen) carry the
+  // same ?invite= / ?sign= / ?form= query the web app already understands.
+  useEffect(function(){
+    if(!isNative)return
+    function onLink(e){
+      try{
+        var p=new URLSearchParams((e.detail&&e.detail.search)||'')
+        var inv=p.get('invite');if(inv){window._pendingInvite=inv;setLoginErr('You have an invitation! Set a password below to create your account.');setPage('login');return}
+        var st=p.get('sign');if(st){setSignToken(st);return}
+        var f=p.get('form');if(f==='employee'){setPage('employeeform');return}if(f==='admin'){setPage('employeeadmin')}
+      }catch(err){}
+    }
+    window.addEventListener('native:deeplink',onLink)
+    return function(){window.removeEventListener('native:deeplink',onLink)}
   },[])
 
   // Stamp every write so the server can pick the newest copy of each account
@@ -5221,6 +5360,8 @@ export default function App(){
   function finishLogin(u){
     window.__auditUser={name:u.name,email:u.email,role:u.role};logAudit({type:'login',detail:'Signed in'})
     setUser(u);setPage(u.role==='client'?'client':(u.onboardingRequired&&!u.onboardingComplete?'onboarding':'dashboard'))
+    // Android app: offer fingerprint / face unlock once, after the first password sign-in.
+    if(isNative)setTimeout(function(){offerBiometricUnlock().catch(function(){})},600)
   }
 
   function openChangePw(){setPwOld('');setPwNew('');setPwConf('');setPwMsg('');setShowPw(true)}
@@ -5287,16 +5428,16 @@ export default function App(){
     svInv(invites.filter(function(x){return nEmail(x.email)!==iem}).concat([inv]))
     logAudit({type:'action',tool:'admin',detail:'Sent '+invForm.role+' invite to '+iem})
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:inv.role,tools:tools,assignedProjects:assignedProjects,taskScope:taskScope,invitedBy:inv.invitedBy}))
-    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var link=publicUrl('/?invite='+token)
     var subj=isClient?'Sunrise Construction — Project Portal Invitation':'SRC&D Employee Portal Invitation'
     var bodyTxt=isClient?('You have been invited to view your project on the Sunrise Construction client portal.\n\nClick to set your password and view live progress:\n'+link):('You have been invited to the SRC&D Employee Portal.\n\nClick to join:\n'+link)
     var w=null
-    try{w=window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')}catch(e){}
+    try{w=openExternal('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(inv.email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')}catch(e){}
     // Popup blockers are common here — always hand back the link so the invite
     // can be sent by other means.
     if(!w)setInvMsg({k:'err',t:'Invite saved, but the Gmail window was blocked by your browser. Copy the link below and send it yourself.',link:link})
     else setInvMsg({k:'ok',t:'Invite created for '+iem+' — a Gmail compose window has opened.',link:link})
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+    setInvForm({name:'',email:'',role:'member',tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
   }
 
   function sendOnboardingInvite(applicant){
@@ -5307,10 +5448,10 @@ export default function App(){
     var inv={id:uid(),name:applicant.name||'',email:email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,createdAt:new Date().toISOString(),invitedBy:user?user.name:'Admin',used:false}
     svInv(invites.concat([inv]))
     var token=btoa(JSON.stringify({name:inv.name,email:inv.email,role:'member',tools:[],assignedProjects:[],taskScope:{},onboardingRequired:true,invitedBy:inv.invitedBy}))
-    var link=window.location.origin+window.location.pathname+'?invite='+token
+    var link=publicUrl('/?invite='+token)
     var subj='Welcome to Sunrise Construction & Development — Complete Your Onboarding'
     var bodyTxt='Welcome to the team, '+(inv.name||'')+'!\n\nClick the link below to set your password and complete your onboarding (upload Social Security card, government ID, and sign the employee handbook):\n\n'+link+'\n\n— SRC&D'
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
+    openExternal('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(subj)+'&body='+encodeURIComponent(bodyTxt),'_blank')
     logAudit({type:'action',tool:'admin',detail:'Sent onboarding invite to '+email})
     return true
   }
@@ -5326,33 +5467,33 @@ export default function App(){
   }
   function renderAssignEditor(val,onChange){
     var ap=val.assignedProjects||[];var ts=val.taskScope||{}
-    if(!projOpts.length){return <div style={{...NB,fontSize:12,color:'#999'}}>No projects yet. Create one in the Task Tracker first.</div>}
+    if(!projOpts.length){return <div className="sr-note">No projects yet. Create one in the Task Tracker first.</div>}
     return projOpts.map(function(p){
       var on=ap.indexOf(p.id)>=0
       var scope=ts[p.id]!==undefined?ts[p.id]:TASK_DEFS.map(function(t){return t.id})
       return (
-        <div key={p.id} style={{border:'1px solid '+(on?'rgba(249,115,22,.4)':'rgba(0,0,0,.12)'),padding:'10px 12px',marginBottom:8,background:on?'rgba(249,115,22,.05)':'transparent'}}>
+        <div key={p.id} className={'sr-check-card'+(on?' sr-check-card--on':'')}>
           <div onClick={function(){
             var nap=on?ap.filter(function(x){return x!==p.id}):ap.concat([p.id])
             var nts=Object.assign({},ts)
             if(on){delete nts[p.id]}else if(nts[p.id]===undefined){nts[p.id]=TASK_DEFS.map(function(t){return t.id})}
             onChange({assignedProjects:nap,taskScope:nts})
-          }} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-            <span style={{width:16,height:16,border:'1px solid '+(on?A:'rgba(0,0,0,.3)'),background:on?A:'transparent',display:'inline-block',flexShrink:0}}/>
-            <span style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{p.name||'Project'}</span>
+          }} className="sr-check-row" role="checkbox" aria-checked={on} tabIndex={0}>
+            <span className={'sr-check'+(on?' sr-check--on':'')} aria-hidden="true">{on&&<Check size={14} strokeWidth={3}/>}</span>
+            <span className="sr-check-label">{p.name||'Project'}</span>
           </div>
-          {on&&<div style={{marginTop:8,paddingLeft:24}}>
-            <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#999',marginBottom:5}}>Tasks they can update</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          {on&&<div className="sr-check-body">
+            <div className="sr-label" style={{fontSize:'.7rem',marginBottom:6}}>Tasks they can update</div>
+            <div className="sr-chip-row sr-chip-row--tight">
               {TASK_DEFS.map(function(t){
                 var to=scope.indexOf(t.id)>=0
-                return <div key={t.id} onClick={function(){
+                return <SrChip key={t.id} meta on={to} onClick={function(){
                   var ns=to?scope.filter(function(x){return x!==t.id}):scope.concat([t.id])
                   var nts=Object.assign({},ts);nts[p.id]=ns;onChange({assignedProjects:ap,taskScope:nts})
-                }} style={{padding:'4px 10px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:to?'rgba(249,115,22,.15)':'transparent',color:to?A:'#666',border:'1px solid '+(to?A:'rgba(0,0,0,.15)')}}>{t.label}</div>
+                }}>{t.label}</SrChip>
               })}
             </div>
-            {scope.length===0&&<div style={{...NB,fontSize:11,color:'#dc2626',marginTop:5}}>No tasks selected — view only on this project.</div>}
+            {scope.length===0&&<div className="sr-note sr-note--danger" style={{marginTop:6}}>No tasks selected — view only on this project.</div>}
           </div>}
         </div>
       )
@@ -5381,16 +5522,65 @@ export default function App(){
   var userTools=user&&user.tools?user.tools:[]
   function hasTool(t){return isPortalAdmin||userTools.indexOf(t)>=0}
 
-  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',loads:'Loads Admin'}
+  // `precon` is the historical grant key; it now opens the Bid Estimator (PreCon Controls is retired from the app).
+  var TOOL_LABELS={equipment:'Equipment Manager',precon:'Bid Estimator',compliance:'Compliance Center',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',loads:'Loads Admin'}
 
   const boxRef=useRef()
 
   // ── audit context + time/session tracking ──
   useEffect(function(){window.__auditUser=user?{name:user.name,email:user.email,role:user.role}:null},[user])
   useEffect(function(){window.__auditTool=page},[page])
+
+  // Back stack: browser back / Android hardware back pops to the previous
+  // page instead of leaving the app. Root pages (landing, dashboard, client,
+  // login) let the shell minimize the app.
+  useNavStack(page,setPage,user?'dashboard':'landing')
+
+  // Biometric gate (Android app only): a saved session opens behind a
+  // fingerprint / face prompt when the user has opted in, and re-locks after
+  // the app sits in the background for a while.
+  const[locked,setLocked]=useState(function(){return isNative&&!!loadSession()&&biometricEnabled()})
+  // launch intro clip (app only, once per cold start); overlays whatever the app opens on
+  const[intro,setIntro]=useState(introPending)
+  useEffect(function(){
+    if(!isNative)return
+    var hiddenAt=0
+    function onVis(){
+      if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
+      if(hiddenAt&&Date.now()-hiddenAt>RELOCK_AFTER_MS&&user&&biometricEnabled())setLocked(true)
+      hiddenAt=0
+    }
+    document.addEventListener('visibilitychange',onVis)
+    return function(){document.removeEventListener('visibilitychange',onVis)}
+  },[user])
+
+  // Bottom tab bar shows on phone widths (and always in the Android shell)
+  // for signed-in users on pages that don't carry their own bottom chrome.
+  var showTabBar=!!(mob&&user&&user.role!=='client'&&TABBAR_PAGES.has(page))
+  useEffect(function(){
+    var el=document.documentElement
+    if(showTabBar)el.classList.add('has-tabbar');else el.classList.remove('has-tabbar')
+    return function(){el.classList.remove('has-tabbar')}
+  },[showTabBar])
+
+  // Dashboard tiles, filtered by the user's tool grants. Shared by the tile
+  // grid and the mobile tab bar's "More" sheet.
+  var dashTiles=[
+    {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
+    {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
+    {key:'precon',   label:'Bid Estimator',        icon:'B', desc:'Scenario bid estimating: cost build-up, schedule, SOV & weekly cash flow'},
+    {key:'compliance',label:'Compliance Center',   icon:'C', desc:'ISNet, licensing & regulatory docs'},
+    {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
+    {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
+    {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
+    {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
+    {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
+    {key:'projecttracker', label:'Project Tracker',  icon:'P', desc:'Daily calendar for tasks, issues & action items — open items roll forward; branded PDF & Excel exports', always:true},
+    {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
+  ].filter(function(tile){return tile.always||hasTool(tile.key)})
   const toolStartRef=useRef(null)
   useEffect(function(){
-    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
+    var TOOLS={equipment:1,precon:1,compliance:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
     var prev=toolStartRef.current
     if(prev&&prev.tool!==page){logAudit({type:'tool_exit',tool:prev.tool,label:TOOL_LABELS[prev.tool]||prev.tool,detail:'Left '+(TOOL_LABELS[prev.tool]||prev.tool),durMs:Date.now()-prev.ts});toolStartRef.current=null}
     if(user&&TOOLS[page]&&!toolStartRef.current){toolStartRef.current={tool:page,ts:Date.now()};logAudit({type:'tool_enter',tool:page,label:TOOL_LABELS[page]||page,detail:'Opened '+(TOOL_LABELS[page]||page)})}
@@ -5416,16 +5606,11 @@ export default function App(){
   },[adminTab,user])
 
   useEffect(()=>{
-    const onResize=()=>setMob(window.innerWidth<768)
+    const onResize=()=>setMob(isNative||window.innerWidth<768)
     window.addEventListener('resize',onResize)
     return()=>window.removeEventListener('resize',onResize)
   },[])
 
-  useEffect(()=>{
-    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); if(e.data && e.data.type==='FR_AUDIT') logAudit({type:'change',tool:'field',detail:(e.data.detail||'Field Manager update')}); }
-    window.addEventListener('message', onMsg);
-    return ()=> window.removeEventListener('message', onMsg);
-  },[])
 
   useEffect(()=>{
     const ts=[setTimeout(()=>setPhase(1),320),setTimeout(()=>setPhase(2),1050),setTimeout(()=>setPhase(3),1850),setTimeout(()=>setPhase(4),3100),setTimeout(()=>setPhase(5),3550),setTimeout(()=>setLoading(false),4500)]
@@ -5445,33 +5630,40 @@ export default function App(){
   const BB={fontFamily:"'Bebas Neue',sans-serif"}
   const NB={fontFamily:"'Barlow Condensed',sans-serif"}
   const m=mob
+  const[menuOpen,setMenuOpen]=useState(false)
+  useEffect(function(){setMenuOpen(false)},[page])
 
   const phases2=Z_PHASES.map(([ps,pe,ts,te,ms,me])=>({pileP:phaseP(scrollP,ps,pe),tubeP:phaseP(scrollP,ts,te),panelP:phaseP(scrollP,ms,me)}))
   const overallP2=phases2.reduce((s,p)=>s+(p.pileP+p.tubeP+p.panelP)/3,0)/phases2.length
   const phLabel2=overallP2<0.15?'SITE PREP':overallP2<0.35?'PILE INSTALL':overallP2<0.55?'RACKING':overallP2<0.75?'MODULES':'OPERATIONAL'
 
-  const IST={width:'100%',background:'#f9f7f5',border:'1px solid rgba(0,0,0,.12)',color:'#1a1a2e',padding:'12px 16px',fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',borderRadius:0,WebkitAppearance:'none'}
-  const fIn=e=>{e.target.style.borderColor='rgba(249,115,22,.5)';e.target.style.boxShadow='0 0 0 3px rgba(249,115,22,.08)'}
-  const fOut=e=>{e.target.style.borderColor='rgba(0,0,0,.12)';e.target.style.boxShadow=''}
+  const IST={width:'100%',background:'#091522',border:'1px solid #e65e20',color:'#f6f3ec',padding:'12px 16px',fontFamily:"'Barlow',sans-serif",fontSize:16,outline:'none',borderRadius:6,WebkitAppearance:'none',minHeight:48}
+  const fIn=e=>{e.target.style.borderColor='#ff7a21';e.target.style.boxShadow='0 0 0 3px rgba(255,107,24,.18)'}
+  const fOut=e=>{e.target.style.borderColor='#e65e20';e.target.style.boxShadow=''}
 
   // A signing link is self-contained: no login, no language gate, nothing else.
   if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
 
-  if(!lang) return <LangPicker onPick={setLang}/>;
+  var introEl=intro?<IntroSplash onDone={function(){setIntro(false)}}/>:null;
+  if(!lang) return <>{introEl}<AmbientBackground/><LangPicker onPick={setLang}/></>;
+  if(locked&&user) return <>{introEl}<AmbientBackground/><LockScreen paused={intro} userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/></>;
 
   return(
     <div style={{position:'fixed',inset:0,fontFamily:"'Barlow',sans-serif"}}>
+      {introEl}
       <style>{CSS}</style>
+      <AmbientBackground/>
       {loading&&<Loader phase={phase} prog={prog}/>}
       <div ref={boxRef} style={{position:'absolute',inset:0,overflowY:'scroll',overflowX:'hidden'}}>
-        <AerialBG scrollP={scrollP}/>
+        {/* the marketing site's aerial build scene stays on the landing page; every other screen sits on the shared AmbientBackground canvas */}
+        {page==='landing'&&<AerialBG scrollP={scrollP}/>}
 
         {/* Phase label — hide on mobile */}
         {/* ── NAV ── */}
-        <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'space-between',padding:m?'14px 20px':'16px 40px',background:'rgba(2,2,12,.85)',backdropFilter:'blur(14px)',borderBottom:'1px solid rgba(249,115,22,.1)'}}>
+        <nav style={{position:'fixed',top:0,left:0,right:0,zIndex:100,display:'flex',alignItems:'center',justifyContent:'space-between',padding:m?'10px 16px':'16px 40px',paddingTop:m?'calc(10px + var(--sat))':'16px',minHeight:m?'calc(64px + var(--sat))':'auto',background:'rgba(2,2,12,.85)',backdropFilter:'blur(14px)',borderBottom:'1px solid rgba(249,115,22,.1)'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0,marginRight:m?0:20}}>
             <img src={LOGO_SRC} alt="SRC" style={{width:m?36:48,height:m?36:48,objectFit:"contain"}}/>
-            <div style={{display:m?'none':'block'}}>
+            <div style={{display:(m&&page!=='dashboard')?'none':'block'}}>
               <div style={{...BB,fontSize:m?17:21,letterSpacing:m?'2px':'4px',color:'#F5F0EB',lineHeight:1}}>SUNRISE</div>
               <div style={{...NB,display:m?'none':'block',fontSize:m?7:9,letterSpacing:'2px',color:A,textTransform:'uppercase',whiteSpace:'nowrap'}}>Construction & Development</div>
             </div>
@@ -5485,12 +5677,36 @@ export default function App(){
           </div>}
 
           {!m&&<div onClick={function(){setLang(lang==='en'?'es':'en')}} title={T('lang_change')} style={{...NB,fontSize:10,letterSpacing:'1.5px',textTransform:'uppercase',color:'#777',cursor:'pointer',padding:'4px 9px',border:'1px solid rgba(255,255,255,.12)',whiteSpace:'nowrap'}} onMouseEnter={e=>{e.currentTarget.style.color=A;e.currentTarget.style.borderColor='rgba(249,115,22,.4)'}} onMouseLeave={e=>{e.currentTarget.style.color='#777';e.currentTarget.style.borderColor='rgba(255,255,255,.12)'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>}
-          {page==='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_login')}</div>}
-          {page!=='landing'&&<div style={{...NB,fontSize:m?10:12,letterSpacing:m?'1px':'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_back_to_site')}</div>}
-          <a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:m?11:13,fontWeight:700,letterSpacing:m?'2px':'3px',textTransform:'uppercase',textDecoration:'none',padding:m?'8px 12px':'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
+          {!m&&page==='landing'&&<div style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage(user?'dashboard':'login')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{user?'Dashboard':T('nav_login')}</div>}
+          {/* "Back to Site" used to sign the user out — a foot-gun on a phone. It now
+              just returns to the public site; signing out stays an explicit action. */}
+          {!m&&page!=='landing'&&<div style={{...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#666',cursor:'pointer',transition:'color .2s',whiteSpace:'nowrap'}} onClick={function(){setPage('landing')}} onMouseEnter={e=>e.target.style.color=A} onMouseLeave={e=>e.target.style.color='#CCC8C2'}>{T('nav_back_to_site')}</div>}
+          {!m&&<a href="#contact" style={{background:A,color:'#1a1206',...NB,fontSize:13,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',textDecoration:'none',padding:'10px 26px',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',transition:'background .2s',whiteSpace:'nowrap'}} onMouseEnter={e=>e.target.style.background='#FB923C'} onMouseLeave={e=>e.target.style.background=A}>
             {T('cta_partner')}
-          </a>
+          </a>}
+          {/* Mobile: one 44px menu button instead of hidden links */}
+          {m&&<button aria-label="Menu" aria-expanded={menuOpen} onClick={function(){setMenuOpen(!menuOpen)}} style={{background:menuOpen?'rgba(249,115,22,.15)':'transparent',border:'1px solid rgba(249,115,22,.35)',color:'#F5F0EB',width:44,height:44,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',borderRadius:6}}>
+            {menuOpen?<X size={20}/>:<Menu size={20}/>}
+          </button>}
         </nav>
+        {m&&menuOpen&&(
+          <div onClick={function(){setMenuOpen(false)}} style={{position:'fixed',inset:0,zIndex:99,background:'rgba(2,2,12,.6)',backdropFilter:'blur(2px)'}}>
+            <div onClick={function(e){e.stopPropagation()}} style={{position:'absolute',top:'calc(64px + var(--sat))',left:0,right:0,background:'#06060f',borderBottom:'1px solid rgba(249,115,22,.25)',padding:'8px 12px 14px',display:'flex',flexDirection:'column',gap:2,boxShadow:'0 18px 40px rgba(0,0,0,.6)'}}>
+              {page==='landing'&&[{k:'nav_safety',h:'safety'},{k:'nav_capabilities',h:'capabilities'},{k:'nav_portfolio',h:'portfolio'},{k:'nav_careers',h:'careers'},{k:'nav_contact',h:'contact'}].map(l=>(
+                <a key={l.k} href={'#'+l.h} onClick={function(){setMenuOpen(false)}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',textDecoration:'none',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)'}}>{T(l.k)}</a>
+              ))}
+              {page!=='landing'&&<div onClick={function(){setMenuOpen(false);setPage('landing')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>{T('nav_back_to_site')}</div>}
+              {user&&page!=='dashboard'&&<div onClick={function(){setMenuOpen(false);setPage('dashboard')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:'#CCC8C2',padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>Dashboard</div>}
+              {!user&&<div onClick={function(){setMenuOpen(false);setPage('login')}} style={{...NB,fontSize:15,letterSpacing:'2px',textTransform:'uppercase',color:A,padding:'12px 8px',minHeight:44,display:'flex',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,.05)',cursor:'pointer'}}>{T('nav_login')}</div>}
+              <div style={{display:'flex',gap:10,alignItems:'center',marginTop:10}}>
+                <div onClick={function(){setLang(lang==='en'?'es':'en')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#F5F0EB',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(255,255,255,.18)',cursor:'pointer'}}>{lang==='es'?'ES · EN':'EN · ES'}</div>
+                {page==='landing'&&<a href="#contact" onClick={function(){setMenuOpen(false)}} style={{flex:1,background:A,color:'#1a1206',...NB,fontSize:13,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase',textDecoration:'none',padding:'12px 16px',minHeight:44,display:'flex',alignItems:'center',justifyContent:'center',clipPath:'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)'}}>{T('cta_partner')}</a>}
+                {user&&isNative&&<div onClick={function(){var on=!biometricEnabled();if(on){biometricVerify('Confirm to enable fingerprint / face unlock').then(function(ok){if(ok){setBiometricEnabled(true);setMenuOpen(false)}})}else{setBiometricEnabled(false);setMenuOpen(false)}}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:biometricEnabled()?'#22c55e':'#CCC8C2',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid '+(biometricEnabled()?'rgba(34,197,94,.4)':'rgba(255,255,255,.18)'),cursor:'pointer'}}>{biometricEnabled()?'Biometric unlock: on':'Biometric unlock: off'}</div>}
+                {user&&<div onClick={function(){setMenuOpen(false);setUser(null);setPage(isNative?'login':'landing')}} style={{...NB,fontSize:13,letterSpacing:'1.5px',textTransform:'uppercase',color:'#f87171',padding:'10px 14px',minHeight:44,display:'flex',alignItems:'center',border:'1px solid rgba(248,113,113,.3)',cursor:'pointer',marginLeft:'auto'}}>Sign out</div>}
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* ── PHASE LABEL ── */}
@@ -5500,14 +5716,14 @@ export default function App(){
             LOGIN PAGE
             ══════════════════════════════════════════════ */}
         {page==='login'&&(
-          <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',zIndex:10,padding:m?'80px 16px 40px':'120px 48px',background:'#f5f2ee'}}>
-            <div style={{width:m?'100%':420,maxWidth:'95vw',background:'#ffffff',border:'1px solid rgba(0,0,0,.1)',boxShadow:'0 4px 24px rgba(0,0,0,.08)',padding:m?'36px 28px':'48px 40px'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',zIndex:10,padding:m?'calc(80px + var(--sat, 0px)) 16px 40px':'120px 48px'}}>
+            <div className="sr-card" style={{width:m?'100%':420,maxWidth:'95vw',padding:m?'36px 28px':'48px 40px',boxShadow:'0 18px 50px rgba(0,0,0,.5)'}}>
               <div style={{textAlign:'center',marginBottom:32}}>
-                <img src={LOGO_SRC} alt="SRC&D" style={{width:72,height:72,objectFit:'contain',marginBottom:16}}/>
-                <div style={{...BB,fontSize:28,letterSpacing:'4px',color:'#1a1a2e'}}>{ siteSettings.portalTitle}</div>
+                <img src={LOGO_SRC} alt="SRC&D" style={{width:72,height:72,objectFit:'contain',marginBottom:16,filter:'drop-shadow(0 0 18px rgba(255,107,24,.35))'}}/>
+                <div style={{...BB,fontSize:28,letterSpacing:'4px',color:'#f6f3ec'}}>{ siteSettings.portalTitle}</div>
                 <div style={{...NB,fontSize:12,letterSpacing:'3px',color:A,textTransform:'uppercase',marginTop:4}}>Sunrise Construction & Development</div>
               </div>
-              {loginErr&&<div style={{background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.3)',color:'#EF4444',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
+              {loginErr&&<div style={{background:'rgba(255,70,85,.12)',border:'1px solid rgba(255,70,85,.45)',borderRadius:6,color:'#ff4655',padding:'10px 14px',marginBottom:16,fontSize:13,...NB,letterSpacing:'1px'}}>{loginErr}</div>}
               <div style={{marginBottom:16}}>
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_email')}</div>
                 <input value={loginEmail} onChange={function(e){setLoginEmail(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_email_ph')} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-email-noautofill" data-lpignore="true" data-form-type="other"/>
@@ -5516,68 +5732,75 @@ export default function App(){
                 <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>{T('login_password')}</div>
                 <input type="password" value={loginPass} onChange={function(e){setLoginPass(e.target.value)}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder={T('login_password_ph')} onKeyDown={function(e){if(e.key==='Enter')doPortalLogin()}} autoComplete="new-password" autoCorrect="off" autoCapitalize="off" spellCheck={false} name="portal-pass-noautofill" data-lpignore="true" data-form-type="other"/>
               </div>
-              <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',clipPath:'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)',transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#FB923C'}} onMouseLeave={function(e){e.target.style.background=A}}>
+              <div style={{cursor:'pointer',background:'#ff6b18',color:'#120a04',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48,borderRadius:6,transition:'background .2s'}} onClick={doPortalLogin} onMouseEnter={function(e){e.target.style.background='#ff7a21'}} onMouseLeave={function(e){e.target.style.background='#ff6b18'}}>
                 {T('login_signin')}
               </div>
-              {window._pendingInvite&&<div style={{cursor:'pointer',background:'#22c55e',color:'#fff',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',marginTop:12,transition:'background .2s'}} onClick={function(){doInviteSignup(window._pendingInvite);window._pendingInvite=null}}>
+              {window._pendingInvite&&<div style={{cursor:'pointer',background:'#19d47b',color:'#03110a',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48,borderRadius:6,marginTop:12,transition:'background .2s'}} onClick={function(){doInviteSignup(window._pendingInvite);window._pendingInvite=null}}>
                 {T('login_accept_invite')}
               </div>}
-              <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#555'}}>
+              <div style={{textAlign:'center',marginTop:20,...NB,fontSize:11,letterSpacing:'1.5px',color:'#aab3c0'}}>
                 {T('login_invite_only')}
               </div>
             </div>
           </div>
         )}
 
-        {page==='dashboard'&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px',background:'#f5f2ee'}}>
+        {page==='dashboard'&&showPw&&(function(){return (
+          <>
+              {showPw&&(
+                <div className="sunrise-admin" style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(1,5,11,.72)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
+                  <div onClick={function(e){e.stopPropagation()}} className="sr-card" style={{width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 18px 50px rgba(0,0,0,.6)'}}>
+                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#f6f3ec'}}>Change Password</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',marginTop:2,marginBottom:18}}>Set a strong password for {user?user.email:'your account'}</div>
+                    <input type="password" value={pwOld} onChange={function(e){setPwOld(e.target.value)}} placeholder="Current password" style={{...IST,marginBottom:10}}/>
+                    <input type="password" value={pwNew} onChange={function(e){setPwNew(e.target.value)}} placeholder="New password (min 8 characters)" style={{...IST,marginBottom:10}}/>
+                    <input type="password" value={pwConf} onChange={function(e){setPwConf(e.target.value)}} placeholder="Confirm new password" onKeyDown={function(e){if(e.key==='Enter')changePassword()}} style={{...IST}}/>
+                    {pwMsg&&pwMsg!=='ok'&&<div style={{...NB,fontSize:12,color:'#ff4655',marginTop:12}}>{pwMsg}</div>}
+                    {pwMsg==='ok'&&<div style={{...NB,fontSize:12,color:'#19d47b',marginTop:12}}>Password updated. Save it in your password manager.</div>}
+                    <div style={{display:'flex',gap:10,marginTop:20}}>
+                      <button onClick={changePassword} className="sr-button sr-button--primary" style={{flex:1}}>Update Password</button>
+                      <button onClick={function(){setShowPw(false)}} className="sr-button sr-button--outline" style={{flex:1}}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+          </>
+        )})()}
+        {page==='dashboard'&&m&&<HomeScreen user={user} tiles={dashTiles} hideKeys={showTabBar?['mytimecard','pileplan']:[]} isAdmin={isPortalAdmin}
+          onOpen={function(tile){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}}
+          onOpenPage={setPage} onChangePassword={openChangePw} onSignOut={function(){setUser(null);setPage(isNative?'login':'landing')}}/>}
+        {page==='dashboard'&&!m&&(
+          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:'120px 48px 80px'}}>
             <div style={{maxWidth:1200,margin:'0 auto'}}>
               <div style={{marginBottom:m?28:40}}>
                 <div style={{...NB,fontSize:12,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
                   <div style={{width:22,height:1,background:A}}/>Welcome back
                 </div>
-                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none'}}>
+                <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(36px,5vw,56px)',letterSpacing:2,color:'#f6f3ec',textShadow:'none'}}>
                   {user ? user.name.toUpperCase() : 'OPERATOR'}
                 </div>
-                <div style={{...NB,fontSize:13,color:'#666',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
+                <div style={{...NB,fontSize:13,color:'#aab3c0',letterSpacing:'1.5px',marginTop:4}}>{user?user.email:''} · {user?user.role.toUpperCase():'MEMBER'}</div>
                 <div onClick={openChangePw} style={{display:'inline-block',marginTop:12,cursor:'pointer',...NB,fontSize:11,letterSpacing:'2px',textTransform:'uppercase',color:A,borderBottom:'1px solid '+A,paddingBottom:2}}>Change Password</div>
               </div>
-              {showPw&&(
-                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setShowPw(false)}}>
-                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:400,padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
-                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Change Password</div>
-                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>Set a strong password for {user?user.email:'your account'}</div>
-                    <input type="password" value={pwOld} onChange={function(e){setPwOld(e.target.value)}} placeholder="Current password" style={{...IST,marginBottom:10}}/>
-                    <input type="password" value={pwNew} onChange={function(e){setPwNew(e.target.value)}} placeholder="New password (min 8 characters)" style={{...IST,marginBottom:10}}/>
-                    <input type="password" value={pwConf} onChange={function(e){setPwConf(e.target.value)}} placeholder="Confirm new password" onKeyDown={function(e){if(e.key==='Enter')changePassword()}} style={{...IST}}/>
-                    {pwMsg&&pwMsg!=='ok'&&<div style={{...NB,fontSize:12,color:'#dc2626',marginTop:12}}>{pwMsg}</div>}
-                    {pwMsg==='ok'&&<div style={{...NB,fontSize:12,color:'#16a34a',marginTop:12}}>Password updated. Save it in your password manager.</div>}
-                    <div style={{display:'flex',gap:10,marginTop:20}}>
-                      <button onClick={changePassword} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Update Password</button>
-                      <button onClick={function(){setShowPw(false)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
-                    </div>
-                  </div>
-                </div>
-              )}
               {hasTool('pileplan')&&(function(){
                 var ttk=getTaskTrackerKPI();
                 return (
-                  <div onClick={function(){setPage('pileplan')}} style={{background:'#fff',border:'1px solid rgba(0,0,0,.08)',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:m?'18px':'24px 28px',marginBottom:m?14:20,cursor:'pointer',transition:'all .25s'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.transform='translateY(-2px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.transform='translateY(0)'}}>
+                  <div onClick={function(){setPage('pileplan')}} className="sr-card" style={{padding:m?'18px':'24px 28px',marginBottom:m?14:20,cursor:'pointer',transition:'all .25s'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-2px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
                     <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:8,display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:1,background:A}}/>Live Site Progress · Task Tracker</div>
                     <div style={{display:'flex',alignItems:'flex-end',gap:18,flexWrap:'wrap'}}>
-                      <div style={{...BB,fontSize:m?44:62,color:'#1a1a2e',lineHeight:.85}}>{ttk.overall.toFixed(1)}<span style={{fontSize:'.45em',color:A,marginLeft:2}}>%</span></div>
+                      <div style={{...BB,fontSize:m?44:62,color:'#f6f3ec',lineHeight:.85}}>{ttk.overall.toFixed(1)}<span style={{fontSize:'.45em',color:A,marginLeft:2}}>%</span></div>
                       <div style={{flex:1,minWidth:180}}>
-                        <div style={{height:10,background:'#eceae6',borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:ttk.overall+'%',background:'linear-gradient(90deg,#F97316,#EAB308)',transition:'width .3s'}}/></div>
-                        <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px',marginTop:7}}>{ttk.total.toLocaleString()} piles · {ttk.lastModified?'updated '+new Date(ttk.lastModified).toLocaleDateString():'no edits yet'}</div>
+                        <div style={{height:10,background:'rgba(255,255,255,.1)',borderRadius:6,overflow:'hidden'}}><div style={{height:'100%',width:ttk.overall+'%',background:'linear-gradient(90deg,#ff6b18,#f4d457)',transition:'width .3s'}}/></div>
+                        <div style={{...NB,fontSize:11,color:'#aab3c0',letterSpacing:'1px',marginTop:7}}>{ttk.total.toLocaleString()} piles · {ttk.lastModified?'updated '+new Date(ttk.lastModified).toLocaleDateString():'no edits yet'}</div>
                       </div>
                     </div>
                     <div style={{display:'flex',gap:m?12:18,flexWrap:'wrap',marginTop:14}}>
                       {ttk.tasks.map(function(t,i){return (
                         <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
                           <span style={{width:12,height:12,borderRadius:3,background:t.color,flexShrink:0,outline:t.done?'2px solid rgba(34,197,94,.5)':'none'}}/>
-                          <span style={{...NB,fontSize:13,color:'#444',letterSpacing:'.5px'}}>{t.name} <strong style={{color:'#1a1a2e'}}>{t.pct.toFixed(0)}%</strong> <span style={{color:'#999'}}>({t.count.toLocaleString()})</span></span>
+                          <span style={{...NB,fontSize:13,color:'#e8e2d8',letterSpacing:'.5px'}}>{t.name} <strong style={{color:'#f6f3ec'}}>{t.pct.toFixed(0)}%</strong> <span style={{color:'#717d8d'}}>({t.count.toLocaleString()})</span></span>
                         </div>
                       )})}
                     </div>
@@ -5585,35 +5808,18 @@ export default function App(){
                 );
               })()}
               <div style={{display:'grid',gridTemplateColumns:m?'1fr':'repeat(4, 1fr)',gap:m?14:20}}>
-                {[
-                  {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
-                  {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
-                  {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
-                  {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
-                  {key:'precon',   label:'PreCon Controls',      icon:'P', desc:'Estimating, takeoffs & bid management'},
-                  {key:'compliance',label:'Compliance Center',   icon:'C', desc:'ISNet, licensing & regulatory docs'},
-                  {key:'hse',      label:'HS&E',                 icon:'S', desc:'Safety incidents, training & audits'},
-                  {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
-                  {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
-                  {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
-                  {key:'pileplan',  label:'Task Tracker',         icon:'M', desc:'Live site map: color-coded tasks, % complete, edit history & branded PDF exports'},
-                  {key:'documents', label:'Document Portal',      icon:'D', desc:'Folders, signed agreements, e-signature workflow with audit trail & verified watermark', always:true},
-                  {key:'projecttracker', label:'Project Tracker',  icon:'P', desc:'Daily calendar for tasks, issues & action items — open items roll forward; branded PDF & Excel exports', always:true},
-                  {key:'loads',     label:'Loads Admin',          icon:'L', desc:'Material load scheduling, dispatch & delivery tracking', href:'https://srcsolar.netlify.app/loads-admin', always:true},
-                ].filter(function(tile){return tile.always||hasTool(tile.key)}).map(function(tile){
+                {dashTiles.map(function(tile){
                   return (
-                    <div key={tile.key} onClick={function(){if(tile.href){window.open(tile.href,'_blank','noopener,noreferrer')}else{setPage(tile.key)}}} style={{
-                      background:'#ffffff',backdropFilter:'blur(12px)',
-                      border:'1px solid rgba(0,0,0,.08)',
+                    <div key={tile.key} onClick={function(){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}} className="sr-card" style={{
                       padding:m?'24px 18px':'32px 28px',
-                      cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,.06)'
+                      cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'
                     }}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.background='rgba(249,115,22,.06)';e.currentTarget.style.transform='translateY(-4px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.background='#ffffff';e.currentTarget.style.transform='translateY(0)'}}>
-                      <div style={{...BB,fontSize:m?36:48,color:A,opacity:.18,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>{tile.icon}</div>
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-4px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
+                      <div style={{...BB,fontSize:m?36:48,color:A,opacity:.22,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>{tile.icon}</div>
                       <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:8}}>MODULE</div>
-                      <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>{tile.label.toUpperCase()}</div>
-                      <div style={{...NB,fontSize:12,color:'#666',letterSpacing:'1px',lineHeight:1.5}}>{tile.desc}</div>
+                      <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>{tile.label.toUpperCase()}</div>
+                      <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>{tile.desc}</div>
                       <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:A,display:'flex',alignItems:'center',gap:6}}>
                         {tile.href?'Open':'Launch'} <span style={{fontSize:14}}>{tile.href?'\u2197':'\u2192'}</span>
                       </div>
@@ -5621,30 +5827,30 @@ export default function App(){
                   )
                 })}
                 {isPortalAdmin&&(
-                  <div onClick={function(){setPage('admin')}} style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)';e.currentTarget.style.background='rgba(249,115,22,.06)';e.currentTarget.style.transform='translateY(-4px)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(0,0,0,.08)';e.currentTarget.style.background='#ffffff';e.currentTarget.style.transform='translateY(0)'}}>
-                    <div style={{...BB,fontSize:m?36:48,color:A,opacity:.18,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>&#9881;</div>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#EF4444',marginBottom:8}}>ADMIN</div>
-                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>ADMIN DASHBOARD</div>
-                    <div style={{...NB,fontSize:12,color:'#888',letterSpacing:'1px',lineHeight:1.5}}>Users, invites, access & site editor</div>
-                    <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#EF4444',display:'flex',alignItems:'center',gap:6}}>
+                  <div onClick={function(){setPage('admin')}} className="sr-card" style={{padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s',position:'relative',overflow:'hidden'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21';e.currentTarget.style.transform='translateY(-4px)'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='';e.currentTarget.style.transform='translateY(0)'}}>
+                    <div style={{...BB,fontSize:m?36:48,color:A,opacity:.22,position:'absolute',top:m?12:16,right:m?14:20,lineHeight:1}}>&#9881;</div>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#ff4655',marginBottom:8}}>ADMIN</div>
+                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>ADMIN DASHBOARD</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>Users, invites, access & site editor</div>
+                    <div style={{marginTop:16,...NB,fontSize:10,letterSpacing:'2px',textTransform:'uppercase',color:'#ff4655',display:'flex',alignItems:'center',gap:6}}>
                       Manage <span style={{fontSize:14}}>&#8594;</span>
                     </div>
                   </div>
                 )}
                 {!isPortalAdmin&&(
-                  <div onClick={function(){setPage('request')}} style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px dashed rgba(249,115,22,.25)',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s'}}
-                    onMouseEnter={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.5)'}}
-                    onMouseLeave={function(e){e.currentTarget.style.borderColor='rgba(249,115,22,.25)'}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#888',marginBottom:8}}>NEED ACCESS?</div>
-                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#1a1a2e',marginBottom:8}}>REQUEST ACCESS</div>
-                    <div style={{...NB,fontSize:12,color:'#888',letterSpacing:'1px',lineHeight:1.5}}>Request access to additional tools</div>
+                  <div onClick={function(){setPage('request')}} className="sr-card" style={{border:'1px dashed #a7461e',padding:m?'24px 18px':'32px 28px',cursor:'pointer',transition:'all .3s'}}
+                    onMouseEnter={function(e){e.currentTarget.style.borderColor='#ff7a21'}}
+                    onMouseLeave={function(e){e.currentTarget.style.borderColor='#a7461e'}}>
+                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:'#aab3c0',marginBottom:8}}>NEED ACCESS?</div>
+                    <div style={{...BB,fontSize:m?20:26,letterSpacing:'2px',color:'#f6f3ec',marginBottom:8}}>REQUEST ACCESS</div>
+                    <div style={{...NB,fontSize:12,color:'#aab3c0',letterSpacing:'1px',lineHeight:1.5}}>Request access to additional tools</div>
                   </div>
                 )}
               </div>
               <div style={{marginTop:m?28:40,textAlign:'center'}}>
-                <div style={{display:'inline-block',cursor:'pointer',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#777',transition:'color .2s'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={function(e){e.target.style.color=A}} onMouseLeave={function(e){e.target.style.color='#777'}}>
+                <div style={{display:'inline-block',cursor:'pointer',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:'#aab3c0',transition:'color .2s'}} onClick={function(){setPage('landing');setUser(null)}} onMouseEnter={function(e){e.target.style.color=A}} onMouseLeave={function(e){e.target.style.color='#aab3c0'}}>
                   &#8592; Sign Out & Return to Site
                 </div>
               </div>
@@ -5655,115 +5861,98 @@ export default function App(){
 
         {/* ══ ADMIN DASHBOARD ══ */}
         {page==='admin'&&isPortalAdmin&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px',background:'#f5f2ee'}}>
-            <div style={{maxWidth:1200,margin:'0 auto'}}>
-              <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</div>
-              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>ADMIN DASHBOARD</div>
-              <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-                {['invite','users','requests','activity','editor'].map(function(t){return (
-                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t==='activity'?'Activity & Time':t}</div>
-                )})}
-              </div>
-              {adminTab==='invite'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:20}}>INVITE USER</div>
-                <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>NAME</div><input value={invForm.name} onChange={function(e){setInvForm(Object.assign({},invForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="Full name"/></div>
-                <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>EMAIL</div><input value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="name@sunriseconstructionco.com"/></div>
-                <div style={{marginBottom:12}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>ROLE</div>
-                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'member'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='member'?A:'transparent',color:invForm.role==='member'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='member'?A:'rgba(0,0,0,.15)')}}>Member</div>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'admin'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='admin'?A:'transparent',color:invForm.role==='admin'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='admin'?A:'rgba(0,0,0,.15)')}}>Admin</div>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'client'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='client'?A:'transparent',color:invForm.role==='client'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='client'?A:'rgba(0,0,0,.15)')}}>Client</div>
+          <div className="sunrise-admin" style={{position:'relative',zIndex:10,paddingTop:m?76:120,paddingBottom:'calc(32px + var(--tabbar-h, 0px))'}}>
+            <div className="sr-content">
+              <button type="button" className="sr-kicker sr-back" onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</button>
+              <h1 className="sr-display">Admin Dashboard</h1>
+              <SrTabs items={[['invite','Invite'],['users','Users'],['requests','Requests'],['activity','Activity & Time'],['editor','Site Editor']]} value={adminTab} onChange={setAdminTab2}/>
+              {adminTab==='invite'&&<SrCard title="Invite User">
+                <SrField label="Name"><input className="sr-input" value={invForm.name} onChange={function(e){setInvForm(Object.assign({},invForm,{name:e.target.value}))}} placeholder="Full name"/></SrField>
+                <SrField label="Email"><input className="sr-input" value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} placeholder="name@sunriseconstructionco.com"/></SrField>
+                <SrField label="Role" note={invForm.role==='client'?'Clients get a read-only portal for their assigned projects only — any email domain is allowed.':null}>
+                  <div className="sr-chip-row">
+                    {[['member','Member'],['admin','Admin'],['client','Client']].map(function(r){return <SrChip key={r[0]} on={invForm.role===r[0]} onClick={function(){setInvForm(Object.assign({},invForm,{role:r[0]}))}}>{r[1]}</SrChip>})}
                   </div>
-                  {invForm.role==='client'&&<div style={{...NB,fontSize:11,color:'#777',letterSpacing:'1px',marginTop:8}}>Clients get a read-only portal for their assigned projects only — any email domain is allowed.</div>}
-                </div>
+                </SrField>
                 {invForm.role==='client'?(
-                <div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>ASSIGNED PROJECTS</div>
-                  {projOpts.length===0?<div style={{...NB,fontSize:12,color:'#999'}}>No projects found. Create one in the Task Tracker first.</div>:
-                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                <SrField label="Assigned projects">
+                  {projOpts.length===0?<div className="sr-note">No projects found. Create one in the Task Tracker first.</div>:
+                  <div className="sr-chip-row sr-chip-row--tight">
                     {projOpts.map(function(p){var on=(invForm.assignedProjects||[]).indexOf(p.id)>=0;return (
-                      <div key={p.id} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{p.name||'Project'}</div>
+                      <SrChip key={p.id} on={on} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}}>{p.name||'Project'}</SrChip>
                     )})}
                   </div>}
-                </div>
+                </SrField>
                 ):(<>
-                <div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TOOL ACCESS</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                <SrField label="Tool access">
+                  <div className="sr-chip-row sr-chip-row--tight">
                     {Object.keys(TOOL_LABELS).map(function(tk){var on=invForm.tools.indexOf(tk)>=0;return (
-                      <div key={tk} onClick={function(){var nt=on?invForm.tools.filter(function(x){return x!==tk}):invForm.tools.concat([tk]);setInvForm(Object.assign({},invForm,{tools:nt}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{TOOL_LABELS[tk]}</div>
+                      <SrChip key={tk} on={on} onClick={function(){var nt=on?invForm.tools.filter(function(x){return x!==tk}):invForm.tools.concat([tk]);setInvForm(Object.assign({},invForm,{tools:nt}))}}>{TOOL_LABELS[tk]}</SrChip>
                     )})}
                   </div>
-                </div>
-                {invForm.tools.indexOf('pileplan')>=0&&<div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TASK TRACKER — PROJECTS & TASKS</div>
-                  {renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}
-                  <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'.5px',marginTop:4}}>Employees see and edit only the projects you select here.</div>
-                </div>}
+                </SrField>
+                {invForm.tools.indexOf('pileplan')>=0&&<SrField label="Task Tracker — Projects & Tasks" note="Employees see and edit only the projects you select here.">
+                  <div>{renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}</div>
+                </SrField>}
                 </>)}
-                <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
-                {invMsg&&<div style={{marginTop:12,padding:'10px 12px',border:'1px solid '+(invMsg.k==='ok'?'rgba(22,163,74,.45)':'rgba(239,68,68,.45)'),background:invMsg.k==='ok'?'rgba(22,163,74,.08)':'rgba(239,68,68,.07)'}}>
-                  <div style={{...NB,fontSize:13,color:invMsg.k==='ok'?'#15803d':'#b91c1c',lineHeight:1.5}}>{invMsg.t}</div>
-                  {invMsg.link&&<div style={{marginTop:8,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                    <input readOnly value={invMsg.link} onFocus={function(e){e.target.select()}} style={{flex:1,minWidth:200,...NB,fontSize:12,padding:'7px 9px',border:'1px solid rgba(0,0,0,.15)',background:'#fff',color:'#333'}}/>
-                    <div onClick={function(){try{navigator.clipboard.writeText(invMsg.link);setInvMsg(Object.assign({},invMsg,{t:'Invite link copied to your clipboard.'}))}catch(e){}}} style={{cursor:'pointer',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'7px 14px',background:A,color:'#1a1206'}}>Copy Link</div>
+                <SrBtn variant="primary" block onClick={sendInvite} style={{marginTop:24,minHeight:52}}>Send invite via Gmail</SrBtn>
+                {invMsg&&<div className={'sr-banner '+(invMsg.k==='ok'?'sr-banner--ok':'sr-banner--err')}>
+                  <div>{invMsg.t}</div>
+                  {invMsg.link&&<div className="sr-linkrow">
+                    <input readOnly className="sr-input" value={invMsg.link} onFocus={function(e){e.target.select()}}/>
+                    <SrBtn variant="primary" onClick={function(){try{navigator.clipboard.writeText(invMsg.link);setInvMsg(Object.assign({},invMsg,{t:'Invite link copied to your clipboard.'}))}catch(e){}}}>Copy link</SrBtn>
                   </div>}
                 </div>}
-              </div>}
-              {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>USERS ({portalUsers.length})</div>
+              </SrCard>}
+              {adminTab==='users'&&<SrCard title={'Users ('+portalUsers.length+')'}>
+                <div className="sr-stack">
                 {portalUsers.map(function(u2){return (
-                  <div key={u2.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid rgba(0,0,0,.06)',flexWrap:'wrap',gap:8}}>
-                    <div>
-                      <div style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{u2.name}</div>
-                      <div style={{...NB,fontSize:11,color:'#888'}}>{u2.email} · {u2.role}</div>
-                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')||'—'}</div>
-                      {u2.role!=='admin'&&<div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
-                    </div>
-                    <div style={{display:'flex',gap:6}}>
-                      {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
-                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?touchUser(Object.assign({},x,{role:nr})):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
-                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}),[u2.id,u2.email]);logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
+                  <div key={u2.id} className="sr-user">
+                    <div className="sr-user-name">{u2.name}</div>
+                    <div className="sr-meta">{u2.email} · {u2.role}</div>
+                    <div className="sr-meta sr-meta--dim">Tools: {(u2.tools||[]).join(', ')||'—'}</div>
+                    {u2.role!=='admin'&&<div className="sr-meta sr-meta--dim">Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
+                    <div className="sr-actions">
+                      {u2.role!=='admin'&&<SrBtn variant="assign" onClick={function(){openAssign(u2)}}>Assign</SrBtn>}
+                      <SrBtn variant={u2.role==='admin'?'secondary':'gold'} onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?touchUser(Object.assign({},x,{role:nr})):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}}>{u2.role==='admin'?'Demote':'Promote'}</SrBtn>
+                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<SrBtn variant="danger" onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}),[u2.id,u2.email]);logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}}>Remove</SrBtn>}
                     </div>
                   </div>
                 )})}
-              </div>}
+                </div>
+              </SrCard>}
               {assignUser&&(
-                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setAssignUser(null)}}>
-                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:460,maxHeight:'86vh',overflowY:'auto',padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
-                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Assign Projects</div>
-                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
+                <div className="sr-modal" onClick={function(){setAssignUser(null)}}>
+                  <div className="sr-modal-sheet" onClick={function(e){e.stopPropagation()}}>
+                    <h2 className="sr-card-title">Assign Projects</h2>
+                    <div className="sr-meta" style={{marginTop:4,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
                     {renderAssignEditor(assignForm,function(v){setAssignForm(v)})}
-                    {assignUser.role==='client'&&<div style={{...NB,fontSize:11,color:'#888',marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
-                    <div style={{display:'flex',gap:10,marginTop:20}}>
-                      <button onClick={saveAssign} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Save</button>
-                      <button onClick={function(){setAssignUser(null)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                    {assignUser.role==='client'&&<div className="sr-note" style={{marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
+                    <div className="sr-actions" style={{marginTop:20,flexWrap:'nowrap'}}>
+                      <SrBtn variant="primary" onClick={saveAssign} style={{flex:1}}>Save</SrBtn>
+                      <SrBtn variant="outline" onClick={function(){setAssignUser(null)}} style={{flex:1}}>Cancel</SrBtn>
                     </div>
                   </div>
                 </div>
               )}
-              {adminTab==='requests'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>ACCESS REQUESTS</div>
-                {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div style={{...NB,fontSize:13,color:'#888'}}>No pending requests</div>}
+              {adminTab==='requests'&&<SrCard title="Access Requests" right={<UserCheck size={30} color="#ff7a21" strokeWidth={1.6} aria-hidden="true"/>}>
+                {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div className="sr-meta">No pending requests</div>}
                 {accessReqs.slice().reverse().map(function(r){return (
-                  <div key={r.id} style={{padding:'12px 0',borderBottom:'1px solid rgba(0,0,0,.06)'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
-                      <div>
-                        <div style={{...NB,fontSize:14,color:'#1a1a2e'}}>{r.userName} requests <span style={{color:A}}>{TOOL_LABELS[r.tool]||r.tool}</span></div>
-                        <div style={{...NB,fontSize:11,color:'#888'}}>{r.reason}</div>
-                        <div style={{...NB,fontSize:10,color:'#555'}}>{new Date(r.createdAt).toLocaleDateString()}</div>
-                      </div>
-                      {r.status==='pending'&&<div style={{display:'flex',gap:6}}>
-                        <div onClick={function(){approveReq(r.id)}} style={{padding:'4px 14px',...NB,fontSize:11,cursor:'pointer',background:'rgba(34,197,94,.15)',color:'#22c55e'}}>Approve</div>
-                        <div onClick={function(){denyReq(r.id)}} style={{padding:'4px 14px',...NB,fontSize:11,cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Deny</div>
-                      </div>}
-                      {r.status!=='pending'&&<div style={{...NB,fontSize:11,color:r.status==='approved'?'#22c55e':'#ef4444'}}>{r.status.toUpperCase()}</div>}
+                  <div key={r.id} className="sr-list-row sr-list-row--stack" style={{borderBottom:'1px solid var(--sr-line)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div className="sr-row-title">{r.userName} requests <span className="sr-person">{TOOL_LABELS[r.tool]||r.tool}</span></div>
+                      <div className="sr-meta">{r.reason}</div>
+                      <div className="sr-meta sr-meta--dim">{new Date(r.createdAt).toLocaleDateString()}</div>
                     </div>
+                    {r.status==='pending'&&<div className="sr-actions">
+                      <SrBtn variant="success" onClick={function(){approveReq(r.id)}}>Approve</SrBtn>
+                      <SrBtn variant="danger" onClick={function(){denyReq(r.id)}}>Deny</SrBtn>
+                    </div>}
+                    {r.status!=='pending'&&<div className={'sr-status '+(r.status==='approved'?'sr-status--ok':'sr-status--bad')}>{r.status.toUpperCase()}</div>}
                   </div>
                 )})}
-              </div>}
-              {adminTab==='activity'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
+              </SrCard>}
+              {adminTab==='activity'&&<SrCard>
                 {(function(){
                   function fmtDur(ms){ms=Math.max(0,ms||0);var s=Math.round(ms/1000);var h=Math.floor(s/3600);var mn=Math.floor((s%3600)/60);if(h)return h+'h '+mn+'m';if(mn)return mn+'m';return s+'s'}
                   function evLabel(e){return e.label||TOOL_LABELS[e.tool]||(e.tool||'—')}
@@ -5771,100 +5960,94 @@ export default function App(){
                   var users={},tools={};actEvents.forEach(function(e){if(e.user)users[e.user]=1;if(e.tool)tools[e.tool]=1})
                   var userList=Object.keys(users).sort(),toolList=Object.keys(tools).sort()
                   var filtered=actEvents.filter(function(e){return (!actUserFilter||e.user===actUserFilter)&&(!actToolFilter||e.tool===actToolFilter)})
-                  var typeColor={login:'#16a34a',logout:'#888',tool_enter:'#2563eb',tool_exit:'#7c3aed',change:'#ea580c',action:A}
                   // time aggregation from tool_exit durations
                   var exits=actEvents.filter(function(e){return e.type==='tool_exit'&&(!actUserFilter||e.user===actUserFilter)})
                   var dayMap={}
                   exits.forEach(function(e){var d=new Date(e.ts);var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');var key=day+'|'+(e.user||'?');if(!dayMap[key])dayMap[key]={day:day,user:e.user,total:0,tools:{},sessions:0};dayMap[key].total+=e.durMs||0;dayMap[key].sessions++;var tl=evLabel(e);dayMap[key].tools[tl]=(dayMap[key].tools[tl]||0)+(e.durMs||0)})
                   var rows=Object.keys(dayMap).map(function(k){return dayMap[k]}).sort(function(a,b){return a.day<b.day?1:a.day>b.day?-1:(a.user<b.user?-1:1)})
                   return (<>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:16}}>
-                      <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e'}}>ACTIVITY & TIME</div>
-                      <div style={{display:'flex',gap:6}}>
-                        <div onClick={function(){setActView('log')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='log'?A:'transparent',color:actView==='log'?'#fff':'#666',border:'1px solid '+(actView==='log'?A:'rgba(0,0,0,.15)')}}>Activity Log</div>
-                        <div onClick={function(){setActView('time')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='time'?A:'transparent',color:actView==='time'?'#fff':'#666',border:'1px solid '+(actView==='time'?A:'rgba(0,0,0,.15)')}}>Time Tracking</div>
-                      </div>
-                    </div>
-                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
-                      <select value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
-                      {actView==='log'&&<select value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
-                      {actLoading&&<span style={{...NB,fontSize:12,color:'#888',alignSelf:'center'}}>Loading…</span>}
+                    <div className="sr-card-head"><h2 className="sr-card-title sr-card-title--bar">Activity & Time</h2></div>
+                    <SrTabs small items={[['log','Activity Log'],['time','Time Tracking']]} value={actView} onChange={setActView}/>
+                    <div className="sr-filters">
+                      <select className="sr-select" value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
+                      {actView==='log'&&<select className="sr-select" value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
+                      {actLoading&&<span className="sr-meta">Loading…</span>}
                     </div>
                     {actView==='log'?(
-                      <div style={{maxHeight:520,overflowY:'auto',border:'1px solid rgba(0,0,0,.06)'}}>
-                        {filtered.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:16}}>{actLoading?'Loading activity…':'No activity recorded yet.'}</div>}
+                      <div className="sr-list sr-scroll">
+                        {filtered.length===0&&(actLoading
+                          ?<div className="sr-list-row" style={{flexDirection:'column',gap:4}}><div className="sr-meta">Loading activity…</div><SrSkeleton/></div>
+                          :<div className="sr-list-row"><div className="sr-meta">No activity recorded yet.</div></div>)}
                         {filtered.slice(0,500).map(function(e){return (
-                          <div key={e.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
-                            <span style={{width:8,height:8,borderRadius:'50%',background:typeColor[e.type]||'#999',flexShrink:0}}/>
+                          <div key={e.id} className="sr-list-row">
+                            <SrDot type={e.type}/>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{...NB,fontSize:14,color:'#1a1a2e',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.detail||e.type}</div>
-                              <div style={{...NB,fontSize:11,color:'#888'}}><span style={{color:A}}>{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
+                              <div className="sr-row-title sr-ellipsis">{e.detail||e.type}</div>
+                              <div className="sr-meta"><span className="sr-person">{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
                             </div>
                           </div>
                         )})}
                       </div>
                     ):(
-                      <div style={{maxHeight:520,overflowY:'auto'}}>
-                        {rows.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
+                      <div className="sr-scroll">
+                        {rows.length===0&&<div className="sr-meta" style={{padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
                         {rows.map(function(r,ri){return (
-                          <div key={ri} style={{border:'1px solid rgba(0,0,0,.08)',padding:'10px 12px',marginBottom:8}}>
-                            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:6}}>
-                              <div style={{...NB,fontSize:15,color:'#1a1a2e',fontWeight:600}}><span style={{color:A}}>{r.user}</span> · {r.day}</div>
-                              <div style={{...BB,fontSize:20,color:'#1a1a2e'}}>{fmtDur(r.total)} <span style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px'}}>· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
+                          <div key={ri} className="sr-time-card">
+                            <div className="sr-time-head">
+                              <div className="sr-row-title"><span className="sr-person">{r.user}</span> · {r.day}</div>
+                              <div className="sr-time-dur">{fmtDur(r.total).toUpperCase()} <span className="sr-time-sessions">· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
                             </div>
-                            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
-                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} style={{...NB,fontSize:11,letterSpacing:'.5px',color:'#555',background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.18)',padding:'3px 9px'}}>{tl}: {fmtDur(r.tools[tl])}</span>})}
+                            <div className="sr-chip-row sr-chip-row--tight">
+                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} className="sr-chip sr-chip--meta">{tl}: {fmtDur(r.tools[tl])}</span>})}
                             </div>
                           </div>
                         )})}
                       </div>
                     )}
-                    <div style={{...NB,fontSize:11,color:'#999',marginTop:12}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
+                    <div className="sr-note" style={{marginTop:14}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
                   </>)
                 })()}
-              </div>}
-              {adminTab==='editor'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>SITE EDITOR</div>
-                <div style={{...NB,fontSize:11,color:'#888',marginBottom:16}}>Changes save automatically. Refresh to see updates on landing page.</div>
-                {[{k:'heroTitle',l:'HERO TITLE'},{k:'heroSub',l:'HERO SUBTITLE'},{k:'contactEmail',l:'CONTACT EMAIL'},{k:'contactPhone',l:'CONTACT PHONE'},{k:'contactAddr',l:'CONTACT ADDRESS'},{k:'portalTitle',l:'PORTAL LOGIN TITLE'}].map(function(f){return (
-                  <div key={f.k} style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>{f.l}</div>
-                    {f.k==='heroSub'||f.k==='contactAddr'?<textarea value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} rows={2} style={{...IST,resize:'vertical'}}/>:<input value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} style={{...IST}} onFocus={fIn} onBlur={fOut}/>}
-                  </div>
+              </SrCard>}
+              {adminTab==='editor'&&<SrCard title="Site Editor">
+                <div className="sr-note" style={{marginBottom:4}}>Changes save automatically. Refresh to see updates on landing page.</div>
+                {[{k:'heroTitle',l:'Hero title'},{k:'heroSub',l:'Hero subtitle'},{k:'contactEmail',l:'Contact email'},{k:'contactPhone',l:'Contact phone'},{k:'contactAddr',l:'Contact address'},{k:'portalTitle',l:'Portal login title'}].map(function(f){return (
+                  <SrField key={f.k} label={f.l}>
+                    {f.k==='heroSub'||f.k==='contactAddr'?<textarea className="sr-textarea" value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} rows={2}/>:<input className="sr-input" value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}}/>}
+                  </SrField>
                 )})}
-              </div>}
+              </SrCard>}
             </div>
           </div>
         )}
 
         {/* ══ REQUEST ACCESS ══ */}
         {page==='request'&&!isPortalAdmin&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
+          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(76px + var(--sat, 0px)) 14px calc(32px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
             <div style={{maxWidth:600,margin:'0 auto'}}>
               <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back</div>
-              <div style={{...BB,fontSize:m?28:40,letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>REQUEST ACCESS</div>
-              <div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
+              <div style={{...BB,fontSize:m?28:40,letterSpacing:2,color:'#f6f3ec',textShadow:'none',marginBottom:24}}>REQUEST ACCESS</div>
+              <div className="sr-card" style={{padding:m?24:32}}>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>SELECT TOOL</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                     {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).map(function(tk){return (
-                      <div key={tk} onClick={function(){setReqTool(tk)}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:reqTool===tk?'rgba(249,115,22,.15)':'transparent',color:reqTool===tk?A:'#666',border:'1px solid '+(reqTool===tk?A:'#444')}}>{TOOL_LABELS[tk]}</div>
+                      <div key={tk} onClick={function(){setReqTool(tk)}} style={{padding:'8px 14px',minHeight:40,display:'flex',alignItems:'center',borderRadius:6,...NB,fontSize:12,letterSpacing:'1px',cursor:'pointer',background:reqTool===tk?'rgba(255,107,24,.15)':'transparent',color:reqTool===tk?'#ff7a21':'#aab3c0',border:'1px solid '+(reqTool===tk?'#ff7a21':'#2b3949')}}>{TOOL_LABELS[tk]}</div>
                     )})}
                   </div>
-                  {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).length===0&&<div style={{...NB,fontSize:13,color:'#22c55e'}}>You have access to all tools!</div>}
+                  {Object.keys(TOOL_LABELS).filter(function(tk){return !hasTool(tk)}).length===0&&<div style={{...NB,fontSize:13,color:'#19d47b'}}>You have access to all tools!</div>}
                 </div>
                 <div style={{marginBottom:16}}>
                   <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>REASON</div>
                   <textarea value={reqReason} onChange={function(e){setReqReason(e.target.value)}} rows={3} style={{...IST,resize:'vertical'}} placeholder="Why do you need access to this tool?"/>
                 </div>
-                <div style={{cursor:'pointer',background:reqTool&&reqReason.trim()?A:'#444',color:reqTool&&reqReason.trim()?'#1a1206':'#888',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={function(){if(reqTool&&reqReason.trim()){submitAccessReq()}}}>SUBMIT REQUEST</div>
+                <div style={{cursor:'pointer',background:reqTool&&reqReason.trim()?'#ff6b18':'#0a1826',color:reqTool&&reqReason.trim()?'#120a04':'#717d8d',border:'1px solid '+(reqTool&&reqReason.trim()?'#ff6b18':'#2b3949'),borderRadius:6,textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0',minHeight:48}} onClick={function(){if(reqTool&&reqReason.trim()){submitAccessReq()}}}>SUBMIT REQUEST</div>
               </div>
               {accessReqs.filter(function(r){return r.userId===(user?user.id:'')}).length>0&&<div style={{marginTop:20}}>
-                <div style={{...NB,fontSize:12,letterSpacing:'2px',color:'#888',marginBottom:8}}>YOUR REQUESTS</div>
+                <div style={{...NB,fontSize:12,letterSpacing:'2px',color:'#aab3c0',marginBottom:8}}>YOUR REQUESTS</div>
                 {accessReqs.filter(function(r){return r.userId===(user?user.id:'')}).map(function(r){return (
-                  <div key={r.id} style={{background:'rgba(8,8,20,.5)',padding:'10px 14px',marginBottom:6,display:'flex',justifyContent:'space-between',...NB,fontSize:12}}>
-                    <span style={{color:'#F5F0EB'}}>{TOOL_LABELS[r.tool]||r.tool}</span>
-                    <span style={{color:r.status==='approved'?'#22c55e':r.status==='denied'?'#ef4444':'#eab308'}}>{r.status.toUpperCase()}</span>
+                  <div key={r.id} style={{background:'#07121e',border:'1px solid #2b3949',borderRadius:8,padding:'10px 14px',marginBottom:6,display:'flex',justifyContent:'space-between',...NB,fontSize:12}}>
+                    <span style={{color:'#f6f3ec'}}>{TOOL_LABELS[r.tool]||r.tool}</span>
+                    <span style={{color:r.status==='approved'?'#19d47b':r.status==='denied'?'#ff4655':'#f4d457'}}>{r.status.toUpperCase()}</span>
                   </div>
                 )})}
               </div>}
@@ -5875,20 +6058,11 @@ export default function App(){
         {/* ══════════════════════════════════════════════
             MODULE PLACEHOLDER PAGES
             ══════════════════════════════════════════════ */}
-        {page==='precon'&&<PreConControls onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
+        {page==='precon'&&<EstimatorFrame mob={mob} onExit={function(){setPage('dashboard')}} cloudGet={function(){return sGet('estimator_projects')}} cloudSet={function(v){return sSet('estimator_projects',v)}}/>}
         {page==='equipment'&&<EquipmentManager onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
-        {page==='field'&&(function(){
-          var em=(user&&user.email)||(user&&user.name)||user||'';
-          var nm=(user&&user.name)||(user&&user.email)||user||'';
-          var src='/field-reporting.html?u='+encodeURIComponent(em)+'&n='+encodeURIComponent(nm);
-          return <div style={{position:'fixed',inset:0,zIndex:2000,background:'#0F4C81'}}>
-            <iframe src={src} style={{width:'100%',height:'100%',border:'none'}} allow="camera;microphone;fullscreen" title="Field Reporting"/>
-          </div>;
-        })()}
-        {page==='hr'&&<div style={{position:'fixed',inset:0,zIndex:2000,background:'#f5f2ee',overflow:'auto'}}><ScreeningSolutions onExit={function(){setPage('dashboard')}} portalUser={user||null}/></div>}
         {page==='stakeholders'&&<StakeholderReports onExit={function(){setPage('dashboard')}}/>}
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
-        {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
+        {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null} allUsers={portalUsers}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
         {page==='documents'&&user&&<DocumentPortal user={user} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
         {page==='projecttracker'&&<ProjectTracker portalUser={user||null} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
@@ -5896,25 +6070,14 @@ export default function App(){
         {page==='mytimecard'&&user&&<MyTimeCard portalUser={user} onExit={function(){setPage('dashboard')}}/>}
         {page==='pileplan'&&<PilePlan onExit={function(){setPage('dashboard')}} portalUser={user}/>}
         {page==='client'&&<ClientPortal user={user} onExit={function(){setUser(null);setPage('landing')}}/>}
+        {page==='loads'&&<LoadsFrame mob={mob} onExit={function(){setPage('dashboard')}}/>}
+        {showTabBar&&<MobileTabBar page={page} setPage={setPage} tiles={dashTiles} onOpenTile={function(t){if(t.key==='loads'&&isNative){setPage('loads')}else if(t.href){openExternal(t.href,'_blank')}else{setPage(t.key)}}}/>}
         {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
         {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
-        {['hse'].includes(page)&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px'}}>
-            <div style={{maxWidth:1200,margin:'0 auto'}}>
-              <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28,transition:'opacity .2s'}} onClick={()=>setPage('dashboard')} onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-                ← Back to Dashboard
-              </div>
-              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:16}}>
-                HS&E
-              </div>
-              <div style={{...NB,fontSize:14,color:'#666',letterSpacing:'1.5px'}}>Module content coming soon.</div>
-            </div>
-          </div>
-        )}
 
         {/* ── APPLY FOR WORK PAGE ── */}
         {page==='apply'&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'82px 16px 60px':'120px 48px 80px'}}>
+          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(82px + var(--sat, 0px)) 16px calc(60px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
             <div style={{maxWidth:960,margin:'0 auto'}}>
               <div onClick={function(){setPage('landing');try{window.scrollTo(0,0)}catch(e){}}} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:m?14:22}}>{T('apply_back')}</div>
               <div style={{...NB,fontSize:11,letterSpacing:'4px',textTransform:'uppercase',color:A,marginBottom:10,display:'flex',alignItems:'center',gap:12}}>

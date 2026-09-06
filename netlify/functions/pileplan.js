@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const MAX_LOG = 200;
 const EMPTY = { name: '', points: null, w: 0, h: 0, sections: null, sectionCount: 0, sectionNames: null, stage: null, qc: null, by: null, at: null, notes: null, bg: null, bgT: 0, overlay3d: null, geo: null, subtasks: null, sub: null, log: [], lastModified: 0, rev: 0 };
@@ -40,7 +41,7 @@ function mergePoints(cur, body) {
   return { stage: outStage, qc: outQc, by: outBy, at: outAt };
 }
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('pileplan'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -89,4 +90,4 @@ export default async (req) => {
     return Response.json(doc);
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { jsPDF } from 'jspdf';
+import { publicUrl, publicHost, isNative } from './native/platform.js';
+import { openExternal } from './native/external.js';
+import { saveAndShare } from './native/share.js';
+import { useIsMobile } from './native/useIsMobile.js';
+import { Folder, FileText, Paperclip, X } from 'lucide-react';
+import { SrEmpty, SrBadge } from './admin_skin.jsx';
 
 /* ── design tokens ─────────────────────────────────────────────────── */
-const ORANGE = '#F97316', GOLD = '#EAB308', GREEN = '#16a34a', RED = '#dc2626';
-const BG = '#f5f2ee', CARD = '#ffffff', TEXT = '#1a1a2e', MID = '#666', DIM = '#999', BORDER = 'rgba(0,0,0,.1)';
-const BB = { fontFamily: "'Bebas Neue', sans-serif" };
+/* SUNRISE dark skin tokens (see src/admin-skin.css) */
+const ORANGE = '#ff6b18', GOLD = '#f4d457', GREEN = '#19d47b', RED = '#ff4655';
+const BG = '#020811', CARD = '#07121e', TEXT = '#f6f3ec', MID = '#aab3c0', DIM = '#717d8d', BORDER = '#2b3949';
+const BB = { fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700 };
 const NB = { fontFamily: "'Barlow Condensed', sans-serif" };
 const CLIP = 'polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%)';
 
@@ -104,12 +111,12 @@ async function downloadBlob(docId, chunks, mime, kind) {
 }
 
 /* ── style helpers ─────────────────────────────────────────────────── */
-const cta = { background: ORANGE, color: '#1a1206', border: 'none', padding: '10px 16px', ...NB, fontWeight: 700, fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
-const ghost = { background: 'transparent', color: ORANGE, border: '1px solid ' + ORANGE, padding: '8px 14px', ...NB, fontWeight: 700, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
-const lineBtn = { background: 'transparent', border: '1px solid ' + BORDER, color: MID, padding: '6px 12px', ...NB, fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', cursor: 'pointer' };
-const kicker = { ...NB, fontSize: 10, letterSpacing: '2.5px', textTransform: 'uppercase', color: ORANGE };
-const overlay = { position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,.62)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 };
-const modal = (w) => ({ background: CARD, width: '100%', maxWidth: w || 560, maxHeight: '92vh', overflowY: 'auto', padding: 24, boxShadow: '0 10px 40px rgba(0,0,0,.3)' });
+const cta = { background: 'linear-gradient(135deg,#ff6b18,#ff7a21)', color: '#120a04', border: '1px solid #ff7a21', padding: '10px 20px', minHeight: 44, ...NB, fontWeight: 700, fontSize: 14, letterSpacing: '.12em', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
+const ghost = { background: 'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))', color: '#ff7a21', border: '1px solid #e65e20', padding: '8px 18px', minHeight: 44, ...NB, fontWeight: 700, fontSize: 14, letterSpacing: '.12em', textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
+const lineBtn = { background: 'rgba(8,21,34,.86)', border: '1px solid ' + BORDER, color: MID, padding: '6px 12px', minHeight: 36, borderRadius: 6, ...NB, fontSize: 13, letterSpacing: '.1em', textTransform: 'uppercase', cursor: 'pointer' };
+const kicker = { ...NB, fontSize: 12, letterSpacing: '.2em', textTransform: 'uppercase', color: '#ff7a21', fontWeight: 600 };
+const overlay = { position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(1,5,11,.72)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, paddingBottom: 'calc(20px + var(--tabbar-h, 0px))' };
+const modal = (w) => ({ background: 'linear-gradient(145deg, rgba(12,28,44,.99), rgba(4,13,24,.99))', border: '1px solid #e65e20', borderRadius: 12, color: TEXT, width: '100%', maxWidth: w || 560, maxHeight: '92vh', overflowY: 'auto', padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,.55)' });
 
 /* ── signature pad component (draw OR type) ────────────────────────── */
 function SignaturePad({ onCommit, defaultType }) {
@@ -190,7 +197,7 @@ function AdoptSignatureModal({ user, savedSigs, onClose, onAdopted, onSaveForFut
   return (
     <div style={overlay} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={modal(560)}>
-        <div style={{ ...BB, fontSize: 24, letterSpacing: 1.5, color: TEXT }}>ADOPT YOUR ELECTRONIC SIGNATURE</div>
+        <div className="sr-card-title">Adopt Your Electronic Signature</div>
         <div style={{ ...NB, fontSize: 13, color: MID, marginTop: 4, marginBottom: 16, lineHeight: 1.6 }}>By adopting a signature below, you consent to use electronic records and electronic signatures, and you agree the signature is your legally binding signature equivalent to a handwritten one (ESIGN Act / UETA).</div>
         {step === 'pick' && (<>
           <div style={{ ...kicker, marginBottom: 8 }}>Use a saved signature</div>
@@ -244,6 +251,7 @@ async function renderPdfPages(arrayBuffer, scale) {
 
 /* ── markup modal: admin places signature fields per signer ─────────── */
 function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
+  const mob = useIsMobile();
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [signers, setSigners] = useState(doc.workflow && doc.workflow.signers ? doc.workflow.signers.slice() : []);
@@ -366,19 +374,22 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
   return (
     <div style={overlay} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={Object.assign({}, modal(1100), { padding: 0 })}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid ' + BORDER }}>
-          <div>
-            <div style={{ ...BB, fontSize: 22, color: TEXT }}>PREPARE FOR SIGNATURE</div>
-            <div style={{ ...NB, fontSize: 12, color: MID }}>{doc.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: mob ? '10px 12px' : '14px 18px', borderBottom: '1px solid ' + BORDER }}>
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+            <div style={{ ...BB, fontSize: mob ? 19 : 22, color: TEXT }}>PREPARE FOR SIGNATURE</div>
+            <div style={{ ...NB, fontSize: 12, color: MID, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={lineBtn}>Cancel</button>
-            <button onClick={send} disabled={busy} style={cta}>{busy ? 'Sending…' : 'Send for Signature →'}</button>
+            <button onClick={onClose} style={Object.assign({}, lineBtn, mob ? { minHeight: 44, padding: '0 14px' } : null)}>Cancel</button>
+            <button onClick={send} disabled={busy} style={Object.assign({}, cta, mob ? { minHeight: 44 } : null)}>{busy ? 'Sending…' : (mob ? 'Send →' : 'Send for Signature →')}</button>
           </div>
         </div>
-        <div style={{ display: 'flex', minHeight: 0, maxHeight: 'calc(92vh - 60px)' }}>
-          {/* signer panel */}
-          <div style={{ width: 280, flexShrink: 0, borderRight: '1px solid ' + BORDER, padding: 14, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: mob ? 'column' : 'row', minHeight: 0, maxHeight: mob ? 'calc(92dvh - 60px)' : 'calc(92vh - 60px)' }}>
+          {/* signer panel — a side rail on desktop, a collapsible top drawer on phones
+              so the PDF page keeps the full width */}
+          <div style={mob
+            ? { width: '100%', flexShrink: 0, maxHeight: '38%', borderBottom: '1px solid ' + BORDER, padding: '10px 12px', overflowY: 'auto' }
+            : { width: 280, flexShrink: 0, borderRight: '1px solid ' + BORDER, padding: 14, overflowY: 'auto' }}>
             <div style={{ ...kicker, marginBottom: 6 }}>Signers</div>
             {signers.map((s, i) => (
               <div key={s.id} onClick={() => setActiveSignerIdx(i)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', border: '1px solid ' + (i === activeSignerIdx ? s.color : BORDER), background: i === activeSignerIdx ? s.color + '15' : '#fff', marginBottom: 6 }}>
@@ -390,14 +401,14 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
                 <button onClick={(e) => { e.stopPropagation(); removeSigner(i); }} style={{ background: 'transparent', border: 'none', color: MID, fontSize: 18, cursor: 'pointer', padding: 0 }}>×</button>
               </div>
             ))}
-            <button onClick={addSigner} style={Object.assign({}, ghost, { width: '100%', padding: '8px 0', marginTop: 4 })}>+ Add Signer</button>
+            <button onClick={addSigner} style={Object.assign({}, ghost, { width: '100%', padding: mob ? '12px 0' : '8px 0', minHeight: mob ? 44 : undefined, marginTop: 4 })}>+ Add Signer</button>
             <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 8, lineHeight: 1.5 }}>Anyone without a portal account gets a signing link — no sign-up needed.</div>
 
             <div style={{ ...kicker, marginTop: 16, marginBottom: 6 }}>Fields</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
               {FIELD_KINDS.map((k) => (
                 <button key={k.k} onClick={() => setTool(k.k)} title={k.label}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: mob ? '11px 8px' : '7px 8px', minHeight: mob ? 44 : undefined, cursor: 'pointer', textAlign: 'left',
                     border: '1px solid ' + (tool === k.k ? ORANGE : BORDER), background: tool === k.k ? 'rgba(249,115,22,.10)' : '#fff',
                     ...NB, fontSize: 11, color: tool === k.k ? ORANGE : TEXT, fontWeight: tool === k.k ? 700 : 400 }}>
                   <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0 }}>{k.glyph}</span>
@@ -432,9 +443,13 @@ function MarkupModal({ doc, allUsers, currentUser, onClose, onSent }) {
                     style={{ position: 'absolute', left: (f.x * 100) + '%', top: (f.y * 100) + '%', width: (f.w * 100) + '%', height: (f.h * 100) + '%', border: '2px solid ' + col, background: col + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', ...NB, fontSize: 10, letterSpacing: '.5px', textTransform: 'uppercase', color: col, cursor: 'move', overflow: 'hidden', touchAction: 'none' }}>
                     <span style={{ padding: '0 3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.kind === 'checkbox' ? '☑' : def.label + (s ? ' · ' + s.name.split(' ')[0] : '')}</span>
                     <button onClick={(e) => { e.stopPropagation(); removeField(f.id); }} onPointerDown={(e) => e.stopPropagation()}
-                      style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', padding: 0, background: col, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>×</button>
+                      style={mob
+                        ? { position: 'absolute', top: -6, right: -6, width: 26, height: 26, lineHeight: '24px', padding: 0, background: col, color: '#fff', border: '2px solid #fff', borderRadius: 13, cursor: 'pointer', fontSize: 15 }
+                        : { position: 'absolute', top: -1, right: -1, width: 15, height: 15, lineHeight: '13px', padding: 0, background: col, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>×</button>
                     <span onPointerDown={(e) => startDrag(e, f, 'resize')} title="Resize"
-                      style={{ position: 'absolute', right: -3, bottom: -3, width: 11, height: 11, background: '#fff', border: '2px solid ' + col, cursor: 'nwse-resize', touchAction: 'none' }} />
+                      style={mob
+                        ? { position: 'absolute', right: -9, bottom: -9, width: 28, height: 28, background: '#fff', border: '3px solid ' + col, borderRadius: 14, cursor: 'nwse-resize', touchAction: 'none', boxShadow: '0 1px 4px rgba(0,0,0,.3)' }
+                        : { position: 'absolute', right: -3, bottom: -3, width: 11, height: 11, background: '#fff', border: '2px solid ' + col, cursor: 'nwse-resize', touchAction: 'none' }} />
                   </div>
                 ); })}
               </div>
@@ -632,9 +647,9 @@ export function PublicSignPage({ token, onExit }) {
   }
 
   const shell = (inner) => (
-    <div style={{ position: 'fixed', inset: 0, background: BG, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', background: '#fff', borderBottom: '1px solid ' + BORDER, flexShrink: 0 }}>
-        <img src="/logo.webp" alt="SRC&D" style={{ height: 34, objectFit: 'contain' }} />
+    <div className="sunrise-admin" style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', color: TEXT }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', background: 'rgba(1,7,14,.9)', borderBottom: '1px solid #a7461e', flexShrink: 0 }}>
+        <img src="/logo.webp" alt="SRC&D" style={{ height: 34, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }} />
         <div>
           <div style={{ ...BB, fontSize: 18, color: TEXT, letterSpacing: 1 }}>SUN RISE CONSTRUCTION &amp; DEVELOPMENT</div>
           <div style={{ ...NB, fontSize: 11, color: MID, letterSpacing: '2px', textTransform: 'uppercase' }}>Secure document signing</div>
@@ -645,12 +660,12 @@ export function PublicSignPage({ token, onExit }) {
   );
   const centred = (title, body, tone) => shell(
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: 32, maxWidth: 460, textAlign: 'center' }}>
+      <div className="sr-card" style={{ padding: 32, maxWidth: 460, textAlign: 'center' }}>
         <div style={{ ...BB, fontSize: 26, color: tone || TEXT, marginBottom: 10 }}>{title}</div>
         <div style={{ ...NB, fontSize: 15, color: MID, lineHeight: 1.6 }}>{body}</div>
         {/* label follows whatever host is serving the page, so it stays right
             if the site moves between the custom domain and netlify.app */}
-        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to {window.location.hostname.replace(/^www\./, '')}</button>}
+        {onExit && <button onClick={onExit} style={Object.assign({}, ghost, { marginTop: 20 })}>Go to {publicHost()}</button>}
       </div>
     </div>
   );
@@ -751,7 +766,7 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   const [auditDoc, setAuditDoc] = useState(null);
   const [copiedTok, setCopiedTok] = useState('');
   /* the signing link is all a recipient needs — no account, no password */
-  const signLink = (s) => window.location.origin + window.location.pathname + '?sign=' + s.token;
+  const signLink = (s) => publicUrl('/?sign=' + s.token);
   function copySignLink(s) {
     const url = signLink(s);
     try { navigator.clipboard.writeText(url); setCopiedTok(s.token); setTimeout(() => setCopiedTok(''), 2000); }
@@ -763,7 +778,7 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
     const body = (s.name ? s.name.split(' ')[0] + ',\n\n' : '') +
       'Please review and sign "' + d.name + '" for Sun Rise Construction and Development LLC.\n\n' +
       'Open this link to sign — no account or sign-up is needed:\n' + url + '\n\n— SRC&D';
-    window.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s.email) + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body), '_blank');
+    openExternal('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s.email) + '&su=' + encodeURIComponent(subj) + '&body=' + encodeURIComponent(body), '_blank');
   }
   const [savedSigs, setSavedSigs] = useState([]);
   const [mob, setMob] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
@@ -829,6 +844,9 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   async function viewDoc(d) {
     try {
       const blob = await downloadBlob(d.id, d.chunks || 0, d.mime || 'application/pdf', 'orig');
+      // No popup windows in the Android shell — hand the file to the share
+      // sheet, which offers the device's PDF viewer.
+      if (isNative) { await saveAndShare(blob, d.name || 'document.pdf', { title: d.name }); return; }
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -886,54 +904,51 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
   }).length;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, overflowY: 'auto', background: BG, color: TEXT, padding: mob ? '20px 14px' : '40px 48px' }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: mob ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 0, zIndex: 2000, overflowY: 'auto', color: TEXT, padding: mob ? '16px 14px' : '32px 48px', paddingBottom: 'calc(24px + var(--tabbar-h, 0px))' }}>
       <div style={{ maxWidth: 1280, margin: '0 auto' }}>
-        <div style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, ...NB, fontSize: 12, letterSpacing: '2px', textTransform: 'uppercase', color: ORANGE, marginBottom: 16 }} onClick={onExit}>← Back to Dashboard</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 4 }}>
-          <div style={{ ...BB, fontSize: mob ? 'clamp(30px,8vw,46px)' : 'clamp(36px,5vw,56px)', letterSpacing: 2 }}>DOCUMENT PORTAL</div>
+        <button type="button" className="sr-kicker sr-back" style={{ marginBottom: 12 }} onClick={onExit}>← Back to Dashboard</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 4 }}>
+          <h1 className="sr-display" style={{ marginBottom: 0 }}>Document Portal</h1>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {pendingForMe > 0 && (
-              <button onClick={() => { setCurrentFolder(null); setFilter(filter === 'forme' ? '' : 'forme'); }} style={{ ...ghost, color: filter === 'forme' ? '#fff' : ORANGE, background: filter === 'forme' ? ORANGE : 'transparent' }}>📝 For My Signature ({pendingForMe})</button>
+              <button onClick={() => { setCurrentFolder(null); setFilter(filter === 'forme' ? '' : 'forme'); }} style={filter === 'forme' ? cta : ghost}>✍ For My Signature ({pendingForMe})</button>
             )}
             {isAdmin && <button onClick={() => setNewFolderOpen(true)} style={ghost}>+ Folder</button>}
             <label style={Object.assign({}, cta, { cursor: 'pointer', display: 'inline-block' })}>+ Upload File<input type="file" hidden onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f); e.target.value = ''; }} /></label>
           </div>
         </div>
-        <div style={{ ...NB, fontSize: 13, color: MID, marginBottom: 18 }}>Cloud-stored agreements, board minutes, and signed PDFs · Send for e-signature with audit trail and verified-signature watermark.</div>
+        <div className="sr-note" style={{ marginBottom: 18, marginTop: 8 }}>Cloud-stored agreements, board minutes, and signed PDFs · Send for e-signature with audit trail and verified-signature watermark.</div>
 
         {/* Breadcrumb */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
           {breadcrumb.map((b, i) => (
-            <span key={b.id || 'root'} onClick={() => { setCurrentFolder(b.id); setFilter(''); }} style={{ ...NB, fontSize: 13, color: i === breadcrumb.length - 1 ? TEXT : ORANGE, cursor: i === breadcrumb.length - 1 ? 'default' : 'pointer', fontWeight: i === breadcrumb.length - 1 ? 700 : 500 }}>
+            <span key={b.id || 'root'} onClick={() => { setCurrentFolder(b.id); setFilter(''); }} style={{ ...NB, fontSize: 15, color: i === breadcrumb.length - 1 ? TEXT : '#ff7a21', cursor: i === breadcrumb.length - 1 ? 'default' : 'pointer', fontWeight: i === breadcrumb.length - 1 ? 700 : 500 }}>
               {b.name}{i < breadcrumb.length - 1 && <span style={{ color: DIM, margin: '0 6px' }}>›</span>}
             </span>
           ))}
         </div>
 
-        {loading && <div style={{ textAlign: 'center', padding: 40, color: DIM }}>Loading documents…</div>}
+        {loading && <div className="sr-meta" style={{ textAlign: 'center', padding: 40 }}>Loading documents…</div>}
 
         {!loading && (
           <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'minmax(180px,260px) 1fr', gap: 18 }}>
             {/* Folder rail */}
-            <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: 12 }}>
+            <div className="sr-card" style={{ marginTop: 0, padding: 12, alignSelf: 'start' }}>
               <div style={{ ...kicker, marginBottom: 8 }}>Folders</div>
-              <div onClick={() => { setCurrentFolder(null); setFilter(''); }} style={{ padding: '6px 8px', cursor: 'pointer', background: !currentFolder && filter !== 'forme' ? 'rgba(249,115,22,.1)' : 'transparent', color: !currentFolder && filter !== 'forme' ? ORANGE : TEXT, ...NB, fontSize: 13 }}>📁 All Documents ({(index.docs || []).filter((d) => !d.folderId).length})</div>
+              <div className="sr-folder-row" aria-current={!currentFolder && filter !== 'forme'} onClick={() => { setCurrentFolder(null); setFilter(''); }}><Folder size={16} /> <span style={{ flex: 1 }}>All Documents</span><span className="sr-folder-count">({(index.docs || []).filter((d) => !d.folderId).length})</span></div>
               <FolderTreeRail folders={index.folders || []} docs={index.docs || []} byParent={folderTree} parentId="__root__" depth={0} current={currentFolder} onPick={(id) => { setCurrentFolder(id); setFilter(''); }} onDelete={isAdmin ? deleteFolder : null} />
               {isAdmin && (
-                <div style={{ borderTop: '1px solid ' + BORDER, marginTop: 10, paddingTop: 10 }}>
-                  <button onClick={() => setUploadOpen(true)} style={Object.assign({}, lineBtn, { width: '100%', textAlign: 'left' })}>+ Saved Signatures ({savedSigs.length})</button>
+                <div style={{ marginTop: 12 }}>
+                  <button onClick={() => setUploadOpen(true)} className="sr-button sr-button--outline sr-button--block" style={{ textAlign: 'left', minHeight: 40, fontSize: '.85rem' }}>+ Saved Signatures ({savedSigs.length})</button>
                 </div>
               )}
             </div>
 
             {/* File list */}
             <div>
-              {filter === 'forme' && <div style={{ background: 'rgba(249,115,22,.08)', border: '1px solid ' + ORANGE, padding: '10px 14px', marginBottom: 12, ...NB, fontSize: 13, color: ORANGE }}>Showing only documents pending <strong>your</strong> signature.</div>}
+              {filter === 'forme' && <div style={{ background: 'rgba(255,107,24,.1)', border: '1px solid #e65e20', borderRadius: 6, padding: '10px 14px', marginBottom: 12, ...NB, fontSize: 14, color: '#ff7a21' }}>Showing only documents pending <strong>your</strong> signature.</div>}
               {visibleDocs.length === 0 ? (
-                <div style={{ background: CARD, border: '1px solid ' + BORDER, padding: 40, textAlign: 'center' }}>
-                  <div style={{ ...BB, fontSize: 22, color: DIM, marginBottom: 6 }}>NO DOCUMENTS HERE</div>
-                  <div style={{ ...NB, fontSize: 13, color: MID }}>Click <strong>+ Upload File</strong> above to add an agreement, PDF, spreadsheet, or note.</div>
-                </div>
+                <SrEmpty Icon={FileText} title="No documents here" hint="Tap + Upload File above to add an agreement, PDF, spreadsheet, or note." />
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   {visibleDocs.sort((a, b) => (b.uploadedAt || 0) - (a.uploadedAt || 0)).map((d) => {
@@ -944,37 +959,31 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
                     const numSigners = (wf && (wf.signers || []).length) || 0;
                     const numSigned = (wf && (wf.signers || []).filter((s) => s.signedAt).length) || 0;
                     return (
-                      <div key={d.id} style={{ background: CARD, border: '1px solid ' + BORDER, padding: '14px 18px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <div style={{ flex: 1, minWidth: 220 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <div style={{ ...BB, fontSize: 18, letterSpacing: 1, color: TEXT }}>{d.type === 'pdf' ? '📄' : '📎'} {d.name}</div>
-                              {statusBadge && <span style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', padding: '3px 8px', background: statusBadge.color + '1f', color: statusBadge.color, fontWeight: 700 }}>{statusBadge.label}{status === 'sent' ? ' (' + numSigned + '/' + numSigners + ')' : ''}</span>}
-                            </div>
-                            <div style={{ ...NB, fontSize: 12, color: MID, marginTop: 2 }}>{fmtSize(d.size)} · uploaded {fmtDT(d.uploadedAt)}{d.uploadedBy ? ' by ' + d.uploadedBy : ''}</div>
-                          </div>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {myField && !myField.signedAt && status === 'sent' && <button onClick={() => setSigningDoc(d)} style={Object.assign({}, cta, { background: ORANGE })}>Sign Now →</button>}
-                            {d.type === 'pdf' && <button onClick={() => viewDoc(d)} style={lineBtn}>View</button>}
-                            <button onClick={() => downloadDoc(d, 'orig')} style={lineBtn}>Download</button>
-                            {isAdmin && d.type === 'pdf' && status !== 'completed' && <button onClick={() => setMarkupDoc(d)} style={ghost}>{status === 'sent' ? 'Edit Workflow' : 'Send for Signature →'}</button>}
-                            {allDone && <button onClick={() => (wf.signedChunks ? downloadDoc(d, 'signed') : generateSignedAndStore(d))} style={Object.assign({}, cta, { background: GREEN, color: '#fff' })}>Download Signed</button>}
-                            {wf && wf.status && wf.status !== 'none' && <button onClick={() => setAuditDoc(d)} style={lineBtn}>Audit</button>}
-                            {isAdmin && <button onClick={() => deleteDoc(d.id, d.name)} style={Object.assign({}, lineBtn, { color: RED, borderColor: 'rgba(220,38,38,.3)' })}>Delete</button>}
-                          </div>
+                      <div key={d.id} className="sr-document-card">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                          <div className="sr-document-name" style={{ flex: 1, minWidth: 200 }}>{d.type === 'pdf' ? <FileText size={20} style={{ flexShrink: 0, marginTop: 1 }} /> : <Paperclip size={20} style={{ flexShrink: 0, marginTop: 1 }} />}<span>{d.name}</span></div>
+                          {statusBadge && <SrBadge tone={status === 'completed' ? 'ok' : 'accent'}>{statusBadge.label}{status === 'sent' ? ' (' + numSigned + '/' + numSigners + ')' : ''}</SrBadge>}
+                        </div>
+                        <div className="sr-meta" style={{ marginTop: 4 }}>{fmtSize(d.size)} · uploaded {fmtDT(d.uploadedAt)}{d.uploadedBy ? ' by ' + d.uploadedBy : ''}</div>
+                        <div className="sr-document-actions">
+                          {myField && !myField.signedAt && status === 'sent' && <button onClick={() => setSigningDoc(d)} className="sr-button sr-button--primary">Sign Now →</button>}
+                          {d.type === 'pdf' && <button onClick={() => viewDoc(d)} className="sr-button sr-button--outline">View</button>}
+                          <button onClick={() => downloadDoc(d, 'orig')} className="sr-button sr-button--outline">Download</button>
+                          {isAdmin && d.type === 'pdf' && status !== 'completed' && <button onClick={() => setMarkupDoc(d)} className="sr-button sr-button--assign">{status === 'sent' ? 'Edit Workflow' : 'Send for Signature →'}</button>}
+                          {allDone && <button onClick={() => (wf.signedChunks ? downloadDoc(d, 'signed') : generateSignedAndStore(d))} className="sr-button sr-button--success">Download Signed</button>}
+                          {wf && wf.status && wf.status !== 'none' && <button onClick={() => setAuditDoc(d)} className="sr-button sr-button--outline">Audit</button>}
+                          {isAdmin && <button onClick={() => deleteDoc(d.id, d.name)} className="sr-button sr-button--danger">Delete</button>}
                         </div>
                         {status === 'sent' && numSigners > 0 && (
                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid ' + BORDER, display: 'flex', flexDirection: 'column', gap: 5 }}>
                             {(wf.signers || []).map((s) => (
-                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...NB, fontSize: 12, color: MID }}>
-                                <span style={{ width: 9, height: 9, background: s.color || DIM, flexShrink: 0 }} />
+                              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...NB, fontSize: 14, color: MID }}>
+                                <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color || DIM, flexShrink: 0 }} />
                                 <span style={{ color: TEXT, fontWeight: 600 }}>{s.name}</span>
                                 <span style={{ color: DIM }}>{s.email}</span>
-                                <span style={{ ...NB, fontSize: 10, letterSpacing: '1px', padding: '2px 7px', fontWeight: 700, background: (s.signedAt ? GREEN : s.openedAt ? ORANGE : DIM) + '1f', color: s.signedAt ? GREEN : s.openedAt ? ORANGE : MID }}>
-                                  {s.signedAt ? 'SIGNED ' + fmtDT(s.signedAt) : s.openedAt ? 'OPENED ' + fmtDT(s.openedAt) : 'NOT OPENED'}
-                                </span>
-                                {isAdmin && !s.signedAt && s.token && <button onClick={() => copySignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 10 })}>{copiedTok === s.token ? '✓ Copied' : 'Copy signing link'}</button>}
-                                {isAdmin && !s.signedAt && s.token && <button onClick={() => emailSignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 10 })}>Email link</button>}
+                                <SrBadge tone={s.signedAt ? 'ok' : s.openedAt ? 'accent' : undefined}>{s.signedAt ? 'SIGNED ' + fmtDT(s.signedAt) : s.openedAt ? 'OPENED ' + fmtDT(s.openedAt) : 'NOT OPENED'}</SrBadge>
+                                {isAdmin && !s.signedAt && s.token && <button onClick={() => copySignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 12, minHeight: 30 })}>{copiedTok === s.token ? '✓ Copied' : 'Copy signing link'}</button>}
+                                {isAdmin && !s.signedAt && s.token && <button onClick={() => emailSignLink(s, d)} style={Object.assign({}, lineBtn, { padding: '3px 9px', fontSize: 12, minHeight: 30 })}>Email link</button>}
                               </div>
                             ))}
                           </div>
@@ -990,13 +999,13 @@ export default function DocumentPortal({ user, allUsers, onExit }) {
 
         {/* Saved signatures inline (for any user) */}
         {savedSigs.length > 0 && (
-          <div style={{ marginTop: 22, background: CARD, border: '1px solid ' + BORDER, padding: 14 }}>
+          <div className="sr-card" style={{ marginTop: 22, padding: 14 }}>
             <div style={{ ...kicker, marginBottom: 8 }}>Your Saved Signatures</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               {savedSigs.map((s) => (
-                <div key={s.id} style={{ border: '1px solid ' + BORDER, padding: 8, background: '#fff' }}>
-                  <img src={s.data} alt="sig" style={{ height: 40, maxWidth: 180, objectFit: 'contain' }} />
-                  <div style={{ ...NB, fontSize: 10, color: MID, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div key={s.id} style={{ border: '1px solid ' + BORDER, borderRadius: 6, padding: 8, background: 'rgba(8,21,34,.86)' }}>
+                  <img src={s.data} alt="sig" style={{ height: 40, maxWidth: 180, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 3 }} />
+                  <div style={{ ...NB, fontSize: 12, color: MID, marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span>{fmtDT(s.savedAt)}</span>
                     <span onClick={() => deleteSignature(s.id)} style={{ cursor: 'pointer', color: RED }}>delete</span>
                   </div>
@@ -1026,10 +1035,10 @@ function FolderTreeRail({ folders, docs, byParent, parentId, depth, current, onP
         const docCount = (docs || []).filter((d) => d.folderId === f.id).length;
         return (
           <div key={f.id}>
-            <div onClick={() => onPick(f.id)} style={{ padding: '6px 8px', cursor: 'pointer', background: current === f.id ? 'rgba(249,115,22,.1)' : 'transparent', color: current === f.id ? ORANGE : TEXT, ...NB, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-              📁 <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
-              <span style={{ color: DIM, fontSize: 11 }}>({docCount})</span>
-              {onDelete && <span onClick={(e) => { e.stopPropagation(); onDelete(f.id); }} style={{ color: DIM, cursor: 'pointer', padding: '0 4px' }}>×</span>}
+            <div className="sr-folder-row" aria-current={current === f.id} onClick={() => onPick(f.id)}>
+              <Folder size={16} style={{ flexShrink: 0 }} /><span style={{ flex: 1, overflowWrap: 'anywhere' }}>{f.name}</span>
+              <span className="sr-folder-count">({docCount})</span>
+              {onDelete && <button type="button" aria-label="Delete folder" onClick={(e) => { e.stopPropagation(); onDelete(f.id); }} className="sr-chip-x" style={{ color: DIM }}>×</button>}
             </div>
             <FolderTreeRail folders={folders} docs={docs} byParent={byParent} parentId={f.id} depth={depth + 1} current={current} onPick={onPick} onDelete={onDelete} />
           </div>
@@ -1044,8 +1053,8 @@ function NewFolderModal({ onClose, onCreate }) {
   return (
     <div style={overlay} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={modal(420)}>
-        <div style={{ ...BB, fontSize: 22, letterSpacing: 1.5, color: TEXT, marginBottom: 14 }}>NEW FOLDER</div>
-        <input autoFocus value={n} onChange={(e) => setN(e.target.value)} placeholder="e.g. Q3 Board Meeting" onKeyDown={(e) => { if (e.key === 'Enter') onCreate(n); }} style={{ width: '100%', ...NB, fontSize: 15, padding: '10px 12px', border: '1px solid ' + BORDER, outline: 'none', marginBottom: 12 }} />
+        <div className="sr-card-title" style={{ marginBottom: 14 }}>New Folder</div>
+        <input autoFocus className="sr-input" value={n} onChange={(e) => setN(e.target.value)} placeholder="e.g. Q3 Board Meeting" onKeyDown={(e) => { if (e.key === 'Enter') onCreate(n); }} style={{ marginBottom: 12 }} />
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => onCreate(n)} disabled={!n.trim()} style={Object.assign({}, cta, { flex: 1, padding: '11px 0', opacity: n.trim() ? 1 : .5 })}>Create</button>
           <button onClick={onClose} style={Object.assign({}, lineBtn, { padding: '11px 16px' })}>Cancel</button>
@@ -1060,23 +1069,23 @@ function AuditModal({ doc, onClose }) {
   return (
     <div style={overlay} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={modal(640)}>
-        <div style={{ ...BB, fontSize: 24, letterSpacing: 1.5, color: TEXT }}>SIGNATURE AUDIT TRAIL</div>
+        <div className="sr-card-title">Signature Audit Trail</div>
         <div style={{ ...NB, fontSize: 13, color: MID, marginTop: 4, marginBottom: 14 }}>{doc.name}</div>
-        <div style={{ ...NB, fontSize: 12, color: MID, marginBottom: 14, padding: '10px 12px', background: '#fafafa', border: '1px solid ' + BORDER }}>
+        <div style={{ ...NB, fontSize: 14, color: MID, marginBottom: 14, padding: '10px 12px', background: 'rgba(8,21,34,.86)', border: '1px solid ' + BORDER, borderRadius: 6 }}>
           <div>Status: <strong style={{ color: wf.status === 'completed' ? GREEN : ORANGE }}>{(wf.status || 'none').toUpperCase()}</strong></div>
           <div>Sent: {fmtDT(wf.sentAt)} {wf.sentBy ? '· by ' + wf.sentBy : ''}</div>
           <div>Completed: {wf.completedAt ? fmtDT(wf.completedAt) : '— (in progress)'}</div>
         </div>
         <div style={{ ...kicker, marginBottom: 8 }}>Signers</div>
         {(wf.signers || []).map((s, i) => (
-          <div key={s.id || i} style={{ padding: '10px 12px', border: '1px solid ' + BORDER, marginBottom: 8, background: '#fff' }}>
+          <div key={s.id || i} style={{ padding: '10px 12px', border: '1px solid ' + BORDER, borderRadius: 6, marginBottom: 8, background: 'rgba(8,21,34,.86)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {s.color && <span style={{ width: 12, height: 12, background: s.color }} />}
               <div style={{ flex: 1 }}>
                 <div style={{ ...NB, fontSize: 14, color: TEXT, fontWeight: 600 }}>{s.name}</div>
                 <div style={{ ...NB, fontSize: 11, color: MID }}>{s.email}</div>
               </div>
-              <span style={{ ...NB, fontSize: 10, letterSpacing: '1.5px', padding: '3px 8px', background: (s.signedAt ? GREEN : ORANGE) + '1f', color: s.signedAt ? GREEN : ORANGE, fontWeight: 700 }}>{s.signedAt ? 'SIGNED' : 'PENDING'}</span>
+              <SrBadge tone={s.signedAt ? 'ok' : 'accent'}>{s.signedAt ? 'SIGNED' : 'PENDING'}</SrBadge>
             </div>
             <div style={{ ...NB, fontSize: 11, color: MID, marginTop: 6 }}>Assigned {fmtDT(s.sentAt)}{s.signedAt ? ' · Signed ' + fmtDT(s.signedAt) : ''}</div>
           </div>

@@ -1,4 +1,6 @@
 import React from "react";
+import { PUBLIC_ORIGIN, isNative } from "./native/platform.js";
+import { shareHtml } from "./native/share.js";
 
 // ═══════════════════════════════════════════════════════════════════════
 //  BID EXPORT MODULE — Proposal & Execution Plan PDF generation
@@ -429,7 +431,9 @@ export function buildExecutionPlanHTML(params, computed, photos = {}) {
   const ph = photos || {};
   const bgPhoto = (key) => ph[key] ? `style="background:#fff url('${ph[key]}') center/cover no-repeat"` : "";
   const c = BRAND.contact;
-  const origin = (typeof window !== "undefined" && window.location && window.location.origin) || "";
+  // Proposals are emailed on; the logo must resolve from the public site, not
+  // from https://localhost inside the Android app.
+  const origin = PUBLIC_ORIGIN;
   const LOGO = origin + "/logo.webp";
   const NAVY = "#16466e";
   const PEPCO = "Sunrise Construction Co & Development";
@@ -684,6 +688,9 @@ export function buildExecutionPlanHTML(params, computed, photos = {}) {
 // ─── Export Functions ─────────────────────────────────────────────────
 
 function openInNewWindow(html, title) {
+  // The Android shell has no popup windows: hand the document to the share
+  // sheet as an .html file (opens in Chrome, Drive, Gmail, …).
+  if (isNative) { shareHtml(html, String(title || "document").replace(/[\\/:*?"<>|]+/g, "_") + ".html", { title }); return; }
   const win = window.open("", "_blank", "width=900,height=700");
   if (!win) { alert("Pop-up blocked. Please allow pop-ups for this site."); return; }
   win.document.write(html);

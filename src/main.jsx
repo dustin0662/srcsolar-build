@@ -1,6 +1,13 @@
+import './fonts.css'   // Bebas Neue / Barlow / Barlow Condensed, embedded so the APK renders offline
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
+import { installNativeBootstrap } from './native/bootstrap.js'
+
+// Must run before any module issues a fetch: rewrites /.netlify/functions/*
+// to the live backend inside the Android shell, wires the hardware back
+// button, status bar and splash. No-op on the web.
+installNativeBootstrap()
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { err: null }; }

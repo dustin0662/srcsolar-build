@@ -7,6 +7,12 @@ import TTMapView from './tt_mapview.jsx';
 import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
+import { Paintbrush, SquareDashed, Move, Trash2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon, ChevronLeft, Calendar, AlertTriangle } from 'lucide-react';
+import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
+import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_STYLE, seg as segStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
+import { REF_C, REF_LOGO_URI, BG_GRAD, RULE_SOFT, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
+import { useIsMobile } from './native/useIsMobile.js';
+import { PROJECT_ART } from './tt_projects_sprites.js';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -17,12 +23,18 @@ const storage = window.storage || {
 };
 
 /* brand tokens */
-const ORANGE = '#F97316', GOLD = '#EAB308', CREAM = '#F5F0EB';
-const INK = '#0a0a14', INK2 = '#06060f', MUTE = '#9a958d';
-const LINE = 'rgba(249,115,22,.20)', PANEL = 'rgba(12,12,22,.92)';
+/* skin pack tokens (src/tt_theme.js) */
+const ORANGE = TT.orange, GOLD = TT.amber, CREAM = TT.text;
+const INK = TT.canvas, INK2 = '#020910', MUTE = TT.text2;
+const LINE = TT.border;
 const BBF = "'Bebas Neue', sans-serif", NBF = "'Barlow Condensed', sans-serif";
 const CLIP = 'polygon(9px 0%,100% 0%,calc(100% - 9px) 100%,0% 100%)';
-const LOGO_URL = '/logo.webp';
+const LOGO_URL = (typeof window !== 'undefined' && window.__TT_LOGO) || '/logo.webp';
+/* new skin: deep-navy panels with orange rules, rounded corners */
+const NAVY = TT.panel, NAVY2 = TT.elevated;
+const PBOX = GRAD_PANEL, PBORDER = TT.border;
+const GREEN = TT.success;
+function hexA(hex, a) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
 
 const REG_KEY = 'tt-projects';
 const ACTIVE_KEY = 'tt-active';
@@ -37,12 +49,12 @@ function blobToB64(blob) { return new Promise((res, rej) => { const fr = new Fil
 /* fixed staged statuses (sequence) — a point at stage k implies stages 1..k done */
 const STAGES = [
   { name: 'No Progress', color: '#ffffff', mapColor: '#e8e8ea' },
-  { name: 'Piles Installed', color: '#9ca3af', mapColor: '#9ca3af' },
-  { name: 'Post Caps Installed', color: '#2563eb', mapColor: '#2563eb' },
-  { name: 'Torque Tube Installed', color: '#7c3aed', mapColor: '#7c3aed' },
-  { name: 'Modules Installed', color: '#16a34a', mapColor: '#16a34a' },
+  { name: 'Piles Installed', color: '#D6DCE4', mapColor: '#D6DCE4' },
+  { name: 'Post Caps Installed', color: '#008CFF', mapColor: '#008CFF' },
+  { name: 'Torque Tube Installed', color: '#B834F5', mapColor: '#B834F5' },
+  { name: 'Modules Installed', color: '#1ED6A3', mapColor: '#1ED6A3' },
 ];
-const QC_YELLOW = '#eab308', QC_ORANGE = '#ea580c';
+const QC_YELLOW = '#FFB020', QC_ORANGE = '#FF4F4F';
 const QC = [{ name: 'Clear Flag', color: 'transparent' }, { name: 'Requires Attention', color: QC_YELLOW }, { name: 'Flagged Issue', color: QC_ORANGE }];
 
 /* assignable tasks within a project (for employee scoping) */
@@ -131,11 +143,6 @@ function scaleImage(file, maxDim, q) {
 let _idc = 1;
 function newProjId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
-function useIsMobile() {
-  const [m, setM] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  useEffect(() => { const h = () => setM(window.innerWidth < 768); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
-  return m;
-}
 const fmtDate = (ts) => ts ? new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const fileStamp = (ts) => { const d = new Date(ts || Date.now()); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
 const safeName = (s) => (s || 'Project').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -207,13 +214,35 @@ function ensureMigrated() {
 export function getTaskTrackerKPI() {
   let reg = storage.get(REG_KEY); let raw = null;
   if (Array.isArray(reg) && reg.length) { const aid = storage.get(ACTIVE_KEY) || reg[0].id; raw = storage.get(projKey(aid)) || storage.get(projKey(reg[0].id)); }
+  return kpiFromDoc(raw);
+}
+function kpiFromDoc(raw) {
   const d = normalizeDoc(raw);
   const st = computeStats(d.stage, d.qc, d.subtasks, d.sub);
   const total = st.N;
   return {
     name: d.name || 'Project', total, overall: st.overall, lastModified: d.lastModified || 0,
+    flags: st.yellow + st.orange, attention: st.yellow, flagged: st.orange, blocks: d.sectionCount || 0,
     tasks: STAGES.slice(1).map((s, i) => ({ name: s.name.replace(' Installed', ''), color: s.color, count: st.cum[i + 1], pct: total ? st.cum[i + 1] / total * 100 : 0 })),
   };
+}
+/* Remember which project the Task Tracker should open on (the home screen's
+   project toggle sets this; the tracker reads it at mount). */
+export function setActiveProject(id) { try { storage.set(ACTIVE_KEY, id); } catch (e) { /* ignore */ } }
+/* Same snapshot straight from the cloud (no local side effects) — used by the
+   home screen so a fresh install shows real numbers before the Task Tracker
+   has ever been opened. Resolves null when offline or nothing is published. */
+export async function fetchTaskTrackerKPI(projectId) {
+  try {
+    const reg = await fetch(ENDPOINT + '?registry=1', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
+    const projects = (reg && Array.isArray(reg.projects)) ? reg.projects.filter((p) => p && p.id) : [];
+    if (!projects.length) return null;
+    const localActive = storage.get(ACTIVE_KEY);
+    const pick = projects.find((p) => p.id === projectId) || projects.find((p) => p.id === localActive) || projects[0];
+    const doc = await fetch(ENDPOINT + '?project=' + encodeURIComponent(pick.id), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
+    if (!doc || !Array.isArray(doc.points) || !doc.points.length) return null;
+    return { ...kpiFromDoc({ ...doc, name: doc.name || pick.name }), id: pick.id, projects: projects.map((p) => ({ id: p.id, name: p.name })) };
+  } catch (e) { return null; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -392,6 +421,18 @@ export function listProjects() {
   return Array.isArray(reg) ? reg : [];
 }
 
+/* circular progress used by the project cards */
+function RingPct({ pct, size = 64, color = ORANGE, font = BBF, weight = 400, track = 'rgba(255,255,255,.12)', stroke = 7 }) {
+  const r = (size - stroke - 2) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * p / 100} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fill={CREAM} style={{ fontFamily: font, fontWeight: weight, fontSize: size * 0.3 }}>{Math.round(p)}%</text>
+    </svg>
+  );
+}
+
 function ReadonlyMap({ points, w, h, stage, qc, height, mob, bg, bgOn, onPick }) {
   const PAD = 16, VW = w + PAD * 2, VH = h + PAD * 2;
   return (
@@ -497,7 +538,7 @@ export function ClientPortal({ user, onExit }) {
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'radial-gradient(120% 80% at 50% -10%, rgba(20,24,42,.5) 0%, rgba(2,8,17,.45) 55%, rgba(2,8,17,.35) 100%)', display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto', paddingBottom: 'var(--tabbar-h, 0px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE, position: 'sticky', top: 0, zIndex: 5 }}>
         {onExit && <button onClick={onExit} style={backBtn} title="Sign out">&#8592;</button>}
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 38, height: mob ? 30 : 38, objectFit: 'contain', borderRadius: 4 }} />
@@ -622,8 +663,8 @@ export function ClientPortal({ user, onExit }) {
 /* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
-export default function PilePlan({ onExit, portalUser }) {
-  const mob = useIsMobile();
+export default function PilePlan({ onExit, portalUser, demo }) {
+  const mob = useIsMobile();   // phones and the Android shell get the drawer layout; wider screens the sidebar
   const pObj = (portalUser && typeof portalUser === 'object') ? portalUser : null;
   const userName = (typeof portalUser === 'string' ? portalUser : (pObj && pObj.name)) || 'Unknown user';
   const isAdmin = !!(pObj && pObj.role === 'admin');
@@ -632,7 +673,7 @@ export default function PilePlan({ onExit, portalUser }) {
 
   const [projects, setProjects] = useState(() => ensureMigrated());
   const [activeId, setActiveId] = useState(() => storage.get(ACTIVE_KEY) || (storage.get(REG_KEY)?.[0]?.id) || 'dwyer');
-  const [view, setView] = useState('dashboard'); // dashboard | tracker
+  const [view, setView] = useState(() => (demo && demo.startView) || 'dashboard'); // dashboard | tracker
 
   const loadDoc = (id) => normalizeDoc(storage.get(projKey(id)));
   const init = useRef(loadDoc(activeId));
@@ -667,7 +708,18 @@ export default function PilePlan({ onExit, portalUser }) {
   const allowed = allowedPaintSet(scopeForActive); // null = all allowed
 
   const [paint, setPaint] = useState('s1');         // s0-s4 stages, q1/q2 QC, q0 clear
-  const [mode, setMode] = useState('brush');        // brush | fill | pan
+  const [mode, setMode] = useState(() => (demo && demo.mode) || 'brush');
+  const [toast, setToast] = useState('');
+  /* Android back button: the map view returns to the project list; the
+     shell's nav stack (registered earlier) sees defaultPrevented and stands down */
+  useEffect(() => {
+    if (view !== 'tracker') return;
+    const h = (ev) => { ev.preventDefault(); setView('dashboard'); };
+    window.addEventListener('native:back', h, true);
+    return () => window.removeEventListener('native:back', h, true);
+  }, [view]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 1500); return () => clearTimeout(t); }, [toast]);        // brush | fill | pan | delete | bg
+  const [delSel, setDelSel] = useState(() => new Set()); // points queued for deletion (delete mode)
   const [sheetOpen, setSheetOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [projOpen, setProjOpen] = useState(false);
@@ -739,6 +791,28 @@ export default function PilePlan({ onExit, portalUser }) {
     pushLog('undid last change');
   };
 
+  /* ---- delete mode: queue points, then remove them from every per-point array ---- */
+  const markDel = (list) => setDelSel((prev) => { const n = new Set(prev); for (const i of list) n.add(i); return n; });
+  const toggleDel = (i) => setDelSel((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const clearDel = () => setDelSel(new Set());
+  const deleteMarked = () => {
+    const del = delSel; if (!del.size) return;
+    if (!window.confirm(`Delete ${del.size} point${del.size === 1 ? '' : 's'} from "${projName}"? This removes them from the plan, the map and every report, and cannot be undone.`)) return;
+    const N = pointsRef.current.length;
+    const keep = []; const remap = new Array(N).fill(-1);
+    for (let i = 0; i < N; i++) if (!del.has(i)) { remap[i] = keep.length; keep.push(i); }
+    const pick = (arr) => (Array.isArray(arr) && arr.length === N ? keep.map((i) => arr[i]) : arr);
+    setPoints((p) => pick(p)); setSections((s) => pick(s));
+    setStage((s) => pick(s)); setQc((q) => pick(q)); setBy((b) => pick(b)); setAt((a) => pick(a));
+    setNotes((n) => { const out = {}; for (const k of Object.keys(n || {})) { const j = remap[+k]; if (j >= 0) out[j] = n[k]; } return out; });
+    setSub((s) => { const out = {}; for (const k of Object.keys(s || {})) { const bits = String(s[k] || ''); let nb = ''; for (const i of keep) nb += bits[i] === '1' ? '1' : '0'; out[k] = nb; } return out; });
+    setGeo((g) => { if (!g) return g; const out = { ...g }; for (const k of Object.keys(g)) if (Array.isArray(g[k]) && g[k].length === N) out[k] = pick(g[k]); return out; });
+    setSelSection(null); setNotePt(null); setDelSel(new Set());
+    undoRef.current = []; setCanUndo(false);   // undo snapshots predate the new indexing
+    setLastModified(Date.now());
+    pushLog(`deleted ${del.size} point${del.size === 1 ? '' : 's'}`);
+  };
+
   /* ---- painting ---- */
   const allowedRef = useRef(allowed); useEffect(() => { allowedRef.current = allowed; }, [allowed]);
   /* blocks are "Block N" until someone names them */
@@ -749,6 +823,7 @@ export default function PilePlan({ onExit, portalUser }) {
   }, []);
   const stampIndex = (i) => { const t = Date.now(); setAt((prev) => { const n = prev.slice(); n[i] = t; return n; }); setBy((prev) => { if (prev[i] === userName) return prev; const n = prev.slice(); n[i] = userName; return n; }); };
   const applyPaintToIndex = (i) => {
+    if (modeRef.current === 'delete') { markDel([i]); return; }
     const pv = paintRef.current;
     if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
     const p = parsePaint(pv, subtasksRef.current);
@@ -786,9 +861,10 @@ export default function PilePlan({ onExit, portalUser }) {
   /* Apply the active paint to every index in `list` in one pass — used by the
      section fill and by the click-and-drag marquee. */
   const applyPaintToList = (list, describe) => {
+    if (!list || !list.length) return;
+    if (modeRef.current === 'delete') { markDel(list); return; }
     const pv = paintRef.current;
     if (!paintAllowed(allowedRef.current, pv, subtasksRef.current)) return;
-    if (!list || !list.length) return;
     snapshotUndo();
     const p = parsePaint(pv, subtasksRef.current);
     const hit = new Set(list); const t = Date.now(); const N = pointsRef.current.length;
@@ -829,13 +905,14 @@ export default function PilePlan({ onExit, portalUser }) {
   /* Shared paint plumbing for the satellite + 3D overlays, so those views
      behave exactly like the plan SVG (brush drags, marquee fill, tap-to-note). */
   const overlayPick = (i) => {
+    if (modeRef.current === 'delete') { toggleDel(i); return; }
     if (modeRef.current === 'pan') { setNotePt(i); return; }
     if (modeRef.current === 'fill') { fillAt(i); return; }
     if (!paintAllowed(allowedRef.current, paintRef.current, subtasksRef.current)) { setNotePt(i); return; }
     snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null };
     applyPaintToIndex(i); burstFlush();
   };
-  const overlayBrushStart = () => { snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; };
+  const overlayBrushStart = () => { if (modeRef.current === 'delete') return; snapshotUndo(); burstRef.current = { count: 0, paint: paintRef.current, last: null }; };
   const overlayBrushPoint = (i) => applyPaintToIndex(i);
   const overlayBrushEnd = () => burstFlush();
   const saveOverlay3d = (ov) => { setOverlay3d(ov); setLastModified(Date.now()); pushLog(ov.on === false ? 'hid 3D overlay' : (ov.locked ? 'locked 3D overlay alignment' : 'updated 3D overlay alignment')); };
@@ -974,6 +1051,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const m = modeRef.current;
     if (m === 'bg') { if (bgRef.current) { const p = toView(e.clientX, e.clientY); bgDragRef.current = { sx: p.x, sy: p.y, x0: bgRef.current.x, y0: bgRef.current.y }; } }
     else if (m === 'brush') { snapshotUndo(); paintingRef.current = true; burstRef.current = { count: 0, paint: paintRef.current, last: null }; paintAt(e.clientX, e.clientY); }
+    else if (m === 'delete') { paintingRef.current = true; paintAt(e.clientX, e.clientY); }
     else if (m === 'fill') { const p = toView(e.clientX, e.clientY); marqRef.current = { cx: e.clientX, cy: e.clientY, a: p, b: p, moved: false }; setMarq({ a: p, b: p }); }
     else { const p = toView(e.clientX, e.clientY); panRef.current = { sx: p.x, sy: p.y, vx: vwRef.current.x, vy: vwRef.current.y }; pannedRef.current = false; }
   };
@@ -986,7 +1064,7 @@ export default function PilePlan({ onExit, portalUser }) {
   };
   const endPointer = (e) => { pointersRef.current.delete(e.pointerId); if (pointersRef.current.size < 2) pinchRef.current = null; if (pointersRef.current.size === 0) { paintingRef.current = false; panRef.current = null; if (marqRef.current) commitMarquee(); if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } } };
   useEffect(() => {
-    const mv = (e) => { if (paintingRef.current && modeRef.current === 'brush' && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
+    const mv = (e) => { if (paintingRef.current && (modeRef.current === 'brush' || modeRef.current === 'delete') && pointersRef.current.size < 2) paintAt(e.clientX, e.clientY); };
     const up = () => { if (paintingRef.current) { paintingRef.current = false; burstFlush(); } if (marqRef.current) commitMarquee(); panRef.current = null; if (bgDragRef.current) { bgDragRef.current = null; setBgT(Date.now()); } };
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
@@ -999,7 +1077,7 @@ export default function PilePlan({ onExit, portalUser }) {
     const d = loadDoc(id); skipPersist.current = true;
     setProjName(d.name); setPoints(d.points); setPlanW(d.w); setPlanH(d.h); setSections(d.sections); setSectionCount(d.sectionCount);
     setStage(d.stage); setQc(d.qc); setBy(d.by); setAt(d.at); setNotes(d.notes); setBg(d.bg); setBgT(d.bgT); setBgOn(!!(d.bg && d.bg.on)); setOverlay3d(d.overlay3d || null); setGeo(d.geo || null); setViewMode((d.geo && d.geo.lonLat && d.geo.lonLat.length) ? 'sat' : 'plan'); setSectionNames(d.sectionNames || {}); setSubtasks(d.subtasks || []); setSub(d.sub || {}); setSelSection(null); setLog(d.log); setLastModified(d.lastModified);
-    undoRef.current = []; setCanUndo(false); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
+    undoRef.current = []; setCanUndo(false); setDelSel(new Set()); if (modeRef.current === 'delete') setMode('brush'); modelBufRef.current = null; setActiveId(id); resetView(); setView('tracker'); setProjOpen(false); setSheetOpen(false);
   };
   const renameProject = (id, name) => { setProjects((ps) => { const next = ps.map((p) => p.id === id ? { ...p, name } : p); fetch(ENDPOINT + '?registry=1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projects: next }) }).catch(() => {}); return next; }); if (id === activeId) setProjName(name); else { const d = storage.get(projKey(id)); if (d) storage.set(projKey(id), { ...d, name }); } };
   const deleteProject = (id) => {
@@ -1239,10 +1317,12 @@ export default function PilePlan({ onExit, portalUser }) {
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- dots ---- */
-  const dotEls = useMemo(() => points.map((d, i) => {
-    const dim = selSection != null && sections && sections[i] !== selSection;
-    return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} opacity={dim ? 0.16 : 1} />;
-  }), [points, stage, qc, selSection, sections]);
+  /* which point comes next down each tracker row — tubes and modules join up along these */
+  const rowLinks = useMemo(() => computeRowLinks(points), [points]);
+  const dotEls = useMemo(() => (
+    <StackSvg points={points} stage={stage} qc={qc} rowNext={rowLinks.next} rowDir={rowLinks.dir} pad={PAD} unit={4.6} marked={delSel}
+      isDim={selSection != null && sections ? (i) => sections[i] !== selSection : null} />
+  ), [points, stage, qc, selSection, sections, delSel, rowLinks]);
 
   /* outline around the selected block, so you can see which one you picked */
   const selHull = useMemo(() => {
@@ -1279,19 +1359,51 @@ export default function PilePlan({ onExit, portalUser }) {
 
   const isAllowed = (tok) => !allowed || allowed.has(tok);
   const canEditQC = isAllowed('q2');
+  const health = stats.orange > 0 ? { label: 'Action Required', color: ORANGE } : stats.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW } : { label: 'On Track', color: GREEN };
+  const panelHead = (Icon, txt, right) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      <Icon size={18} color={ORANGE} strokeWidth={2.2} /><span style={kicker}>{txt}</span>
+      {right && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>{right}</div>}
+    </div>
+  );
+  /* the four paint tools — the sidebar (desktop) and the drawer (phones) render the same list */
+  const TOOLS = [{ k: 'brush', l: 'Brush', hint: 'Drag to paint', I: Paintbrush }, { k: 'fill', l: 'Fill', hint: 'Box or tap a block', I: SquareDashed }, { k: 'pan', l: 'Pan', hint: 'Move & pinch', I: Move }].concat(isAdmin ? [{ k: 'delete', l: 'Delete', hint: 'Remove points', I: Trash2 }] : []);
+  const pickTool = (k) => { if (mode === 'delete' && k !== 'delete') clearDel(); setMode(k); };
   const legendBody = (
     <>
-      {allowed && <div style={{ fontFamily: NBF, fontSize: 12, color: GOLD, background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.3)', padding: '7px 10px' }}>You're assigned to: {(scopeForActive || []).map((t) => (TASK_DEFS.find((x) => x.id === t) || {}).label).filter(Boolean).join(', ') || 'view only'}.</div>}
-      <div style={card()}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      {allowed && <div style={{ fontFamily: NBF, fontSize: 12.5, color: GOLD, background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.3)', borderRadius: 8, padding: '8px 10px' }}>You're assigned to: {(scopeForActive || []).map((t) => (TASK_DEFS.find((x) => x.id === t) || {}).label).filter(Boolean).join(', ') || 'view only'}.</div>}
+
+      {/* overall completion + health */}
+      <div style={{ ...card(), display: 'flex', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <span style={kicker}>Overall Completion</span>
-          <span style={{ fontFamily: BBF, fontSize: 34, color: GOLD, lineHeight: .9, textShadow: '0 0 22px rgba(234,179,8,.4)' }}>{stats.overall.toFixed(1)}%</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
+            <span style={{ fontFamily: BBF, fontSize: 40, color: ORANGE, lineHeight: .9, textShadow: '0 0 22px rgba(249,115,22,.35)' }}>{stats.overall.toFixed(1)}%</span>
+            <div style={{ ...bar, flex: 1, marginTop: 0, height: 12, borderRadius: 6 }}><div style={{ height: '100%', width: stats.overall + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')', borderRadius: 6, transition: 'width .25s' }} /></div>
+          </div>
+          <div style={{ fontFamily: NBF, fontSize: 12.5, color: '#c9c4bc', marginTop: 8 }}>{TOTAL.toLocaleString()} points{sectionCount > 1 ? ' · ' + sectionCount + ' sections' : ''} · {fmtDate(lastModified)}</div>
+          <div style={{ fontFamily: NBF, fontSize: 12.5, marginTop: 3, color: cloudColor, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: cloudColor, boxShadow: '0 0 8px ' + cloudColor }} />{cloudLabel}</div>
         </div>
-        <div style={bar}><div style={{ height: '100%', width: stats.overall + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')', transition: 'width .25s' }} /></div>
-        <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 7 }}>{TOTAL.toLocaleString()} points{sectionCount > 1 ? ' · ' + sectionCount + ' sections' : ''} · {fmtDate(lastModified)}</div>
-        <div style={{ fontFamily: NBF, fontSize: 12, marginTop: 2, color: cloudColor, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: cloudColor, boxShadow: '0 0 8px ' + cloudColor }} />{cloudLabel}</div>
+        <div style={{ width: 88, flexShrink: 0, borderLeft: '1px solid rgba(255,255,255,.08)', paddingLeft: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 4 }}>
+          <Activity size={26} color={health.color} />
+          <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: 12.5, letterSpacing: 1.5, textTransform: 'uppercase', color: health.color, lineHeight: 1.1 }}>{health.label}</div>
+          <div style={{ fontFamily: NBF, fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', color: MUTE }}>Project Health</div>
+        </div>
       </div>
 
+      {/* tools */}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
+        {TOOLS.map((t) => <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => pickTool(t.k)} />)}
+        <div style={{ width: 38, position: 'relative', flexShrink: 0 }}><RefUndo onClick={undo} disabled={!canUndo} style={{ right: 0, top: 19 }} /></div>
+      </div>
+      <div style={{ fontFamily: NBF, fontSize: 11.5, color: MUTE, marginTop: -4 }}>
+        {mode === 'brush' ? 'Drag across points to paint them.'
+          : mode === 'delete' ? `Tap or drag over points to queue them, then press Delete. ${delSel.size ? delSel.size + ' queued.' : ''}`
+          : mode === 'fill' ? `Drag a box to fill everything inside it — a single tap fills the whole ${sectionCount > 1 ? 'block' : 'plan'}.`
+            : 'Drag to move the view. Tap a point for its status, history and notes.'}
+      </div>
+
+      {/* painting */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ ...kicker, color: ORANGE }}>Painting</span>
         <select value={paint} onChange={(e) => setPaint(e.target.value)} style={selectStyle}>
@@ -1314,128 +1426,99 @@ export default function PilePlan({ onExit, portalUser }) {
           {(isAllowed('q1') || isAllowed('q2') || isAllowed('q0')) && (
             <optgroup label="Quality Check">
               {isAllowed('q1') && <option value="q1">Requires Attention (yellow)</option>}
-              {isAllowed('q2') && <option value="q2">Flagged Issue (orange)</option>}
+              {isAllowed('q2') && <option value="q2">Flagged Issue (red)</option>}
               {isAllowed('q0') && <option value="q0">Clear Flag</option>}
             </optgroup>
           )}
         </select>
       </div>
 
-      <div style={{ display: 'flex', gap: 7 }}>
-        <button onClick={() => setMode('brush')} style={segBtn(mode === 'brush')}>Brush</button>
-        <button onClick={() => setMode('fill')} style={segBtn(mode === 'fill')}>Fill</button>
-        <button onClick={() => setMode('pan')} style={segBtn(mode === 'pan')}>Pan</button>
-      </div>
-      <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: -3 }}>
-        {mode === 'brush' ? 'Click and drag across points to paint them.'
-          : mode === 'fill' ? `Drag a box to fill everything inside it — a single click fills the whole ${sectionCount > 1 ? 'block' : 'plan'}.`
-            : 'Drag to move the view. Tap a point for its status, history and notes.'}
-      </div>
-      <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, opacity: canUndo ? 1 : .4 }}>&#8634; Undo</button>
-
+      {/* install status */}
       <div style={card()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={kicker}>Site Photo</span>
-          {bg && <button onClick={toggleBg} style={{ ...miniBtn, color: bgOn ? '#22c55e' : MUTE, borderColor: bgOn ? '#22c55e' : 'rgba(255,255,255,.25)' }}>{bgOn ? 'On' : 'Off'}</button>}
+        {panelHead(BarChart3, 'Install Status (cumulative)', !allowed
+          ? <button onClick={resetAll} title={'Reset every task in ' + scopeLabel()} style={{ ...miniBtn, color: ORANGE, borderColor: ORANGE }}>Reset All</button>
+          : <span style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: MUTE }}>4 phases</span>)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
+          {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); const on = paint === tok && !lock; return (
+            <div key={i} onClick={() => { if (!lock) setPaint(tok); }} style={{ minWidth: 0, borderRadius: 10, padding: '9px 9px 8px', border: '1px solid ' + (on ? s.color : hexA(s.color, .35)), background: on ? hexA(s.color, .16) : hexA(s.color, .05), boxShadow: on ? `0 0 0 1px ${s.color}, 0 0 18px ${hexA(s.color, .3)}` : 'none', opacity: lock ? .5 : 1, cursor: lock ? 'default' : 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Glyph code={tok} size={28} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(s.color, .6) + ')' }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontFamily: NBF, fontSize: 12, color: CREAM, fontWeight: 600, lineHeight: 1.1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.name}</div>
+                  <div style={{ fontFamily: BBF, fontSize: 21, color: CREAM, lineHeight: 1, marginTop: 3 }}>{cnt.toLocaleString()}</div>
+                </div>
+                {!lock && <button title={'Clear "' + s.name + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetStage(k); }} style={resetX(cnt > 0)}><RotateCcw size={14} /></button>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7 }}>
+                <div style={{ ...bar, flex: 1, marginTop: 0, height: 6 }}><div style={{ height: '100%', width: p + '%', background: s.color, borderRadius: 3, boxShadow: '0 0 8px ' + hexA(s.color, .7) }} /></div>
+                <span style={{ fontFamily: BBF, fontSize: 16, color: s.color, width: 34, textAlign: 'right' }}>{p.toFixed(0)}%</span>
+              </div>
+            </div>
+          ); })}
         </div>
-        {!bg ? (
-          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '10px 0', cursor: bgBusy ? 'default' : 'pointer', opacity: bgBusy ? .6 : 1 }}>{bgBusy ? 'Loading…' : 'Add Background Photo'}<input type="file" accept="image/*" hidden disabled={bgBusy} onChange={(e) => onBgUpload(e.target.files[0])} /></label>
-        ) : (<>
-          <button onClick={() => { const nm = mode === 'bg' ? 'brush' : 'bg'; setMode(nm); if (nm === 'bg') setSheetOpen(false); }} style={{ ...segBtn(mode === 'bg'), width: '100%', marginBottom: 8 }}>{mode === 'bg' ? 'Done — drag map to move photo' : 'Align Photo'}</button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Size</span><input type="range" min="0.2" max="4" step="0.02" value={bg.scale || 1} onChange={(e) => setBgScale(+e.target.value)} style={{ flex: 1 }} /></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={bg.opacity != null ? bg.opacity : 0.85} onChange={(e) => setBgOpacity(+e.target.value)} style={{ flex: 1 }} /></div>
-          <div style={{ display: 'flex', gap: 7 }}>
-            <label style={{ ...ghostBtn, flex: 1, textAlign: 'center', padding: '8px 0', fontSize: 12, cursor: 'pointer' }}>Replace<input type="file" accept="image/*" hidden onChange={(e) => onBgUpload(e.target.files[0])} /></label>
-            <button onClick={removeBg} style={{ ...ghostBtn, flex: 1, padding: '8px 0', fontSize: 12, color: '#f87171', borderColor: 'rgba(248,113,113,.5)' }}>Remove</button>
-          </div>
-        </>)}
       </div>
 
+      {/* quality checks */}
       <div style={card()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={kicker}>Site Map</span>
-          {hasGeo && <button onClick={removeGeo} style={{ ...miniBtn, color: MUTE }}>Remove</button>}
+        {panelHead(ShieldCheck, 'Quality Checks')}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[{ q: 1, tok: 'q1', col: QC_YELLOW, l: 'Requires Attention', n: stats.yellow }, { q: 2, tok: 'q2', col: QC_ORANGE, l: 'Flagged Issue', n: stats.orange }].map((r) => (
+            <div key={r.q} style={{ ...statusRow(paint === r.tok && isAllowed(r.tok)), cursor: isAllowed(r.tok) ? 'pointer' : 'default', opacity: isAllowed(r.tok) ? 1 : .5 }} onClick={() => { if (isAllowed(r.tok)) setPaint(r.tok); }}>
+              <Glyph code={r.tok} size={24} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(r.col, .6) + ')' }} />
+              <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{r.l}</span>
+              <span style={{ fontFamily: BBF, fontSize: 20, color: r.col }}>{r.n}</span>
+              {isAllowed(r.tok) && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(r.q); }} style={resetX(r.n > 0)}><RotateCcw size={14} /></button>}
+              <ChevronRight size={16} color={MUTE} />
+            </div>
+          ))}
         </div>
-        {hasGeo ? (
-          <div style={{ fontFamily: NBF, fontSize: 12, color: '#22c55e' }}>Coordinates attached — satellite view available.</div>
-        ) : (<>
-          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '10px 0', cursor: geoBusy ? 'default' : 'pointer', opacity: geoBusy ? .6 : 1 }}>
-            {geoBusy ? 'Reading…' : 'Add Map Coordinates (KMZ)'}
-            <input type="file" accept=".kmz,.kml" hidden disabled={geoBusy} onChange={(e) => onGeoUpload(e.target.files[0])} />
-          </label>
-          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 6 }}>Upload the KMZ this layout came from to turn on satellite view. It must have the same number of points ({points.length.toLocaleString()}); your progress is kept.</div>
-        </>)}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={kicker}>Install Status (cumulative)</span>
-          {!allowed && <button onClick={resetAll} title={'Reset every task in ' + scopeLabel()} style={{ ...miniBtn, marginLeft: 'auto', color: '#f87171', borderColor: 'rgba(248,113,113,.45)' }}>Reset All</button>}
-        </div>
-        {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); return (
-          <div key={i} style={{ ...statusRow(paint === tok && !lock), cursor: lock ? 'default' : 'pointer', opacity: lock ? .5 : 1 }} onClick={() => { if (!lock) setPaint(tok); }}>
-            <span style={{ width: 16, height: 16, background: s.color, border: '1px solid rgba(255,255,255,.3)', flexShrink: 0, clipPath: CLIP }} />
-            <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{s.name}</span>
-            <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>{cnt.toLocaleString()}</span>
-            <span style={{ fontFamily: BBF, fontSize: 18, color: s.color, width: 44, textAlign: 'right' }}>{p.toFixed(0)}%</span>
-            {!lock && <button title={'Clear "' + s.name + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetStage(k); }} style={resetX(cnt > 0)}>&#8634;</button>}
-          </div>
-        ); })}
-        <span style={{ ...kicker, marginTop: 4 }}>Quality Checks</span>
-        <div style={{ ...statusRow(paint === 'q1' && isAllowed('q1')), cursor: isAllowed('q1') ? 'pointer' : 'default', opacity: isAllowed('q1') ? 1 : .5 }} onClick={() => { if (isAllowed('q1')) setPaint('q1'); }}>
-          <span style={{ width: 16, height: 16, background: QC_YELLOW, flexShrink: 0, clipPath: CLIP }} />
-          <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Requires Attention</span>
-          <span style={{ fontFamily: BBF, fontSize: 18, color: QC_YELLOW }}>{stats.yellow}</span>
-          {isAllowed('q1') && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(1); }} style={resetX(stats.yellow > 0)}>&#8634;</button>}
-        </div>
-        <div style={{ ...statusRow(paint === 'q2' && isAllowed('q2')), cursor: isAllowed('q2') ? 'pointer' : 'default', opacity: isAllowed('q2') ? 1 : .5 }} onClick={() => { if (isAllowed('q2')) setPaint('q2'); }}>
-          <span style={{ width: 16, height: 16, background: QC_ORANGE, flexShrink: 0, clipPath: CLIP }} />
-          <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>Flagged Issue</span>
-          <span style={{ fontFamily: BBF, fontSize: 18, color: QC_ORANGE }}>{stats.orange}</span>
-          {isAllowed('q2') && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(2); }} style={resetX(stats.orange > 0)}>&#8634;</button>}
-        </div>
-        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>
+        <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 8 }}>
           {selSection != null
             ? <>Resets apply to <span style={{ color: ORANGE }}>{sectionLabelFor(selSection)}</span> only — clear the block selection to reset everything.</>
             : 'Tap ↺ to clear a task. Select a block first to reset just that block.'}
         </div>
       </div>
 
+      {/* subtasks */}
       <div style={card()}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-          <span style={kicker}>Subtasks</span>
-          {subtasks.length > 0 && !subOpen && <button onClick={() => setQtyOpen(true)} style={{ ...miniBtn, marginLeft: 'auto', color: GOLD, borderColor: GOLD }}>Quantities</button>}
-          <button onClick={() => setSubOpen((v) => !v)} style={{ ...miniBtn, marginLeft: (subtasks.length > 0 && !subOpen) ? 6 : 'auto', color: ORANGE, borderColor: ORANGE }}>{subOpen ? 'Done' : 'Manage'}</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <ListChecks size={18} color={ORANGE} strokeWidth={2.2} /><span style={kicker}>Subtasks</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {subtasks.length > 0 && !subOpen && <button onClick={() => setQtyOpen(true)} style={{ ...miniBtn, color: GOLD, borderColor: GOLD }}>Quantities</button>}
+            <button onClick={() => setSubOpen((v) => !v)} style={{ ...miniBtn, color: ORANGE, borderColor: subOpen ? ORANGE : 'rgba(255,255,255,.22)' }}>{subOpen ? 'Done' : 'Manage'}</button>
+          </div>
         </div>
-        {subtasks.length === 0 && !subOpen && <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>None yet. Add weighted subtasks under any install stage — each one credits its share of that stage.</div>}
+        {subtasks.length === 0 && !subOpen && <div style={{ fontFamily: NBF, fontSize: 12.5, color: MUTE }}>None yet. Add weighted subtasks under any install stage — each one credits its share of that stage.</div>}
         {subtasks.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: subOpen ? 10 : 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: subOpen ? 10 : 0 }}>
             {STAGES.map((st, si) => {
               if (si === 0) return null;
               const list = subsForParent(subtasks, 's' + si);
               if (!list.length) return null;
               const total = list.reduce((a, b) => a + (+b.weight || 0), 0);
               return (
-                <div key={si}>
-                  <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: total === 100 ? MUTE : GOLD, display: 'flex', gap: 6 }}>
-                    <span style={{ width: 9, height: 9, background: st.color, clipPath: CLIP, alignSelf: 'center' }} />{st.name}<span style={{ marginLeft: 'auto' }}>{total}%</span>
+                <div key={si} style={{ background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 10, padding: '8px 8px 4px' }}>
+                  <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: 11.5, letterSpacing: 2, textTransform: 'uppercase', color: CREAM, display: 'flex', alignItems: 'center', gap: 7, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,.06)', marginBottom: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 5, background: st.color, boxShadow: '0 0 8px ' + st.color }} />{st.name}<span style={{ marginLeft: 'auto', color: total === 100 ? MUTE : GOLD }}>{total}%</span>
                   </div>
                   {list.map((t) => {
                     const done = (() => { const b = sub[t.id] || ''; let c = 0; for (let i = 0; i < b.length; i++) if (b[i] === '1') c++; return c; })();
+                    const dp = TOTAL ? done / TOTAL * 100 : 0;
                     return (
-                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0 3px 15px' }}>
+                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
                         {subOpen ? (
                           <>
-                            <input defaultValue={t.label} onBlur={(e) => { if (e.target.value.trim() && e.target.value.trim() !== t.label) updateSubtask(t.id, { label: e.target.value.trim() }); }} style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.25)', color: CREAM, fontFamily: NBF, fontSize: 13, padding: '2px 0', outline: 'none' }} />
-                            <input type="number" min="1" max="100" defaultValue={t.weight} onBlur={(e) => { const w = Math.max(1, Math.min(100, Math.round(+e.target.value || 0))); if (w && w !== t.weight) updateSubtask(t.id, { weight: w }); e.target.value = w || t.weight; }} style={{ width: 46, background: 'transparent', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 12, padding: '2px 4px', outline: 'none' }} />
-                            <button onClick={() => removeSubtask(t)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 17, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
+                            <input defaultValue={t.label} onBlur={(e) => { if (e.target.value.trim() && e.target.value.trim() !== t.label) updateSubtask(t.id, { label: e.target.value.trim() }); }} style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.35)', color: CREAM, fontFamily: NBF, fontSize: 13.5, padding: '4px 0', outline: 'none' }} />
+                            <input type="number" min="1" max="100" defaultValue={t.weight} onBlur={(e) => { const w = Math.max(1, Math.min(100, Math.round(+e.target.value || 0))); if (w && w !== t.weight) updateSubtask(t.id, { weight: w }); e.target.value = w || t.weight; }} style={{ width: 50, background: 'transparent', border: '1px solid ' + PBORDER, borderRadius: 6, color: CREAM, fontFamily: NBF, fontSize: 12.5, padding: '4px 4px', outline: 'none' }} />
+                            <button onClick={() => removeSubtask(t)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 19, lineHeight: 1, cursor: 'pointer', minWidth: 32, minHeight: 32 }}>&times;</button>
                           </>
                         ) : (
-                          <div onClick={() => setPaint('k:' + t.id)} style={{ ...statusRow(paint === 'k:' + t.id), flex: 1, padding: '4px 7px' }}>
-                            <span style={{ fontFamily: NBF, fontSize: 13, color: CREAM, flex: 1 }}>{t.label}</span>
-                            <span style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>{done.toLocaleString()}</span>
-                            <span style={{ fontFamily: BBF, fontSize: 14, color: st.color, width: 34, textAlign: 'right' }}>{t.weight}%</span>
-                            <button title={'Clear "' + t.label + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetSubtask(t); }} style={resetX(done > 0)}>&#8634;</button>
+                          <div onClick={() => setPaint('k:' + t.id)} style={{ ...statusRow(paint === 'k:' + t.id), flex: 1, padding: '6px 8px', gap: 8 }}>
+                            <span style={{ fontFamily: NBF, fontSize: 13.5, color: CREAM, flex: '0 1 38%', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</span>
+                            <span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, minWidth: 34, textAlign: 'right' }}>{done.toLocaleString()}</span>
+                            <div style={{ ...bar, flex: 1, marginTop: 0, height: 6 }}><div style={{ height: '100%', width: dp + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')', borderRadius: 3 }} /></div>
+                            <span style={{ fontFamily: BBF, fontSize: 14, color: CREAM, width: 32, textAlign: 'right' }}>{dp.toFixed(0)}%</span>
+                            <button title={'Clear "' + t.label + '" in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetSubtask(t); }} style={{ ...resetX(done > 0), width: 26, height: 26 }}><RotateCcw size={13} /></button>
                           </div>
                         )}
                       </div>
@@ -1447,53 +1530,86 @@ export default function PilePlan({ onExit, portalUser }) {
           </div>
         )}
         {subOpen && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid ' + LINE, paddingTop: 9 }}>
-            <select id="tt-sub-parent" defaultValue="s1" style={{ ...selectStyle, padding: '7px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 9 }}>
+            <select id="tt-sub-parent" defaultValue="s1" style={{ ...selectStyle, padding: '8px' }}>
               {STAGES.map((s, i) => (i === 0 ? null : <option key={i} value={'s' + i}>{s.name}</option>))}
             </select>
             <div style={{ display: 'flex', gap: 6 }}>
-              <input id="tt-sub-label" placeholder="Subtask name" style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '7px 9px', outline: 'none' }} />
-              <input id="tt-sub-weight" type="number" min="1" max="100" defaultValue="50" style={{ width: 62, background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '7px 6px', outline: 'none' }} />
+              <input id="tt-sub-label" placeholder="Subtask name" style={{ flex: 1, minWidth: 0, background: NAVY2, border: '1px solid ' + PBORDER, borderRadius: 8, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '8px 9px', outline: 'none' }} />
+              <input id="tt-sub-weight" type="number" min="1" max="100" defaultValue="50" style={{ width: 62, background: NAVY2, border: '1px solid ' + PBORDER, borderRadius: 8, color: CREAM, fontFamily: NBF, fontSize: 14, padding: '8px 6px', outline: 'none' }} />
             </div>
             <button onClick={() => {
               const p = document.getElementById('tt-sub-parent'), l = document.getElementById('tt-sub-label'), w = document.getElementById('tt-sub-weight');
               if (!p || !l || !w) return;
               addSubtask(p.value, l.value, w.value); l.value = '';
-            }} style={{ ...ctaBtn, padding: '9px 0', fontSize: 12 }}>+ Add Subtask</button>
+            }} style={{ ...ctaBtn, padding: '10px 0', fontSize: 12 }}>+ Add Subtask</button>
             <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE }}>Weights are a percentage of the parent stage. When a point's completed subtasks reach 100%, it advances to that stage automatically.</div>
           </div>
         )}
       </div>
 
+      {/* blocks */}
       {sectionStats && (
         <div style={card()}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-            <span style={kicker}>Blocks ({sectionCount})</span>
-            {selSection != null && <button onClick={() => setSelSection(null)} style={{ ...miniBtn, marginLeft: 'auto', color: ORANGE, borderColor: ORANGE }}>Clear</button>}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 210, overflowY: 'auto' }}>
+          {panelHead(MapIcon, 'Blocks (' + sectionCount + ')', selSection != null ? <button onClick={() => setSelSection(null)} style={{ ...miniBtn, color: ORANGE, borderColor: ORANGE }}>Clear</button> : null)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 230, overflowY: 'auto' }}>
             {sectionStats.map((s) => {
               const on = selSection === s.i;
               return (
-                <div key={s.i} onClick={() => setSelSection(on ? null : s.i)} title="Click to highlight this block on the map"
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 7px', cursor: 'pointer', border: '1px solid ' + (on ? ORANGE : 'transparent'), background: on ? 'rgba(249,115,22,.12)' : 'transparent' }}>
+                <div key={s.i} onClick={() => setSelSection(on ? null : s.i)} title="Tap to highlight this block on the map"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 8, border: '1px solid ' + (on ? ORANGE : 'rgba(255,255,255,.06)'), background: on ? 'rgba(249,115,22,.14)' : 'rgba(255,255,255,.03)' }}>
+                  <MapPin size={18} color={ORANGE} style={{ flexShrink: 0 }} />
                   <input value={sectionNames[s.i] || ''} placeholder={'Block ' + (s.i + 1)} onClick={(e) => e.stopPropagation()}
                     onChange={(e) => setSectionNames((prev) => Object.assign({}, prev, { [s.i]: e.target.value }))}
                     onBlur={(e) => renameSection(s.i, e.target.value)}
-                    style={{ width: 82, flexShrink: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.22)', color: on ? ORANGE : CREAM, fontFamily: NBF, fontSize: 13, fontWeight: 600, padding: '1px 0', outline: 'none' }} />
-                  <div style={{ ...bar, flex: 1, marginTop: 0 }}><div style={{ height: '100%', width: s.pct + '%', background: on ? ORANGE : GOLD }} /></div>
-                  <span style={{ fontFamily: BBF, fontSize: 15, color: CREAM, width: 40, textAlign: 'right' }}>{s.pct.toFixed(0)}%</span>
+                    style={{ width: 74, flexShrink: 0, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(249,115,22,.22)', color: on ? ORANGE : CREAM, fontFamily: NBF, fontSize: 14, fontWeight: 600, padding: '2px 0', outline: 'none' }} />
+                  <div style={{ ...bar, flex: 1, marginTop: 0, height: 8 }}><div style={{ height: '100%', width: s.pct + '%', background: 'linear-gradient(90deg,' + ORANGE + ',' + GOLD + ')', borderRadius: 4 }} /></div>
+                  <span style={{ fontFamily: BBF, fontSize: 16, color: CREAM, width: 38, textAlign: 'right' }}>{s.pct.toFixed(0)}%</span>
+                  <ChevronRight size={16} color={MUTE} />
                 </div>
               );
             })}
           </div>
-          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 7 }}>Type to name a block. Click a row to outline it on the map.</div>
+          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 8 }}>Type to name a block. Tap a row to outline it on the map.</div>
         </div>
       )}
 
-      <button onClick={handleExport} style={ctaBtn}>{exporting ? 'Rendering…' : 'Export PDF'}</button>
-      <button onClick={() => setModelsOpen(true)} style={ghostBtn}>3D Model / Versions</button>
-      <button onClick={() => setHistoryOpen(true)} style={ghostBtn}>Edit History ({log.length})</button>
+      {/* site photo */}
+      <div style={card()}>
+        {panelHead(ImageIcon, 'Site Photo', bg ? <button onClick={toggleBg} style={{ ...miniBtn, color: bgOn ? GREEN : MUTE, borderColor: bgOn ? GREEN : 'rgba(255,255,255,.22)' }}>{bgOn ? 'On' : 'Off'}</button> : null)}
+        {!bg ? (
+          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '11px 0', cursor: bgBusy ? 'default' : 'pointer', opacity: bgBusy ? .6 : 1 }}>{bgBusy ? 'Loading…' : 'Add Background Photo'}<input type="file" accept="image/*" hidden disabled={bgBusy} onChange={(e) => onBgUpload(e.target.files[0])} /></label>
+        ) : (<>
+          <button onClick={() => { const nm = mode === 'bg' ? 'brush' : 'bg'; setMode(nm); if (nm === 'bg') setSheetOpen(false); }} style={{ ...segBtn(mode === 'bg'), width: '100%', marginBottom: 8 }}>{mode === 'bg' ? 'Done — drag map to move photo' : 'Align Photo'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Size</span><input type="range" min="0.2" max="4" step="0.02" value={bg.scale || 1} onChange={(e) => setBgScale(+e.target.value)} style={{ flex: 1, accentColor: ORANGE }} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span style={{ fontFamily: NBF, fontSize: 12, color: MUTE, width: 52 }}>Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={bg.opacity != null ? bg.opacity : 0.85} onChange={(e) => setBgOpacity(+e.target.value)} style={{ flex: 1, accentColor: ORANGE }} /></div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            <label style={{ ...ghostBtn, flex: 1, textAlign: 'center', padding: '9px 0', fontSize: 12, cursor: 'pointer' }}>Replace<input type="file" accept="image/*" hidden onChange={(e) => onBgUpload(e.target.files[0])} /></label>
+            <button onClick={removeBg} style={{ ...ghostBtn, flex: 1, padding: '9px 0', fontSize: 12, color: '#f87171', borderColor: 'rgba(248,113,113,.5)', background: 'rgba(248,113,113,.06)' }}>Remove</button>
+          </div>
+        </>)}
+      </div>
+
+      {/* site map */}
+      <div style={card()}>
+        {panelHead(Layers, 'Site Map', hasGeo ? <button onClick={removeGeo} style={{ ...miniBtn, color: MUTE }}>Remove</button> : null)}
+        {hasGeo ? (
+          <div style={{ fontFamily: NBF, fontSize: 13, color: GREEN }}>Coordinates attached — satellite view available.</div>
+        ) : (<>
+          <label style={{ ...ghostBtn, display: 'block', textAlign: 'center', padding: '11px 0', cursor: geoBusy ? 'default' : 'pointer', opacity: geoBusy ? .6 : 1 }}>
+            {geoBusy ? 'Reading…' : 'Add Map Coordinates (KMZ)'}
+            <input type="file" accept=".kmz,.kml" hidden disabled={geoBusy} onChange={(e) => onGeoUpload(e.target.files[0])} />
+          </label>
+          <div style={{ fontFamily: NBF, fontSize: 11, color: MUTE, marginTop: 6 }}>Upload the KMZ this layout came from to turn on satellite view. It must have the same number of points ({points.length.toLocaleString()}); your progress is kept.</div>
+        </>)}
+      </div>
+
+      {/* actions */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <button onClick={handleExport} style={{ ...ctaBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50 }}><FileText size={18} />{exporting ? 'Rendering…' : 'Export PDF'}</button>
+        <button onClick={() => setModelsOpen(true)} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, padding: '10px 8px', fontSize: 12 }}><Box size={18} />3D Model / Versions</button>
+      </div>
+      <button onClick={() => setHistoryOpen(true)} style={{ ...ghostBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48 }}><History size={18} />Edit History ({log.length})</button>
     </>
   );
 
@@ -1503,35 +1619,64 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- projects dashboard view ---- */
   if (view === 'dashboard') {
+    /* Projects list — skin cut from the concept mock: SUNRISE wordmark in the
+       header, night-time site art on each card, thin orange keylines. */
+    const ART = PROJECT_ART.sites;
+    const CARD_BG = 'linear-gradient(180deg, rgba(8,20,34,.96) 0%, rgba(3,11,20,.98) 100%)';
+    const CANVAS = 'linear-gradient(180deg, rgba(2,8,17,.6) 0%, rgba(2,8,17,.42) 100%)';   // translucent: the animated AmbientBackground shows through
+    const statLine = { display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: mob ? 12.5 : 13.5, letterSpacing: '.1em', textTransform: 'uppercase', color: '#c9cfd8', whiteSpace: 'nowrap' };
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: mob ? '10px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE }}>
-          {onExit && <button onClick={onExit} style={backBtn}>&#8592;</button>}
-          <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 38, height: mob ? 30 : 38, objectFit: 'contain', borderRadius: 4 }} />
-          <div style={{ fontFamily: BBF, fontSize: mob ? 20 : 27, letterSpacing: 1.5, color: CREAM }}>TASK TRACKER <span style={{ color: ORANGE }}>— PROJECTS</span></div>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: CANVAS, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 2 : 12, padding: mob ? '4px 12px 6px 2px' : '10px 22px', paddingTop: mob ? 'calc(4px + var(--sat, 0px))' : 10, background: 'rgba(1,7,14,.78)', borderBottom: '1px solid rgba(255,107,24,.75)', position: 'sticky', top: 0, zIndex: 5 }}>
+          {onExit && <button onClick={onExit} style={{ ...backBtn, width: 40 }} aria-label="Back"><ChevronLeft size={28} strokeWidth={2.2} /></button>}
+          <img src={PROJECT_ART.wordmark.uri} alt="Sunrise Construction" style={{ height: mob ? 42 : 52, width: 'auto', objectFit: 'contain', flexShrink: 1, minWidth: 0 }} />
+          <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 16 : 22, letterSpacing: '.08em', color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, whiteSpace: 'nowrap', textTransform: 'uppercase', flexShrink: 0 }}>Task Tracker <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,.35)' }} /><span style={{ color: ORANGE }}>Projects</span></div>
         </div>
-        <div style={{ padding: mob ? 16 : 28, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+        <div style={{ padding: mob ? '10px 12px' : 28, paddingBottom: mob ? 'calc(24px + var(--sab, 0px))' : 40, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
           {sectionLabel('Select a Project')}
           {visibleProjects.length === 0 && <div style={{ fontFamily: NBF, fontSize: 15, color: MUTE, marginTop: 16 }}>No projects have been assigned to you yet. Contact your administrator.</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill,minmax(280px,1fr))', gap: 16, marginTop: 16 }}>
-            {visibleProjects.map((pr) => {
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? 'minmax(0,1fr)' : 'repeat(auto-fill,minmax(440px,1fr))', gap: 12, marginTop: 12 }}>
+            {visibleProjects.map((pr, idx) => {
               const d = normalizeDoc(storage.get(projKey(pr.id))); const s = computeStats(d.stage, d.qc, d.subtasks, d.sub);
+              const hl = s.orange > 0 ? { label: 'Action Required', color: ORANGE, warn: true } : s.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW, warn: true } : { label: 'On Track', color: '#19d47b', warn: false };
+              const art = ART[idx % ART.length];
               return (
-                <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', background: 'rgba(255,255,255,.03)', border: '1px solid ' + LINE, padding: 16, transition: 'all .15s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = ORANGE; e.currentTarget.style.transform = 'translateY(-3px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.transform = 'none'; }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                    <span style={{ fontFamily: BBF, fontSize: 24, color: CREAM, letterSpacing: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(pr.name || 'Project').toUpperCase()}</span>
-                    <span style={{ fontFamily: BBF, fontSize: 28, color: GOLD }}>{s.overall.toFixed(0)}%</span>
+                <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', minWidth: 0, background: CARD_BG, border: '1px solid #e65e20', borderRadius: 14, display: 'flex', alignItems: 'stretch', overflow: 'hidden', minHeight: mob ? 148 : 172, boxShadow: '0 12px 30px rgba(0,0,0,.45)', transition: 'transform .15s, box-shadow .15s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 16px 36px rgba(0,0,0,.55), 0 0 0 1px #ff7a21'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,.45)'; }}>
+                  <div style={{ width: mob ? '40%' : '44%', flexShrink: 0, position: 'relative' }}>
+                    <img src={art} alt="" draggable={false} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', WebkitMaskImage: 'linear-gradient(90deg, #000 70%, transparent 100%)', maskImage: 'linear-gradient(90deg, #000 70%, transparent 100%)' }} />
                   </div>
-                  <div style={{ display: 'flex', height: 8, marginTop: 10, overflow: 'hidden', borderRadius: 2, background: 'rgba(255,255,255,.06)' }}>
-                    {STAGES.slice(1).map((stg, i) => <div key={i} style={{ width: (s.N ? (s.cum[i + 1] - (s.cum[i + 2] || 0)) / s.N * 100 : 0) + '%', background: stg.color }} />)}
+                  <div style={{ flex: 1, minWidth: 0, padding: mob ? '12px 12px 12px 2px' : '16px 18px 16px 6px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: mob ? 8 : 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 24, color: CREAM, letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{pr.name || 'Project'}</span>
+                      <ChevronRight size={22} color={ORANGE} strokeWidth={2.4} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12 }}>
+                      <RingPct pct={s.overall} size={mob ? 78 : 96} font={NBF} weight={700} track="rgba(255,255,255,.16)" stroke={8} />
+                      <div style={{ borderLeft: '1px solid rgba(255,255,255,.2)', paddingLeft: mob ? 9 : 14, display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
+                        <div style={statLine}><BarChart3 size={16} color="#c9cfd8" /><b style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 21, color: CREAM, letterSpacing: 0 }}>{s.N.toLocaleString()}</b> points</div>
+                        <div style={statLine}><Calendar size={16} color="#c9cfd8" />{d.lastModified ? new Date(d.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No edits yet'}</div>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', border: '1.5px solid ' + hl.color, color: hl.warn ? hl.color : CREAM, borderRadius: 20, padding: mob ? '4px 10px' : '5px 12px', fontFamily: NBF, fontWeight: 700, fontSize: mob ? 11 : 12.5, letterSpacing: mob ? '.08em' : '.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', background: 'rgba(3,11,20,.6)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {hl.warn ? <AlertTriangle size={14} color={hl.color} /> : <span style={{ width: 9, height: 9, borderRadius: 5, background: hl.color, boxShadow: '0 0 8px ' + hl.color }} />}{hl.label}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE, marginTop: 9 }}>{s.N.toLocaleString()} points{d.lastModified ? ' · ' + new Date(d.lastModified).toLocaleDateString() : ''}{s.orange ? ' · ' : ''}{s.orange ? <span style={{ color: QC_ORANGE }}>{s.orange} flagged</span> : null}</div>
                 </div>
               );
             })}
-            {isAdmin && <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1px dashed rgba(249,115,22,.5)', padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 110, color: ORANGE, fontFamily: NBF, fontSize: 16, letterSpacing: 1, textTransform: 'uppercase' }}>+ New Project (Import)</div>}
+            {isAdmin && (
+              <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1.5px dashed #ff7a21', borderRadius: 14, padding: mob ? '16px 14px' : '22px 20px', display: 'flex', alignItems: 'center', gap: mob ? 14 : 18, minHeight: 130, background: 'rgba(8,20,34,.55)' }}>
+                <FileUp size={mob ? 60 : 72} color={ORANGE} strokeWidth={1.4} style={{ flexShrink: 0 }} />
+                <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,122,33,.6)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 26, letterSpacing: '.04em', color: ORANGE, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>+ New Project (Import)</div>
+                  <div style={{ fontFamily: NBF, fontSize: mob ? 13.5 : 14.5, color: '#aab3c0', marginTop: 4 }}>Import a pile plan or KMZ to start tracking a new site</div>
+                </div>
+                <ChevronRight size={24} color={ORANGE} strokeWidth={2.4} />
+              </div>
+            )}
           </div>
         </div>
         {importOpen && <ImportModal mob={mob} onClose={() => setImportOpen(false)} onCreate={createProject} />}
@@ -1541,30 +1686,17 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- tracker view ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE }}>
-        <button onClick={() => setView('dashboard')} style={backBtn} title="Back to projects">&#8592;</button>
-        <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 28 : 36, height: mob ? 28 : 36, objectFit: 'contain', borderRadius: 4 }} />
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: BBF, fontSize: mob ? 17 : 24, letterSpacing: 1.2, color: CREAM, lineHeight: .95 }}>TASK TRACKER</div>
-          <button onClick={() => setProjOpen(true)} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, maxWidth: mob ? 150 : 260 }}>
-            <span style={{ fontFamily: NBF, fontSize: mob ? 12 : 13, letterSpacing: 1.5, color: ORANGE, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{projName}</span><span style={{ color: ORANGE, fontSize: 10 }}>&#9662;</span>
-          </button>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 14 }}>
-          <div style={{ textAlign: 'right', lineHeight: 1 }}><div style={{ fontFamily: BBF, fontSize: mob ? 22 : 30, color: GOLD, textShadow: '0 0 18px rgba(234,179,8,.4)' }}>{stats.overall.toFixed(0)}%</div>{!mob && <div style={{ fontFamily: NBF, fontSize: 9, letterSpacing: 2, color: MUTE, textTransform: 'uppercase' }}>Complete</div>}</div>
-          {!mob && <button onClick={handleExport} style={ctaBtn}>Export PDF</button>}
-        </div>
-      </div>
-
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: REF_C.panel, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+      <GlyphDefs />
+      <RefHeader projName={projName} pct={stats.overall.toFixed(0)} onBack={() => setView('dashboard')} onProject={() => setProjOpen(true)} onExport={handleExport} logoUri={REF_LOGO_URI || LOGO_URL} nameMax={mob ? 120 : 260} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {!mob && (
-          <div style={{ width: 340, flexShrink: 0, background: PANEL, borderRight: '1px solid ' + LINE, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ width: 430, flexShrink: 0, background: REF_C.panel, borderRight: RULE_SOFT, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {sectionLabel('Status Legend')}
             {legendBody}
           </div>
         )}
-        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
+        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: mob ? RULE_SOFT : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
           {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
@@ -1577,6 +1709,9 @@ export default function PilePlan({ onExit, portalUser }) {
               onLayerMode={setTileLayer}
               active={notePt}
               mode={mode}
+              marked={delSel}
+              rowNext={rowLinks.next}
+              rowDir={rowLinks.dir}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1599,6 +1734,9 @@ export default function PilePlan({ onExit, portalUser }) {
               canAlign={isAdmin}
               onModelBuffer={(b) => { modelBufRef.current = b; }}
               dispColor={dispColor}
+              marked={delSel}
+              rowNext={rowLinks.next}
+              rowDir={rowLinks.dir}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1617,49 +1755,68 @@ export default function PilePlan({ onExit, portalUser }) {
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.4} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />; })()}
             </svg>
           )}
-          <div style={{ position: 'absolute', top: 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
-            {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
-              v.need === false ? null : (
-                <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
-                  style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: '6px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{v.l}</button>
-              )
-            ))}
-          </div>
+          <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[47.5, 64, 45.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
           {selSection != null && (
-            <div style={{ position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
-              <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>{sectionLabelFor(selSection)}</span>
-              <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 17, lineHeight: 1, cursor: 'pointer' }}>&times;</button>
+            <div style={mob
+              ? { position: 'absolute', left: 12, bottom: 56, zIndex: 601, borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.92)', border: '1px solid ' + ORANGE, padding: '6px 10px', backdropFilter: 'blur(6px)', maxWidth: 'calc(100% - 90px)' }
+              : { position: 'absolute', top: 54, right: 14, zIndex: 600, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(10,14,26,.88)', border: '1px solid ' + ORANGE, padding: '5px 10px', backdropFilter: 'blur(6px)' }}>
+              <span style={{ fontFamily: NBF, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sectionLabelFor(selSection)}</span>
+              <button onClick={() => setSelSection(null)} style={{ background: 'transparent', border: 'none', color: MUTE, fontSize: 20, lineHeight: 1, cursor: 'pointer', minWidth: 32, minHeight: 32 }}>&times;</button>
             </div>
           )}
-          {viewMode === 'plan' && (
-            <div style={{ position: 'absolute', bottom: mob ? 86 : 18, right: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-              <button onClick={() => zoomB(1.3)} style={zbtn}>+</button>
-              <span style={{ fontFamily: BBF, fontSize: 13, color: CREAM, background: 'rgba(4,4,12,.75)', border: '1px solid ' + LINE, padding: '1px 5px', minWidth: 34, textAlign: 'center' }}>{Math.round(vw.s * 100)}%</span>
-              <button onClick={() => zoomB(1 / 1.3)} style={zbtn}>&minus;</button>
-              <button onClick={resetView} style={{ ...zbtn, fontSize: 12, fontFamily: NBF }} title="Fit">FIT</button>
-            </div>
-          )}
+          <RefLegend />
+          {viewMode === 'plan' && <RefZoom onIn={() => zoomB(1.3)} onOut={() => zoomB(1 / 1.3)} onFit={resetView} style={{ left: 14, top: 12 }} />}
         </div>
       </div>
 
       {mob && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(4,4,12,.92)', borderTop: '1px solid ' + LINE }}>
-          <button onClick={() => setSheetOpen(true)} style={{ ...ctaBtn, padding: '9px 14px' }}>Status &#9650;</button>
-          <div onClick={() => setSheetOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, cursor: 'pointer' }}>
-            <span style={{ width: 18, height: 18, background: paintColor, flexShrink: 0, border: '1px solid rgba(255,255,255,.4)', clipPath: CLIP }} />
-            <span style={{ fontFamily: NBF, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 15 }}>{paintLabel}</span>
+        <div style={{ position: 'relative', flexShrink: 0, height: 110, background: BG_GRAD, zIndex: 700 }}>
+          {/* raised tab on the drawer rule with the small grab handle */}
+          <div style={{ position: 'absolute', left: '50%', top: -7.5, marginLeft: -31, width: 62, height: 7.5, background: '#E0701A', clipPath: 'polygon(6.5px 0,55.5px 0,62px 100%,0 100%)' }} />
+          <div style={{ position: 'absolute', left: '50%', top: -6.5, marginLeft: -30, width: 60, height: 7, background: BG_GRAD, clipPath: 'polygon(6px 0,54px 0,60px 100%,0 100%)' }} />
+          <div style={{ position: 'absolute', left: '50%', top: -3, marginLeft: -12, width: 24, height: 3, borderRadius: 2, background: '#F06B0C' }} />
+          {mode === 'delete' ? (
+            <div style={{ position: 'absolute', left: 11, right: 11, top: 5, height: 27.5, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Trash2 size={16} color="#f87171" />
+              <span style={{ flex: 1, minWidth: 0, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{delSel.size ? `${delSel.size} point${delSel.size === 1 ? '' : 's'} selected` : 'Tap or drag over points to remove'}</span>
+              <button onClick={clearDel} disabled={!delSel.size} style={{ background: 'transparent', border: '1px solid ' + REF_C.border, borderRadius: 5, color: '#fff', height: 27.5, padding: '0 10px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', opacity: delSel.size ? 1 : .4 }}>Clear</button>
+              <button onClick={deleteMarked} disabled={!delSel.size} style={{ background: TT.danger, border: 'none', borderRadius: 5, color: '#fff', height: 27.5, padding: '0 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', opacity: delSel.size ? 1 : .4 }}>Delete</button>
+            </div>
+          ) : (
+            <>
+              <RefStatusChip onClick={() => setSheetOpen(true)} style={{ left: 11, top: 6.5 }} />
+              <div style={{ position: 'absolute', left: 115.5, top: 12.5, width: 1.5, height: 16, background: REF_C.slash, transform: 'skewX(-23deg)' }} />
+              <div style={{ position: 'absolute', left: 130.5, top: 12.5, width: 17, height: 15, background: mode === 'pan' ? REF_C.swatch : paintColor, clipPath: 'polygon(7.5px 0,100% 0,calc(100% - 7.5px) 100%,0 100%)' }} />
+              <div onClick={() => setSheetOpen(true)} style={{ position: 'absolute', left: 156, right: 60, top: 12.5, fontFamily: NBF, fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase', color: '#EEEFF4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'pointer' }}>{mode === 'pan' ? 'All install phases' : paintLabel}</div>
+              <RefUndo onClick={undo} disabled={!canUndo} style={{ right: 12.5, top: 4.5 }} />
+            </>
+          )}
+          <div style={{ position: 'absolute', left: 10, right: 10, top: 37.5, display: 'flex', gap: 4 }}>
+            {TOOLS.map((t) => <RefToolCard key={t.k} on={mode === t.k} Icon={t.I} title={t.l} hint={t.hint} onClick={() => pickTool(t.k)} />)}
           </div>
-          <button onClick={undo} disabled={!canUndo} style={{ ...ghostBtn, padding: '9px 11px', opacity: canUndo ? 1 : .4 }}>&#8634;</button>
-          <button onClick={() => setMode(mode === 'brush' ? 'fill' : mode === 'fill' ? 'pan' : 'brush')} style={{ ...ghostBtn, padding: '9px 11px' }}>{mode === 'brush' ? 'Brush' : mode === 'fill' ? 'Fill' : 'Pan'}</button>
         </div>
       )}
 
+      {demo && <RefNav active="tasks" onSelect={(k) => { if (k !== 'tasks') setToast('Demo: only Tasks is available'); }} />}
+      {demo && toast && <div style={{ position: 'fixed', left: '50%', bottom: 'calc(80px + var(--sab, 0px))', transform: 'translateX(-50%)', zIndex: 2150, background: 'rgba(1,15,28,.96)', border: '1px solid ' + REF_C.border, borderRadius: 8, padding: '8px 14px', fontFamily: NBF, fontSize: 13, color: '#fff', letterSpacing: .5, whiteSpace: 'nowrap' }}>{toast}</div>}
+
       {mob && sheetOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: `linear-gradient(180deg,#0d0f1c, ${INK})`, borderTop: '2px solid ' + ORANGE, borderRadius: '18px 18px 0 0', padding: 16, maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>{sectionLabel('Status Legend')}<button onClick={() => setSheetOpen(false)} style={{ ...xBtn, marginLeft: 'auto' }}>&times;</button></div>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,.55)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setSheetOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: `linear-gradient(180deg,${NAVY2}, ${NAVY})`, border: '1px solid ' + ORANGE, borderBottom: 'none', borderRadius: '18px 18px 0 0', padding: 14, paddingBottom: 'calc(14px + var(--sab, 0px))', maxHeight: '88dvh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <ListChecks size={26} color={ORANGE} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontFamily: BBF, fontSize: 20, letterSpacing: 1.5, color: CREAM, lineHeight: 1, whiteSpace: 'nowrap' }}>TASK TRACKER</div>
+                <button onClick={() => { setSheetOpen(false); setProjOpen(true); }} style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, color: ORANGE, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{projName} &#9662;</button>
+              </div>
+              <div style={{ textAlign: 'right', lineHeight: 1 }}>
+                <div style={{ fontFamily: BBF, fontSize: 26, color: ORANGE }}>{stats.overall.toFixed(0)}%</div>
+                <div style={{ fontFamily: NBF, fontSize: 9, letterSpacing: 1.5, color: MUTE, textTransform: 'uppercase', marginTop: 2 }}>Project progress</div>
+              </div>
+              <button onClick={() => setSheetOpen(false)} aria-label="Close" style={{ ...xBtn, minWidth: 40, minHeight: 40 }}>&times;</button>
+            </div>
             {legendBody}
-            <button onClick={() => setSheetOpen(false)} style={{ ...ctaBtn, padding: '13px 0' }}>Done</button>
+            <button onClick={() => setSheetOpen(false)} style={{ ...ctaBtn, padding: '14px 0', fontSize: 15 }}>Done</button>
           </div>
         </div>
       )}
@@ -1994,20 +2151,19 @@ function ImportModal({ mob, onClose, onCreate }) {
 }
 
 /* styles */
-const kicker = { fontFamily: NBF, fontSize: 12, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: MUTE };
-const bar = { height: 7, background: 'rgba(255,255,255,.08)', marginTop: 8, overflow: 'hidden', borderRadius: 2 };
+const kicker = { fontFamily: NBF, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: CREAM };
+const bar = { height: 8, background: 'rgba(255,255,255,.08)', marginTop: 8, overflow: 'hidden', borderRadius: 4 };
 const headTitle = { fontFamily: BBF, fontSize: 24, letterSpacing: 1.5, color: CREAM };
-const selectStyle = { width: '100%', background: '#0f1320', color: CREAM, border: '1px solid ' + LINE, padding: '10px', fontFamily: NBF, fontSize: 15, outline: 'none' };
-function card() { return { background: 'rgba(255,255,255,.03)', border: '1px solid ' + LINE, padding: 12 }; }
-function statusRow(active) { return { display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', cursor: 'pointer', border: '1px solid ' + (active ? ORANGE : 'transparent'), background: active ? 'rgba(249,115,22,.10)' : 'rgba(255,255,255,.02)' }; }
-function segBtn(active) { return { flex: 1, background: active ? ORANGE : 'transparent', color: active ? '#1a1206' : CREAM, border: '1px solid ' + (active ? ORANGE : 'rgba(255,255,255,.18)'), padding: '9px 0', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP }; }
-const ctaBtn = { background: ORANGE, color: '#1a1206', border: 'none', padding: '12px 18px', fontFamily: NBF, fontWeight: 700, fontSize: 14, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap', boxShadow: '0 0 20px rgba(249,115,22,.30)' };
-const ghostBtn = { background: 'transparent', color: ORANGE, border: '1px solid ' + ORANGE, padding: '10px 16px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' };
-const backBtn = { background: 'transparent', color: CREAM, border: '1px solid rgba(255,255,255,.2)', width: 38, height: 34, fontSize: 17, cursor: 'pointer', clipPath: CLIP, flexShrink: 0 };
+const selectStyle = { width: '100%', background: TT.control, color: CREAM, border: '1px solid ' + TT.borderStrong, borderRadius: TT.radiusControl, padding: '11px 10px', fontFamily: NBF, fontSize: 15, outline: 'none', minHeight: 48 };
+function card() { return { ...PANEL_STYLE, padding: 12 }; }
+function statusRow(active) { return { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', minHeight: 48, cursor: 'pointer', borderRadius: TT.radiusControl, border: (active ? '1px solid ' + ORANGE : '1px solid ' + TT.divider), background: active ? 'rgba(255,107,0,.12)' : TT.control, boxShadow: active ? GLOW : 'none' }; }
+function segBtn(active) { return { flex: 1, ...segStyle(active), minHeight: 44 }; }
+const ctaBtn = { ...BTN_PRIMARY };
+const ghostBtn = { ...BTN_OUTLINE };
+const backBtn = { background: 'transparent', color: CREAM, border: 'none', width: 48, height: 48, fontSize: 22, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 };
 /* small ↺ that clears a task straight from its legend row */
-function resetX(active) { return { background: 'transparent', border: '1px solid ' + (active ? 'rgba(248,113,113,.45)' : 'rgba(255,255,255,.12)'), color: active ? '#f87171' : 'rgba(255,255,255,.25)', width: 24, height: 22, fontSize: 13, lineHeight: 1, cursor: 'pointer', flexShrink: 0, clipPath: CLIP, padding: 0 }; }
-const miniBtn = { background: 'transparent', border: '1px solid', borderColor: 'rgba(255,255,255,.25)', padding: '3px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
-const zbtn = { width: 44, height: 44, background: 'rgba(4,4,12,.8)', color: CREAM, border: '1px solid ' + LINE, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', clipPath: CLIP, backdropFilter: 'blur(6px)' };
-const xBtn = { background: 'transparent', border: 'none', color: MUTE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
-function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,.62)', display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
-function modalCard(mob, w) { return { background: `linear-gradient(180deg,#0d0f1c, ${INK})`, border: '1px solid ' + ORANGE, borderRadius: mob ? '18px 18px 0 0' : 10, padding: 18, width: mob ? '100%' : w, maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, boxShadow: '0 0 60px rgba(0,0,0,.6)' }; }
+function resetX(active) { return { background: 'transparent', border: 'none', color: active ? ORANGE : 'rgba(255,255,255,.25)', width: 34, height: 34, fontSize: 16, lineHeight: 1, cursor: 'pointer', flexShrink: 0, borderRadius: 17, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }; }
+const miniBtn = { background: 'transparent', border: 'none', borderBottom: '2px solid', borderColor: TT.borderStrong, padding: '6px 8px', minHeight: 36, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' };
+const xBtn = { background: 'transparent', border: 'none', color: ORANGE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
+function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2300, background: TT.scrim, display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
+function modalCard(mob, w) { return { background: GRAD_PANEL, border: '1px solid ' + ORANGE, borderRadius: mob ? '18px 18px 0 0' : TT.radiusPanel, padding: 18, width: mob ? '100%' : w, maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, boxShadow: '0 0 60px rgba(0,0,0,.6)' }; }

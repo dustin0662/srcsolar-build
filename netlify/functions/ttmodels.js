@@ -1,10 +1,11 @@
 import { getStore } from '@netlify/blobs';
+import { withCors } from './lib/cors.js';
 
 const MAX_VERSIONS = 60;
 const idxKey = (p) => 'idx:' + p;
 const chunkKey = (p, m, i) => 'c:' + p + ':' + m + ':' + i;
 
-export default async (req) => {
+export default withCors(async (req) => {
   let store;
   try { store = getStore('ttmodels'); } catch (e) { return Response.json({ error: 'store unavailable' }, { status: 500 }); }
   const url = new URL(req.url);
@@ -50,4 +51,4 @@ export default async (req) => {
     return Response.json({ error: 'bad request' }, { status: 400 });
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
-};
+});

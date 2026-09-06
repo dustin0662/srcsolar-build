@@ -11,23 +11,86 @@ const ESRI_SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Ima
 const ESRI_ATTR = 'Imagery &copy; Esri, Maxar, Earthstar Geographics';
 const OSM_STREETS = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTR = '&copy; OpenStreetMap contributors';
-const ORANGE = '#F97316';
+import { TT } from './tt_theme.js';
+const ORANGE = TT.orange;
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
-function colorFor(stage, qc) {
-  if (qc === 2) return '#ea580c';
-  if (qc === 1) return '#eab308';
-  if (stage === 4) return '#16a34a';
-  if (stage === 3) return '#7c3aed';
-  if (stage === 2) return '#2563eb';
-  if (stage === 1) return '#9ca3af';
-  return '#e8e8ea';
-}
+import { paintRefStack, radiusForZoom, onIconsReady, clampK } from './tt_glyphs.jsx';
+import { RefZoom, RefSeg, RefCompass } from './tt_ref_chrome.jsx';
+
+/* One marker per point for hit-testing / clicks, but drawing happens in a
+   single multi-pass painter so the stacks layer correctly: piles, then the
+   tubes that join points down a row, then modules on the tubes, then post
+   caps on top, then flags. Sizes follow the zoom level. */
+const GlyphMarker = L.CircleMarker.extend({
+  _project() {
+    const map = this._map; const z = map.getZoom(); const r = radiusForZoom(z);
+    this._radius = r * 1.1; this.options.radius = this._radius;
+    this._point = map.latLngToLayerPoint(this._latlng);
+    this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
+    let pad;   // sprite box, selection ring, raised flag + glow, joint to the next point
+    { const k = clampK((this._nextPoint ? this._point.distanceTo(this._nextPoint) : 36 * r / 9) / 36); this._radius = Math.max(r * 1.1, 9 * k); this.options.radius = this._radius; pad = 40 * k + 4; }
+    const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
+    if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
+    this._pxBounds = b;
+  },
+  _updatePath() { /* drawn by GlyphRenderer._draw */ },
+  _item() {
+    const o = this.options;
+    return { x: this._point.x, y: this._point.y, nx: this._nextPoint ? this._nextPoint.x : null, ny: this._nextPoint ? this._nextPoint.y : null, s: o.stage || 0, q: o.qc || 0, ns: o.nextStage == null ? -1 : o.nextStage, dim: !!o.dimmed, hot: !!o.hot, del: !!o.del };
+  },
+});
+const GlyphRenderer = L.Canvas.extend({
+  onAdd(map) {
+    L.Canvas.prototype.onAdd.call(this, map);
+    /* icons rasterise asynchronously — repaint everything once they land */
+    this._offIcons = onIconsReady(() => {
+      if (!this._map) return;
+      this._fullRedraw = true;
+      this._redrawRequest = this._redrawRequest || L.Util.requestAnimFrame(this._redraw, this);
+    });
+  },
+  onRemove(map) { if (this._offIcons) { this._offIcons(); this._offIcons = null; } L.Canvas.prototype.onRemove.call(this, map); },
+  _redraw() {
+    if (this._fullRedraw) { this._fullRedraw = false; this._redrawBounds = null; }
+    L.Canvas.prototype._redraw.call(this);
+  },
+  _draw() {
+    const bounds = this._redrawBounds; const ctx = this._ctx;
+    ctx.save();
+    if (bounds) { const size = bounds.getSize(); ctx.beginPath(); ctx.rect(bounds.min.x, bounds.min.y, size.x, size.y); ctx.clip(); }
+    this._drawing = true;
+    const glyphs = [], others = [];
+    for (let order = this._drawFirst; order; order = order.next) {
+      const layer = order.layer;
+      if (bounds && !(layer._pxBounds && layer._pxBounds.intersects(bounds))) continue;
+      if (layer instanceof GlyphMarker) glyphs.push(layer); else others.push(layer);
+    }
+    if (glyphs.length) {
+      const r = radiusForZoom(this._map.getZoom());
+      let dir = [0, 1];
+      for (const g of glyphs) if (g._nextPoint) { const dx = g._nextPoint.x - g._point.x, dy = g._nextPoint.y - g._point.y, L2 = Math.hypot(dx, dy) || 1; dir = [dx / L2, dy / L2]; break; }
+      {
+        const z = this._map.getZoom();
+        if (this._refZoom !== z || this._refPitch == null) {
+          const ds = [];
+          for (const id in this._layers) { const l = this._layers[id]; if (l instanceof GlyphMarker && l._nextPoint) ds.push(l._point.distanceTo(l._nextPoint)); }
+          ds.sort((a, b) => a - b); this._refPitch = ds.length ? ds[ds.length >> 1] : 36 * r / 9; this._refZoom = z;
+        }
+        paintRefStack(ctx, glyphs.map((g) => g._item()), clampK(this._refPitch / 36), dir, L.Browser.retina ? 2 : 1, this._refPitch);
+      }
+    }
+    for (const layer of others) layer._updatePath();
+    this._drawing = false;
+    ctx.restore();
+  },
+});
+
 
 export default function TTMapView({
   geo, stage, qc, sections, sectionNames, selSection,
   onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints,
-  active, layerMode, onLayerMode, mode,
+  active, layerMode, onLayerMode, mode, marked, rowNext,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -43,10 +106,14 @@ export default function TTMapView({
   const marqRef = useRef(null);
   const rpanRef = useRef(null);
   const [ready, setReady] = useState(0);
+  const siteRendererRef = useRef(null);
+  const siteRef = useRef([]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, preferCanvas: true });
+    const map = L.map(containerRef.current, { zoomControl: false, attributionControl: true, zoomSnap: 0, renderer: new GlyphRenderer({ padding: 0.5 }) });
+    map.attributionControl.setPrefix(false);   // imagery credit only, no Leaflet link
+    { map.createPane('tt-site').style.zIndex = 390; siteRendererRef.current = L.canvas({ pane: 'tt-site', padding: 0.5 }); }
     mapRef.current = map;
     baseLayerRef.current = L.tileLayer(
       layerMode === 'streets' ? OSM_STREETS : ESRI_SAT,
@@ -74,13 +141,15 @@ export default function TTMapView({
     geo.lonLat.forEach(([lon, lat], i) => {
       const ll = L.latLng(lat, lon);
       bounds.extend(ll);
-      const m = L.circleMarker(ll, { radius: 5, color: 'rgba(2,3,10,.6)', weight: 0.8, fillColor: colorFor(stageRef.current[i], qcRef.current[i]), fillOpacity: 0.95 });
+      const j = rowNext ? rowNext[i] : -1;
+      const nll = j >= 0 && geo.lonLat[j] ? L.latLng(geo.lonLat[j][1], geo.lonLat[j][0]) : null;
+      const m = new GlyphMarker(ll, { radius: 5, stage: stageRef.current[i] || 0, qc: qcRef.current[i] || 0, nextStage: j >= 0 ? (stageRef.current[j] || 0) : -1, nextLatLng: nll, interactive: true });
       m.on('click', () => { if (modeRef.current === 'pan' && cb.current.onPickPoint) cb.current.onPickPoint(i); });
       m.addTo(map);
       markersRef.current.push(m);
     });
     if (!bounds.isValid()) return;
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 20 });
+    map.fitBounds(bounds, { paddingTopLeft: [48, 74], paddingBottomRight: [66, 62], maxZoom: 22 });
     /* Keep the view over the site: pad the KMZ extent by a margin so the
        outermost points can still be centred and worked on, but the map can't
        be dragged off into empty imagery. */
@@ -89,21 +158,80 @@ export default function TTMapView({
     map.options.maxBoundsViscosity = 1.0;
     /* don't let them zoom out past the whole site either */
     map.setMinZoom(Math.max(1, map.getBoundsZoom(bounds, false) - 2));
-  }, [geo, ready]);
+  }, [geo, ready, rowNext]);
+
+  /* Reference skin: the site outline (from the doc, else a padded hull of the
+     points), a darkening mask outside it, and dashed contour echoes — all in
+     a pane below the point sprites. */
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !geo || !geo.lonLat || !geo.lonLat.length) return;
+    siteRef.current.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); siteRef.current = [];
+    const lonLat = geo.lonLat;
+    let ring;
+    if (Array.isArray(geo.boundary) && geo.boundary.length >= 3) ring = geo.boundary.map(([lon, lat]) => [lat, lon]);
+    else {
+      /* convex hull (monotone chain) in a locally metric frame, then pushed out 1.2 row pitches */
+      const lat0 = lonLat[0][1]; const cs = Math.cos(lat0 * Math.PI / 180) || 1;
+      const pts = lonLat.map(([lon, lat]) => [lon * cs, lat]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const lower = []; for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+      const upper = []; for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+      const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+      const ds = []; if (rowNext) for (let i = 0; i < lonLat.length; i++) { const j = rowNext[i]; if (j >= 0) ds.push(Math.hypot((lonLat[j][0] - lonLat[i][0]) * cs, lonLat[j][1] - lonLat[i][1])); }
+      ds.sort((a, b) => a - b); const sp = ds.length ? ds[ds.length >> 1] : 5e-5;
+      const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length, cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
+      ring = hull.map(([x, y]) => { const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1; return [y + dy / d * 1.2 * sp, (x + dx / d * 1.2 * sp) / cs]; });
+    }
+    /* faint graticule like the mock's imagery grid: one div per 88 px cell, in the tile pane so it darkens with the tiles */
+    const Grat = L.GridLayer.extend({ createTile() { const d = document.createElement('div'); d.style.boxSizing = 'border-box'; d.style.borderLeft = '1px solid rgba(255,255,255,.09)'; d.style.borderTop = '1px solid rgba(255,255,255,.09)'; return d; } });
+    const grat = new Grat({ tileSize: 88, pane: 'tilePane', zIndex: 5, updateWhenZooming: false, keepBuffer: 1 }).addTo(map);
+    const opts = { pane: 'tt-site', renderer: siteRendererRef.current, interactive: false };
+    const world = [[-89.9, -179.9], [89.9, -179.9], [89.9, 179.9], [-89.9, 179.9]];
+    const base = [
+      L.polygon([world, ring], { ...opts, stroke: false, fillColor: '#020A14', fillOpacity: 0.45 }),
+      L.polygon(ring, { ...opts, color: '#F97316', weight: 6, opacity: 0.18, fill: false }),
+      L.polygon(ring, { ...opts, color: '#F97316', weight: 2, opacity: 0.95, fill: false }),
+    ];
+    base.forEach((l) => l.addTo(map));
+    /* dashed contour echoes at fixed pixel offsets from the outline, with a
+       gentle wobble so they read as topo lines; rebuilt on zoom */
+    let echoes = [];
+    const rebuildEchoes = () => {
+      echoes.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); echoes = [];
+      const pts = ring.map((ll) => map.latLngToLayerPoint(L.latLng(ll[0], ll[1])));
+      const n = pts.length; if (n < 3) return;
+      const dense = [];
+      for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; const L2 = a.distanceTo(b); const steps = Math.max(1, Math.round(L2 / 4)); for (let t = 0; t < steps; t++) dense.push([a.x + (b.x - a.x) * t / steps, a.y + (b.y - a.y) * t / steps]); }
+      let cx = 0, cy = 0; dense.forEach((p) => { cx += p[0]; cy += p[1]; }); cx /= dense.length; cy /= dense.length;
+      const offsets = [[-26, 0.34, 0.4], [-17, 0.4, 1.3], [-8, 0.44, 2.1], [8, 0.48, 0.7], [17, 0.46, 1.9], [27, 0.42, 2.6], [39, 0.36, 0.3], [53, 0.3, 1.1]];
+      offsets.forEach(([off, op, seed], ri) => {
+        const out = []; const m = dense.length;
+        for (let i = 0; i < m; i++) {
+          const p = dense[i], pa = dense[(i - 1 + m) % m], pb = dense[(i + 1) % m];
+          let nx = -(pb[1] - pa[1]), ny = pb[0] - pa[0]; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          /* outward normal: point it away from the centroid */
+          if ((p[0] - cx) * nx + (p[1] - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const w = 3 * (Math.sin(i * 0.07 + seed) * 0.6 + Math.sin(i * 0.023 + seed * 2.3) * 0.4);
+          const d = off + w;
+          out.push(map.layerPointToLatLng(L.point(p[0] + nx * d, p[1] + ny * d)));
+        }
+        echoes.push(L.polyline(out.concat([out[0]]), { ...opts, color: '#F97316', weight: 0.75, opacity: op, dashArray: '3 2.5' }).addTo(map));
+      });
+    };
+    rebuildEchoes();
+    map.on('zoomend', rebuildEchoes);
+    siteRef.current = base.concat([grat]);
+    return () => { map.off('zoomend', rebuildEchoes); grat.remove(); base.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); echoes.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); };
+  }, [geo, ready, rowNext]);
 
   useEffect(() => {
     markersRef.current.forEach((m, i) => {
       const dim = selSection != null && sections && sections[i] !== selSection;
-      m.setStyle({
-        fillColor: colorFor(stage[i], qc[i]),
-        radius: active === i ? 8 : 5,
-        color: active === i ? ORANGE : 'rgba(2,3,10,.6)',
-        weight: active === i ? 2 : 0.8,
-        fillOpacity: dim ? 0.18 : 0.95,
-        opacity: dim ? 0.18 : 1,
-      });
+      const del = marked && marked.has(i);   // queued for deletion
+      const j = rowNext ? rowNext[i] : -1;
+      m.setStyle({ stage: stage[i] || 0, qc: qc[i] || 0, nextStage: j >= 0 ? (stage[j] || 0) : -1, del: !!del, hot: active === i, dimmed: !!(dim && !del) });
     });
-  }, [stage, qc, active, selSection, sections]);
+  }, [stage, qc, active, selSection, sections, marked, rowNext]);
 
   /* silhouette outline around the selected block */
   useEffect(() => {
@@ -131,11 +259,18 @@ export default function TTMapView({
      instead of panning the map. Pan mode hands the map back. */
   useEffect(() => {
     const map = mapRef.current; if (!map) return;
-    const painting = mode === 'brush' || mode === 'fill';
+    const painting = mode === 'brush' || mode === 'fill' || mode === 'delete';
     if (painting) { map.dragging.disable(); map.doubleClickZoom.disable(); map.boxZoom.disable(); }
     else { map.dragging.enable(); map.doubleClickZoom.enable(); map.boxZoom.enable(); }
     const el = map.getContainer();
-    if (el) el.style.cursor = painting ? 'crosshair' : '';
+    if (el) {
+      el.style.cursor = painting ? 'crosshair' : '';
+      /* Leaflet's stylesheet drops touch-action to "pan-x pan-y" as soon as
+         dragging is disabled, so on a phone the browser claimed every brush
+         stroke as a scroll and fired pointercancel after the first dot.
+         Owning the gesture is what makes brush/fill work on touch. */
+      el.style.touchAction = painting ? 'none' : '';
+    }
   }, [mode]);
 
   /* hit-test in screen space — markers use the canvas renderer, so there are
@@ -144,7 +279,9 @@ export default function TTMapView({
     const map = mapRef.current; if (!map || !geo || !geo.lonLat) return -1;
     const r = map.getContainer().getBoundingClientRect();
     const pt = L.point(cx - r.left, cy - r.top);
-    let best = -1, bd = 144; // 12px radius
+    // 12px radius for a mouse; ~22px for a fingertip
+    const coarse = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+    let best = -1, bd = coarse ? 484 : 144;
     for (let i = 0; i < geo.lonLat.length; i++) {
       const [lon, lat] = geo.lonLat[i];
       const p = map.latLngToContainerPoint(L.latLng(lat, lon));
@@ -174,8 +311,9 @@ export default function TTMapView({
       /* right button pans regardless of tool — Leaflet's own dragging is
          left-button only, so drive the centre by hand */
       if (e.button === 2) { rpanRef.current = { x: e.clientX, y: e.clientY }; e.preventDefault(); return; }
+      if (e.isPrimary === false) return;   // second finger = pinch-zoom, not a stroke
       const m = modeRef.current;
-      if (m === 'brush') {
+      if (m === 'brush' || m === 'delete') {
         paintingRef.current = true;
         if (cb.current.onBrushStart) cb.current.onBrushStart();
         const i = nearestPoint(e.clientX, e.clientY);
@@ -188,6 +326,7 @@ export default function TTMapView({
       }
     };
     const move = (e) => {
+      if (e.isPrimary === false) return;
       if (rpanRef.current) {
         const r = rpanRef.current; const dx = e.clientX - r.x, dy = e.clientY - r.y;
         if (dx || dy) { map.panBy([-dx, -dy], { animate: false }); rpanRef.current = { x: e.clientX, y: e.clientY }; }
@@ -235,19 +374,17 @@ export default function TTMapView({
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
-      <style>{`.tt-block-label{background:rgba(10,14,26,.9);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px}.tt-block-label::before{display:none}`}</style>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0, background: '#0b1020' }} />
-      <div style={{ position: 'absolute', top: 10, left: 52, zIndex: 500, display: 'flex', gap: 4, background: 'rgba(10,14,26,.88)', border: '1px solid rgba(255,255,255,.15)', padding: 3 }}>
-        {['satellite', 'streets'].map((k) => (
-          <button key={k} onClick={() => onLayerMode(k)} style={{
-            background: layerMode === k ? ORANGE : 'transparent',
-            color: layerMode === k ? '#1a1206' : '#F5F0EB',
-            border: 'none', padding: '5px 10px',
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 12,
-            letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer',
-          }}>{k}</button>
-        ))}
-      </div>
+      <style>{`
+        .tt-block-label{background:rgba(6,21,37,.92);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px;border-radius:6px}.tt-block-label::before{display:none}
+        /* navy wash so the sprites and outline read on bright imagery */
+        .tt-map .leaflet-tile-pane{filter:brightness(.78) saturate(.85) contrast(1.05)}
+        .tt-map .leaflet-control-attribution{background:rgba(1,15,28,.72);color:rgba(213,218,224,.75);font-size:8px;line-height:1.4;padding:0 5px;margin:0}
+        .tt-map .leaflet-control-attribution a{color:${TT.text2}}
+      `}</style>
+      <div ref={containerRef} className="tt-map" style={{ position: 'absolute', inset: 0, background: TT.canvas }} />
+      <RefZoom onIn={() => mapRef.current && mapRef.current.zoomIn()} onOut={() => mapRef.current && mapRef.current.zoomOut()} style={{ left: 14, top: 12 }} />
+      <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 64]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
+      <RefCompass style={{ right: 10, top: 55.5 }} />
     </div>
   );
 }

@@ -1,25 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
+import { useIsMobile } from './native/useIsMobile.js';
 
 const ENDPOINT = '/.netlify/functions/projecttracker';
 const LS_KEY = 'srcd_pt_v1';
 const LOGO_URL = '/logo.webp';
 
-const ORANGE = '#F97316';
-const GOLD = '#EAB308';
-const INK = '#0b0d15';
-const INK2 = '#05060d';
-const CREAM = '#F5F0EB';
-const MUTE = '#94a3b8';
-const LINE = 'rgba(255,255,255,.12)';
-const PANEL = 'rgba(255,255,255,.03)';
-const CARD = 'rgba(255,255,255,.04)';
-const RED = '#ef4444';
-const GREEN = '#16a34a';
-const BLUE = '#3b82f6';
+/* SUNRISE dark skin tokens (see src/admin-skin.css) */
+const ORANGE = '#ff6b18';
+const HOT = '#ff7a21';
+const GOLD = '#f4d457';
+const INK = '#07121e';        // surface
+const INK2 = '#0a1826';       // raised surface
+const INPUT_BG = '#091522';   // input fill
+const CREAM = '#f6f3ec';
+const MUTE = '#aab3c0';
+const DIM = '#717d8d';
+const LINE = '#2b3949';       // hairline
+const LINE_ORANGE = '#e65e20'; // orange keyline
+const LINE_SOFT = '#a7461e';  // soft orange keyline
+const PANEL = 'linear-gradient(145deg, rgba(10,24,38,.98), rgba(3,12,22,.98))';
+const CARD = '#07121e';
+const GHOST_BG = 'linear-gradient(180deg, rgba(15,30,47,.94), rgba(5,14,24,.96))';
+const CTA_BG = 'linear-gradient(135deg, #ff6b18, #ff7a21)';
+const ON_ORANGE = '#120a04';  // label text on orange
+const RED = '#ff4655';
+const GREEN = '#19d47b';
+const BLUE = '#2c7dff';
 
-const BBF = "'Bebas Neue', 'Barlow Condensed', sans-serif";
+const BBF = "'Barlow Condensed', 'Barlow', sans-serif"; // display (use with fontWeight 700)
 const NBF = "'Barlow Condensed', 'Barlow', sans-serif";
 
 const CLIP = 'polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%)';
@@ -54,23 +64,23 @@ function visibleOn(it, date, today) {
 }
 
 const seg = (active) => ({
-  padding: '8px 16px', background: active ? ORANGE : 'transparent', color: active ? '#1a1206' : CREAM,
-  border: '1px solid ' + (active ? ORANGE : LINE), fontFamily: NBF, fontWeight: 700, fontSize: 12,
+  padding: '8px 16px', minHeight: 44, background: active ? CTA_BG : GHOST_BG, color: active ? ON_ORANGE : CREAM,
+  border: '1px solid ' + (active ? HOT : LINE_ORANGE), fontFamily: NBF, fontWeight: 700, fontSize: 12,
   letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', marginRight: -1, clipPath: CLIP, whiteSpace: 'nowrap',
 });
-const ctaBtn = { background: ORANGE, color: '#1a1206', border: 'none', padding: '9px 16px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap', boxShadow: '0 0 18px rgba(249,115,22,.28)' };
-const ghostBtn = { background: 'transparent', color: ORANGE, border: '1px solid ' + ORANGE, padding: '8px 14px', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' };
-const ghostSoft = { background: 'transparent', color: CREAM, border: '1px solid ' + LINE, padding: '5px 10px', fontFamily: NBF, fontWeight: 600, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
-const inputStyle = { background: 'rgba(255,255,255,.05)', border: '1px solid ' + LINE, color: CREAM, fontFamily: NBF, fontSize: 15, padding: '8px 10px', outline: 'none', minWidth: 0 };
-const kicker = { fontFamily: NBF, fontSize: 11, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: MUTE };
-const sectionTitle = { fontFamily: BBF, fontSize: 18, letterSpacing: 2, textTransform: 'uppercase', color: CREAM };
+const ctaBtn = { background: CTA_BG, color: ON_ORANGE, border: '1px solid ' + HOT, padding: '9px 16px', minHeight: 44, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap', boxShadow: '0 0 18px rgba(255,107,24,.28)' };
+const ghostBtn = { background: GHOST_BG, color: HOT, border: '1px solid ' + LINE_ORANGE, padding: '8px 14px', minHeight: 44, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP, whiteSpace: 'nowrap' };
+const ghostSoft = { background: GHOST_BG, color: CREAM, border: '1px solid ' + LINE_SOFT, padding: '5px 10px', minHeight: 44, fontFamily: NBF, fontWeight: 600, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', clipPath: CLIP };
+const inputStyle = { background: INPUT_BG, border: '1px solid ' + LINE_ORANGE, borderRadius: 6, color: CREAM, caretColor: ORANGE, fontFamily: NBF, fontSize: 15, padding: '8px 10px', minHeight: 48, outline: 'none', minWidth: 0 };
+const kicker = { fontFamily: NBF, fontSize: 11, fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: HOT };
+const sectionTitle = { fontFamily: BBF, fontWeight: 700, fontSize: 18, letterSpacing: 2, textTransform: 'uppercase', color: CREAM };
 const tag = (bg, fg) => ({ display: 'inline-block', padding: '2px 8px', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', background: bg, color: fg, clipPath: CLIP });
-const tagOutline = { display: 'inline-block', padding: '2px 8px', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', background: 'transparent', color: MUTE, border: '1px solid ' + LINE, clipPath: CLIP };
+const tagOutline = { display: 'inline-block', padding: '2px 8px', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', background: 'transparent', color: MUTE, border: '1px solid ' + LINE_SOFT, clipPath: CLIP };
 
 function statusStyle(status, active) {
-  if (!active) return { padding: '5px 12px', background: 'transparent', color: MUTE, border: '1px solid ' + LINE, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', marginRight: -1, clipPath: CLIP };
-  const bg = status === 'open' ? BLUE : status === 'in_progress' ? ORANGE : status === 'closed' ? '#334155' : LINE;
-  return { padding: '5px 12px', background: bg, color: '#fff', border: '1px solid ' + bg, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', marginRight: -1, clipPath: CLIP };
+  if (!active) return { padding: '5px 12px', minHeight: 44, background: GHOST_BG, color: MUTE, border: '1px solid ' + LINE_SOFT, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', marginRight: -1, clipPath: CLIP };
+  const bg = status === 'open' ? BLUE : status === 'in_progress' ? ORANGE : status === 'closed' ? LINE : LINE;
+  return { padding: '5px 12px', minHeight: 44, background: bg, color: bg === ORANGE ? ON_ORANGE : CREAM, border: '1px solid ' + bg, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', marginRight: -1, clipPath: CLIP };
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,7 +267,7 @@ function exportXlsx(project, sel, itemsByKind) {
 /* ------------------------------------------------------------------ */
 export default function ProjectTracker({ onExit, portalUser, allUsers }) {
   const { state, mutate, status } = useProjectTrackerData();
-  const mob = typeof window !== 'undefined' ? window.innerWidth < 780 : false;
+  const mob = useIsMobile();
   const [_, force] = useState(0);
   useEffect(() => {
     const h = () => force((n) => n + 1);
@@ -374,23 +384,23 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
     return projectItems.filter((i) => i.kind !== 'task').sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || ''));
   }, [projectItems]);
 
-  const statusColor = { open: BLUE, in_progress: ORANGE, closed: '#334155' };
-  const statusChip = (s) => tag(statusColor[s] || '#334155', '#fff');
+  const statusColor = { open: BLUE, in_progress: ORANGE, closed: LINE };
+  const statusChip = (s) => tag(statusColor[s] || LINE, s === 'in_progress' ? ON_ORANGE : CREAM);
 
   const cloudPill = (
-    <span style={{ ...tagOutline, color: status === 'synced' ? '#22c55e' : status === 'syncing' ? GOLD : status === 'offline' ? RED : MUTE, borderColor: 'currentColor' }}>
+    <span style={{ ...tagOutline, color: status === 'synced' ? GREEN : status === 'syncing' ? GOLD : status === 'offline' ? RED : MUTE, borderColor: 'currentColor' }}>
       {status === 'synced' ? 'Cloud synced' : status === 'syncing' ? 'Syncing…' : status === 'offline' ? 'Offline' : 'Local'}
     </span>
   );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, color: CREAM, fontFamily: NBF, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+    <div className="sunrise-admin" style={{ position: 'fixed', top: mob ? 'calc(64px + var(--sat, 0px))' : 60, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', minHeight: 0, zIndex: 2000, background: 'rgba(2,8,17,.35)', color: CREAM, fontFamily: NBF, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 14, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(4,4,12,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE, position: 'sticky', top: 0, zIndex: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 14, padding: mob ? '9px 12px' : '12px 22px', background: 'rgba(1,7,14,.72)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + LINE_SOFT, position: 'sticky', top: 0, zIndex: 5 }}>
         <button onClick={onExit} style={{ ...ghostSoft, padding: '6px 12px' }}>&larr; Portal</button>
-        <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 40, height: mob ? 30 : 40, objectFit: 'contain' }} />
+        <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 40, height: mob ? 30 : 40, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: BBF, fontSize: mob ? 17 : 22, letterSpacing: 1.5, color: CREAM, lineHeight: 1 }}>PROJECT TRACKER</div>
+          <div style={{ fontFamily: BBF, fontWeight: 700, fontSize: mob ? 17 : 22, letterSpacing: 1.5, color: CREAM, lineHeight: 1 }}>PROJECT TRACKER</div>
           <div style={{ fontFamily: NBF, fontSize: 11, letterSpacing: 2, color: MUTE, textTransform: 'uppercase' }}>Daily tasks · Issues · Actions</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>{cloudPill}</div>
@@ -402,7 +412,7 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
             <div>
               <div style={kicker}>Portfolio</div>
-              <h1 style={{ fontFamily: BBF, fontSize: mob ? 34 : 44, margin: '4px 0 0', letterSpacing: 1.5, color: CREAM }}>PROJECTS</h1>
+              <h1 style={{ fontFamily: BBF, fontWeight: 700, fontSize: mob ? 34 : 44, margin: '4px 0 0', letterSpacing: 1.5, color: CREAM }}>PROJECTS</h1>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <input value={newProject} onChange={(e) => setNewProject(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addProject(); }} placeholder="New project name" style={{ ...inputStyle, width: mob ? 200 : 260 }} />
@@ -420,14 +430,14 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
               const open = its.filter((i) => i.status !== 'closed').length;
               const issues = its.filter((i) => i.kind !== 'task' && i.status !== 'closed').length;
               return (
-                <div key={p.id} onClick={() => openProject(p.id)} style={{ background: CARD, border: '1px solid ' + LINE, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, transition: 'border-color .2s, background .2s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(249,115,22,.5)'; e.currentTarget.style.background = 'rgba(249,115,22,.06)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE; e.currentTarget.style.background = CARD; }}>
+                <div key={p.id} onClick={() => openProject(p.id)} style={{ background: PANEL, border: '1px solid ' + LINE_ORANGE, borderRadius: 12, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, transition: 'border-color .2s, background .2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = HOT; e.currentTarget.style.background = 'rgba(255,107,24,.08)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = LINE_ORANGE; e.currentTarget.style.background = PANEL; }}>
                   <div style={kicker}>Project</div>
-                  <div style={{ fontFamily: BBF, fontSize: 24, letterSpacing: 1, color: CREAM }}>{p.name}</div>
+                  <div style={{ fontFamily: BBF, fontWeight: 700, fontSize: 24, letterSpacing: 1, color: CREAM }}>{p.name}</div>
                   <div style={{ fontFamily: NBF, fontSize: 12, color: MUTE }}>Started {shortDate(p.createdAt)}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                    <span style={tag('rgba(249,115,22,.15)', ORANGE)}>{open} open item{open === 1 ? '' : 's'}</span>
+                    <span style={tag('rgba(255,107,24,.15)', HOT)}>{open} open item{open === 1 ? '' : 's'}</span>
                     <span style={tagOutline}>{issues} open issue{issues === 1 ? '' : 's'} / actions</span>
                     <button onClick={(e) => { e.stopPropagation(); deleteProject(p); }} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: MUTE, fontFamily: NBF, fontWeight: 600, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>Delete</button>
                   </div>
@@ -443,7 +453,7 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
         <div style={{ maxWidth: 1440, width: '100%', margin: '0 auto', padding: mob ? '16px 14px 40px' : '24px 28px 60px', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <button onClick={() => setScreen('home')} style={{ ...ghostSoft, padding: '6px 12px' }}>&larr; Projects</button>
-            <h1 style={{ fontFamily: BBF, fontSize: mob ? 26 : 34, margin: 0, letterSpacing: 1.5, color: CREAM }}>{project.name}</h1>
+            <h1 style={{ fontFamily: BBF, fontWeight: 700, fontSize: mob ? 26 : 34, margin: 0, letterSpacing: 1.5, color: CREAM }}>{project.name}</h1>
             <button onClick={renameProject} style={{ ...ghostSoft, padding: '5px 10px' }}>Rename</button>
             <div style={{ marginLeft: 'auto', display: 'flex' }}>
               <button style={seg(view === 'calendar')} onClick={() => setView('calendar')}>Calendar</button>
@@ -455,9 +465,9 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
           {view === 'calendar' && (
             <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'minmax(360px,440px) 1fr', gap: 24, alignItems: 'start' }}>
               {/* Calendar card */}
-              <div style={{ background: PANEL, border: '1px solid ' + LINE, padding: 14 }}>
+              <div style={{ background: PANEL, border: '1px solid ' + LINE_ORANGE, borderRadius: 12, padding: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-                  <div style={{ fontFamily: BBF, fontSize: 20, letterSpacing: 1, color: CREAM }}>{monthLabel}</div>
+                  <div style={{ fontFamily: BBF, fontWeight: 700, fontSize: 20, letterSpacing: 1, color: CREAM }}>{monthLabel}</div>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                     <button onClick={() => { const d = new Date(monthY, monthM - 1, 1); setMonthY(d.getFullYear()); setMonthM(d.getMonth()); }} style={ghostSoft}>&lsaquo;</button>
                     <button onClick={() => { const d = new Date(); setMonthY(d.getFullYear()); setMonthM(d.getMonth()); setSelected(fmt(d)); }} style={ghostSoft}>Today</button>
@@ -471,14 +481,14 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                   {calDays.map((d) => (
                     <button key={d.ds} onClick={() => setSelected(d.ds)} style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between',
-                      gap: 4, minHeight: 52, padding: '5px 7px', textAlign: 'left',
-                      background: d.isSel ? ORANGE : 'rgba(255,255,255,.02)',
-                      color: d.isSel ? '#1a1206' : d.inMonth ? CREAM : 'rgba(148,163,184,.5)',
-                      border: '1px solid ' + (d.isToday && !d.isSel ? GOLD : LINE),
+                      gap: 4, minHeight: mob ? 46 : 52, padding: mob ? '4px 5px' : '5px 7px', textAlign: 'left',
+                      background: d.isSel ? CTA_BG : INPUT_BG,
+                      color: d.isSel ? ON_ORANGE : d.inMonth ? CREAM : DIM,
+                      border: '1px solid ' + (d.isSel ? HOT : d.isToday ? GOLD : LINE), borderRadius: 6,
                       fontFamily: NBF, fontSize: 13, fontWeight: d.isToday ? 700 : 500, cursor: 'pointer',
                     }}>
                       <span>{d.num}</span>
-                      {d.count > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '0 6px', background: d.isSel ? '#1a1206' : 'rgba(249,115,22,.18)', color: d.isSel ? CREAM : ORANGE, clipPath: CLIP }}>{d.count}</span>}
+                      {d.count > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '0 6px', background: d.isSel ? ON_ORANGE : 'rgba(255,107,24,.18)', color: d.isSel ? CREAM : HOT, clipPath: CLIP }}>{d.count}</span>}
                     </button>
                   ))}
                 </div>
@@ -488,8 +498,8 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
               {/* Day panel */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <h2 style={{ fontFamily: BBF, fontSize: 22, letterSpacing: 1, color: CREAM, margin: 0 }}>{longDate(selected)}</h2>
-                  {selected === today && <span style={tag(ORANGE, '#1a1206')}>Today</span>}
+                  <h2 style={{ fontFamily: BBF, fontWeight: 700, fontSize: 22, letterSpacing: 1, color: CREAM, margin: 0 }}>{longDate(selected)}</h2>
+                  {selected === today && <span style={tag(ORANGE, ON_ORANGE)}>Today</span>}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button disabled={busyExport === 'pdf'} onClick={runExportPdf} style={{ ...ghostBtn, opacity: busyExport === 'pdf' ? 0.5 : 1 }}>{busyExport === 'pdf' ? 'Building…' : 'Export PDF'}</button>
                     <button onClick={runExportXlsx} style={ghostBtn}>Export Excel</button>
@@ -507,13 +517,13 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                           <span style={{ fontSize: 12, color: MUTE }}>{rows.length} item{rows.length === 1 ? '' : 's'}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 6, margin: '10px 0', flexWrap: 'wrap' }}>
-                          <input value={d.name} onChange={(e) => setDraft(kd.k, 'name', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addItem(kd.k); }} placeholder={'New ' + kd.singular} style={{ ...inputStyle, flex: 1, minWidth: 140 }} />
-                          <input value={d.desc} onChange={(e) => setDraft(kd.k, 'desc', e.target.value)} placeholder="Description (optional)" style={{ ...inputStyle, flex: 2, minWidth: 180 }} />
-                          <select value={d.assignee} onChange={(e) => setDraft(kd.k, 'assignee', e.target.value)} style={{ ...inputStyle, width: 170 }}>
+                          <input value={d.name} onChange={(e) => setDraft(kd.k, 'name', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addItem(kd.k); }} placeholder={'New ' + kd.singular} style={{ ...inputStyle, flex: mob ? '1 1 100%' : 1, minWidth: mob ? 0 : 140 }} />
+                          <input value={d.desc} onChange={(e) => setDraft(kd.k, 'desc', e.target.value)} placeholder="Description (optional)" style={{ ...inputStyle, flex: mob ? '1 1 100%' : 2, minWidth: mob ? 0 : 180 }} />
+                          <select value={d.assignee} onChange={(e) => setDraft(kd.k, 'assignee', e.target.value)} style={{ ...inputStyle, width: mob ? undefined : 170, flex: mob ? '1 1 60%' : undefined, minWidth: 0 }}>
                             <option value="">Unassigned</option>
                             {users.map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
-                          <button onClick={() => addItem(kd.k)} style={ctaBtn}>Add</button>
+                          <button onClick={() => addItem(kd.k)} style={{ ...ctaBtn, flex: mob ? '1 1 30%' : undefined, minHeight: mob ? 44 : undefined }}>Add</button>
                         </div>
                         {!rows.length && <div style={{ fontSize: 13, color: MUTE, margin: '4px 0 0' }}>No {kd.title.toLowerCase()} on this date.</div>}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -526,11 +536,11 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                               ? { textDecoration: 'line-through', color: MUTE, fontWeight: 700, fontSize: 15 }
                               : { fontWeight: 700, fontSize: 15, color: overdue ? RED : CREAM };
                             return (
-                              <div key={it.id} style={{ border: '1px solid ' + LINE, padding: 12, background: CARD, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div key={it.id} style={{ border: '1px solid ' + LINE_SOFT, borderRadius: 8, padding: 12, background: CARD, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                   <span style={nameStyle}>{it.name}</span>
                                   {it.assignee && <span style={tagOutline}>{it.assignee}</span>}
-                                  {rolled && <span style={overdue ? tag('rgba(239,68,68,.18)', RED) : tagOutline}>{overdue ? openDays + ' days open' : 'since ' + shortDate(it.createdDate)}</span>}
+                                  {rolled && <span style={overdue ? tag('rgba(255,70,85,.18)', RED) : tagOutline}>{overdue ? openDays + ' days open' : 'since ' + shortDate(it.createdDate)}</span>}
                                   <button onClick={() => setExpanded((prev) => ({ ...prev, [it.id]: !isExp }))} style={{ ...ghostSoft, marginLeft: 'auto', padding: '3px 10px' }}>{isExp ? 'Close' : 'Notes (' + (it.notes || []).length + ')'}</button>
                                 </div>
                                 <div style={{ display: 'flex' }}>
@@ -540,7 +550,7 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
                                 </div>
                                 {isExp && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid ' + LINE, paddingTop: 10 }}>
-                                    {it.desc && <p style={{ margin: 0, fontSize: 14, color: 'rgba(245,240,235,.85)' }}>{it.desc}</p>}
+                                    {it.desc && <p style={{ margin: 0, fontSize: 14, color: 'rgba(246,243,236,.85)' }}>{it.desc}</p>}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                       <span style={{ ...kicker, letterSpacing: 2 }}>Assigned to</span>
                                       <select value={it.assignee || ''} onChange={(e) => setItemAssignee(it.id, e.target.value)} style={{ ...inputStyle, padding: '4px 8px', width: 170 }}>
@@ -580,10 +590,10 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
               {logRows.length === 0 ? (
                 <div style={{ color: MUTE, fontFamily: NBF, fontSize: 15 }}>No issues or action items on this project yet.</div>
               ) : (
-                <div style={{ overflowX: 'auto', border: '1px solid ' + LINE }}>
+                <div style={{ overflowX: 'auto', border: '1px solid ' + LINE_ORANGE, borderRadius: 12, background: CARD }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: NBF, fontSize: 14, color: CREAM }}>
                     <thead>
-                      <tr style={{ background: 'rgba(255,255,255,.04)' }}>
+                      <tr style={{ background: INK2 }}>
                         {['Type', 'Name', 'Assignee', 'Status', 'Opened', 'Closed'].map((h) => (
                           <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: MUTE, borderBottom: '1px solid ' + LINE }}>{h}</th>
                         ))}
@@ -613,8 +623,8 @@ export default function ProjectTracker({ onExit, portalUser, allUsers }) {
       )}
 
       {/* Footer disclaimer */}
-      <div style={{ marginTop: 'auto', borderTop: '2px solid ' + LINE, padding: '14px 22px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(4,4,12,.7)' }}>
-        <img src={LOGO_URL} alt="" style={{ height: 26, objectFit: 'contain' }} />
+      <div style={{ marginTop: 'auto', borderTop: '2px solid ' + LINE_SOFT, padding: '14px 22px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(1,7,14,.72)' }}>
+        <img src={LOGO_URL} alt="" style={{ height: 26, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }} />
         <div style={{ fontSize: 11, letterSpacing: 2, textTransform: 'uppercase', color: MUTE }}>Sun Rise Construction and Development LLC</div>
         <div style={{ marginLeft: 'auto', fontSize: 11, color: MUTE }}>Internal project tracker</div>
       </div>
