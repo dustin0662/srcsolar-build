@@ -1,25 +1,23 @@
 import React, { useEffect, useState } from 'react'
-import { Home, Clock, Map as MapIcon, FileText, LayoutGrid, X } from 'lucide-react'
+import { Home, Clock, Map as MapIcon, LayoutGrid, X } from 'lucide-react'
 import { RefTabButton, NAV_BAR_STYLE, REF_NAV_H } from '../tt_ref_chrome.jsx'
 
 const A = '#F97316'
 const BB = { fontFamily: "'Bebas Neue', sans-serif" }
 const NB = { fontFamily: "'Barlow Condensed', sans-serif" }
 
-// Pages that get the bottom tab bar. Modules with their own bottom chrome
-// (Screening Solutions nav, the field-reporting iframe) and the public/sign-in
-// surfaces are excluded. The Task Tracker's drawer sits above the bar.
-export const TABBAR_PAGES = new Set(['dashboard', 'pileplan', 'mytimecard', 'documents', 'projecttracker', 'timekeeping', 'admin', 'request', 'hse', 'apply', 'equipment', 'precon', 'compliance', 'crm', 'stakeholders', 'loads'])
+// Pages that get the bottom tab bar. The public/sign-in surfaces are
+// excluded. The Task Tracker's drawer sits above the bar.
+export const TABBAR_PAGES = new Set(['dashboard', 'pileplan', 'mytimecard', 'documents', 'projecttracker', 'timekeeping', 'admin', 'request', 'apply', 'equipment', 'precon', 'compliance', 'crm', 'stakeholders', 'loads'])
 
 const PRIMARY = [
   { key: 'dashboard',  label: 'Home',  Icon: Home },
   { key: 'mytimecard', label: 'Time',  Icon: Clock },
   { key: 'pileplan',   label: 'Tasks', Icon: MapIcon },
-  { key: 'documents',  label: 'Docs',  Icon: FileText },
 ]
 
-/* Fixed bottom bar: four primary destinations + "More" sheet listing every
-   other tool the user can open. `tiles` is the dashboard's already-filtered
+/* Fixed bottom bar: three primary destinations + "More" sheet listing every
+   other tool the user can open (Documents lives there and on the home screen). `tiles` is the dashboard's already-filtered
    tile list ({key,label,desc,href}). Sits above module overlays (z 2000). */
 export default function MobileTabBar({ page, setPage, tiles, onOpenTile }) {
   const [more, setMore] = useState(false)

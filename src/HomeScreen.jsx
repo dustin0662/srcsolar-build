@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Users, Wrench, DraftingCompass, HardHat, FileText, ShieldAlert, BarChart3, Clock, Truck, Contact, ListChecks, Settings, Map as MapIcon, Layers, ShieldCheck, TriangleAlert, ChevronDown, CircleUser, Check } from 'lucide-react'
+import { Users, Wrench, Calculator, FileText, BarChart3, Clock, Truck, Contact, ListChecks, Settings, Map as MapIcon, Layers, ShieldCheck, TriangleAlert, ChevronDown, CircleUser, Check } from 'lucide-react'
 import { getTaskTrackerKPI, fetchTaskTrackerKPI, setActiveProject } from './pile_plan.jsx'
 
 /* Phone home screen: the illustrated site with every module pinned to it as
@@ -15,7 +15,7 @@ const NB = { fontFamily: "'Barlow Condensed', sans-serif" }
 const PANEL = { background: 'rgba(6,8,18,.93)', border: '1px solid rgba(249,115,22,.42)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,.55)' }
 
 const ICONS = {
-  hr: Users, equipment: Wrench, precon: DraftingCompass, field: HardHat, compliance: FileText, hse: ShieldAlert,
+  equipment: Wrench, precon: Calculator, compliance: FileText,
   stakeholders: BarChart3, timekeeping: Clock, loads: Truck, crm: Contact, projecttracker: ListChecks, admin: Settings,
   mytimecard: Clock, pileplan: MapIcon, documents: FileText,
 }
@@ -28,12 +28,10 @@ const ICONS = {
    yard top-right, blueprints, safety gate, loads at the road. Right-column
    cards anchor to their right edge so they never spill off screen. */
 const POS = {
-  hr:             { left: 3.8,  y: 3.8 },
   equipment:      { right: 25,  y: 1.9 },
   precon:         { right: 2.2, y: 12 },
-  field:          { left: 3,    y: 21.1 },
+  documents:      { left: 3,    y: 21.1 },
   compliance:     { right: 9.2, y: 27.9 },
-  hse:            { right: 1.2, y: 40 },
   stakeholders:   { left: 2.8,  y: 45.3 },
   loads:          { right: 2.2, y: 57 },
   timekeeping:    { left: 14,   y: 58.7 },

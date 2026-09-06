@@ -7,6 +7,7 @@ import { useIsMobile } from "./native/useIsMobile.js"
 import { getCurrentPosition as geoGetCurrentPosition, watchPosition as geoWatchPosition, clearWatch as geoClearWatch, isSupported as geoSupported } from "./native/geo.js"
 import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import LoadsFrame from "./native/LoadsFrame.jsx"
+import EstimatorFrame from "./native/EstimatorFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
 import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
 import HomeScreen from "./HomeScreen.jsx"
@@ -14,7 +15,6 @@ import AmbientBackground from "./AmbientBackground.jsx"
 import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton, SrModuleHeader, SrModuleTabs, SrEmpty, SrBadge } from "./admin_skin.jsx"
 import "./admin-skin.css"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
-import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
 import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_export.jsx"
 import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
@@ -738,6 +738,7 @@ function logAudit(ev){try{if(typeof window!=='undefined'&&window.__audit)window.
 function auditKeyInfo(key){
   if(/^eq_/.test(key))return{tool:'equipment',detail:'Equipment Manager record updated'}
   if(/^precon_/.test(key))return{tool:'precon',detail:'PreCon Controls data updated'}
+  if(/^estimator_/.test(key))return{tool:'precon',detail:'Bid Estimator estimate updated'}
   if(/^tk_/.test(key))return{tool:'timekeeping',detail:'Timekeeping data updated'}
   if(/^hr_/.test(key)||/^ss_/.test(key))return{tool:'hr',detail:'Screening Solutions data updated'}
   if(key==='career_submissions')return{tool:'careers',detail:'Careers application submitted'}
@@ -3717,7 +3718,7 @@ function MyTimeCard({ portalUser, onExit }){
 // ═══════════════════════════════════════════════════════════════════════
 //  TIMEKEEPING MODULE
 // ═══════════════════════════════════════════════════════════════════════
-function TimekeepingModule({ onExit, portalUser }) {
+function TimekeepingModule({ onExit, portalUser, allUsers }) {
   const [tab, setTab] = useState('clock');
   const [mob, setMob] = useState(window.innerWidth < 768);
   const [workers, setWorkers] = useState([]);
@@ -3738,6 +3739,13 @@ function TimekeepingModule({ onExit, portalUser }) {
   const [inviteName, setInviteName] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
   const [payrollWorker, setPayrollWorker] = useState(null);
+  // admin time clock: filter the clock by project and put any portal user on it
+  const [clockProject, setClockProject] = useState('');
+  const [showPickUser, setShowPickUser] = useState(false);
+  const [pickQ, setPickQ] = useState('');
+  const [pickProject, setPickProject] = useState('');
+  const [pickUsers, setPickUsers] = useState(allUsers || []);
+  useEffect(function(){ if (allUsers && allUsers.length) setPickUsers(allUsers); }, [allUsers]);
   const geoWatch = useRef(null);
   const isAdmin = portalUser && (portalUser.role === 'admin' || portalUser.accountType === 'admin');
   const today = new Date().toISOString().slice(0,10);
@@ -3968,33 +3976,39 @@ function TimekeepingModule({ onExit, portalUser }) {
     });
   }
 
-  function punchIn(workerId) {
+  function recordPunch(workerId, type, loc, meta, track) {
+    var key = workerId + '_' + today;
+    var dayPunches = (punches[key] || []).slice();
+    var p = { type: type, time: new Date().toISOString(), location: loc || null };   // location is null for admin punches
+    if (meta) Object.assign(p, meta);
+    dayPunches.push(p);
+    var next = Object.assign({}, punches);
+    next[key] = dayPunches;
+    savePunches(next);
+    if (track) { if (type === 'in') startTracking(workerId); else stopTracking(workerId); }
+  }
+  function adminMeta(extra) {
+    return Object.assign({ by: 'admin', byId: portalUser && portalUser.id, byName: (portalUser && (portalUser.name || portalUser.email)) || 'admin', projectId: clockProject || null }, extra || {});
+  }
+  function isSelf(w) {
+    return !!(w && portalUser && String(w.email||'').toLowerCase() === String(portalUser.email||'').toLowerCase());
+  }
+  /* Admins can clock anyone in or out from the office without the GPS lock —
+     the punch is stamped with who recorded it and carries no location, and
+     the admin's own device is never tracked on the worker's behalf. Everyone
+     else keeps the hard GPS gate. */
+  function punch(workerId, type) {
+    var w = workers.find(function(x){ return x.id === workerId });
+    if (isAdmin && !isSelf(w)) { recordPunch(workerId, type, null, adminMeta({ noGps: true }), false); return; }
     getLocation().then(function(loc) {
-      var key = workerId + '_' + today;
-      var dayPunches = (punches[key] || []).slice();
-      dayPunches.push({ type: 'in', time: new Date().toISOString(), location: loc });
-      var next = Object.assign({}, punches);
-      next[key] = dayPunches;
-      savePunches(next);
-      startTracking(workerId);
+      recordPunch(workerId, type, loc, isAdmin ? adminMeta() : null, true);
     }).catch(function(err) {
-      alert('GPS required to punch in. Error: ' + err);
+      if (isAdmin) { recordPunch(workerId, type, null, adminMeta({ noGps: true, gpsError: String(err) }), false); return; }
+      alert('GPS required to punch ' + type + '. Error: ' + err);
     });
   }
-
-  function punchOut(workerId) {
-    getLocation().then(function(loc) {
-      var key = workerId + '_' + today;
-      var dayPunches = (punches[key] || []).slice();
-      dayPunches.push({ type: 'out', time: new Date().toISOString(), location: loc });
-      var next = Object.assign({}, punches);
-      next[key] = dayPunches;
-      savePunches(next);
-      stopTracking(workerId);
-    }).catch(function(err) {
-      alert('GPS required to punch out. Error: ' + err);
-    });
-  }
+  function punchIn(workerId) { punch(workerId, 'in'); }
+  function punchOut(workerId) { punch(workerId, 'out'); }
 
   function startTracking(workerId) {
     if (geoWatch.current) geoClearWatch(geoWatch.current);
@@ -4042,6 +4056,38 @@ function TimekeepingModule({ onExit, portalUser }) {
       total += (Date.now() - new Date(dp[dp.length-1].time).getTime());
     }
     return (total / 3600000).toFixed(2);
+  }
+
+  // every project the clock can be filtered by / assigned to (same merge as the assign modal)
+  var allProjects = fieldProjects.map(function(p){return Object.assign({},p,{source:'Field Manager'})}).concat(eqProjects.map(function(p){return Object.assign({},p,{source:'Equipment Mgr'})}));
+  function workerForEmail(email) {
+    var em = String(email||'').trim().toLowerCase();
+    return em ? workers.find(function(w){ return String(w.email||'').trim().toLowerCase() === em }) : null;
+  }
+  /* Put a portal user on the time clock: reuse their worker record (matched by
+     email, the same contract My Time Card uses) or create one, and optionally
+     assign the chosen project. Returns the worker. */
+  function ensureWorkerForUser(u, proj) {
+    var existing = workerForEmail(u.email);
+    var link = proj && !(existing && (existing.projects||[]).some(function(p){return p.id===proj.id}))
+      ? [{ id: proj.id, name: proj.name, source: proj.source, assignedAt: new Date().toISOString() }] : [];
+    if (existing) {
+      updateWorker(existing.id, { userId: existing.userId || u.id, projects: (existing.projects||[]).concat(link) });
+      return existing;
+    }
+    var w = {
+      id: 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+      userId: u.id, name: u.name || u.email, email: u.email, phone: u.phone || '', address: '',
+      role: 'Apprentice',
+      directDeposit: { bankName:'', routingNumber:'', accountNumber:'', accountType:'checking' },
+      projects: link, equipment: [], createdAt: new Date().toISOString(), source: 'portal'
+    };
+    saveWorkers(workers.concat([w]));
+    return w;
+  }
+  function openPickUser() {
+    setPickQ(''); setPickProject(clockProject); setShowPickUser(true);
+    if (!(pickUsers && pickUsers.length)) sGet('portal_users').then(function(us){ if (Array.isArray(us)) setPickUsers(us); });
   }
 
   function assignProject(workerId, projectId, projectName, source) {
@@ -4123,14 +4169,28 @@ function TimekeepingModule({ onExit, portalUser }) {
                 <h2 className="sr-section-title">Time Clock</h2>
                 <div className="sr-section-sub">{new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
               </div>
+              {isAdmin && (
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',width:mob?'100%':'auto'}}>
+                  <select className="sr-select" value={clockProject} onChange={function(e){setClockProject(e.target.value)}} aria-label="Project time clock" style={{flex:mob?1:'none',minWidth:170}}>
+                    <option value="">All projects</option>
+                    {allProjects.map(function(p){return <option key={p.id+p.source} value={p.id}>{p.name}</option>})}
+                  </select>
+                  <button type="button" className="sr-button sr-button--primary" onClick={openPickUser}>+ Add Portal User</button>
+                </div>
+              )}
             </div>
-            {workers.length === 0 ? (
-              <SrEmpty Icon={Clock} title="No workers registered yet" hint="Go to the Roster tab to add employees" />
-            ) : (
+            {(function(){
+              var visible = clockProject ? workers.filter(function(w){ return (w.projects||[]).some(function(p){ return p.id === clockProject }) }) : workers;
+              if (workers.length === 0) return <SrEmpty Icon={Clock} title="No workers registered yet" hint={isAdmin ? 'Add a portal user above or go to the Roster tab to add employees' : 'Go to the Roster tab to add employees'} />;
+              if (visible.length === 0) return <SrEmpty Icon={Clock} title="Nobody on this project's clock yet" hint="Use + Add Portal User to assign someone to it" />;
+              return (
               <div style={{display:'grid',gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
-                {workers.map(function(w) {
+                {visible.map(function(w) {
                   var active = isPunchedIn(w.id);
                   var hours = getTotalHours(w.id);
+                  var dayP = punches[w.id + '_' + today] || [];
+                  var lastP = dayP[dayP.length - 1];
+                  var adminFor = isAdmin && !isSelf(w);
                   return (
                     <div key={w.id} className="sr-state-card" data-state={active ? 'clocked-in' : 'off'}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
@@ -4142,20 +4202,23 @@ function TimekeepingModule({ onExit, portalUser }) {
                         <div style={{textAlign:'right'}}>
                           <span className={'sr-state-label ' + (active ? 'sr-state-label--on' : 'sr-state-label--off')}>{active ? 'Clocked In' : 'Off'}</span>
                           <div className="sr-time-dur" style={{fontSize:'1.9rem',marginTop:6,marginLeft:0}}>{hours}H</div>
+                          {lastP && lastP.by === 'admin' && <div className="sr-meta" style={{marginTop:4}}>Punched by {lastP.byName || 'admin'}</div>}
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8}}>
                         {!active ? (
-                          <button onClick={function(){punchIn(w.id)}} className="sr-button sr-clock-action sr-clock-action--in">&#9654; Clock In</button>
+                          <button onClick={function(){punchIn(w.id)}} className="sr-button sr-clock-action sr-clock-action--in">&#9654; Clock In{adminFor ? ' · Admin' : ''}</button>
                         ) : (
-                          <button onClick={function(){punchOut(w.id)}} className="sr-button sr-clock-action sr-clock-action--out">&#9632; Clock Out</button>
+                          <button onClick={function(){punchOut(w.id)}} className="sr-button sr-clock-action sr-clock-action--out">&#9632; Clock Out{adminFor ? ' · Admin' : ''}</button>
                         )}
                       </div>
+                      {adminFor && <div className="sr-meta" style={{marginTop:8}}>No GPS lock · recorded as an admin punch</div>}
                     </div>
                   );
                 })}
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -4314,7 +4377,7 @@ function TimekeepingModule({ onExit, portalUser }) {
                         <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4}}>
                           {dayPunches.map(function(p, i){
                             return <span key={i} className={'sr-badge ' + (p.type==='in' ? 'sr-badge--ok' : 'sr-badge--bad')} style={{textTransform:'none',letterSpacing:0,fontFamily:"'Barlow',sans-serif",fontSize:'.85rem'}}>
-                              {p.type==='in'?'▶ IN':'■ OUT'} {new Date(p.time).toLocaleTimeString()} ({p.location.lat.toFixed(4)}, {p.location.lng.toFixed(4)})
+                              {p.type==='in'?'▶ IN':'■ OUT'} {new Date(p.time).toLocaleTimeString()} {p.location ? '(' + p.location.lat.toFixed(4) + ', ' + p.location.lng.toFixed(4) + ')' : (p.by === 'admin' ? '· admin punch, no GPS' : '· no GPS')}
                             </span>;
                           })}
                         </div>
@@ -4680,7 +4743,7 @@ function TimekeepingModule({ onExit, portalUser }) {
             </div>
             {assignTab==='project' && (
               <div>
-                {[...fieldProjects.map(function(p){return Object.assign({},p,{source:'Field Manager'})}),...eqProjects.map(function(p){return Object.assign({},p,{source:'Equipment Mgr'})})].map(function(p){
+                {allProjects.map(function(p){
                   var already = (selWorker.projects||[]).some(function(x){return x.id===p.id});
                   return <div key={p.id+p.source} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
                     <span style={{...NB,fontSize:13}}>{p.name} <span style={{fontSize:9,color:TK_MID}}>({p.source})</span></span>
@@ -4708,6 +4771,47 @@ function TimekeepingModule({ onExit, portalUser }) {
           </div>
         </div>
       )}
+
+      {/* ═══ ADD PORTAL USER TO THE TIME CLOCK (admin) ═══ */}
+      {showPickUser && isAdmin && (function(){
+        var q = pickQ.trim().toLowerCase();
+        var proj = allProjects.find(function(p){ return p.id === pickProject }) || null;
+        var list = (pickUsers || []).filter(function(u){
+          if (!u || !u.email || u.role === 'client') return false;
+          if (!q) return true;
+          return String(u.name||'').toLowerCase().indexOf(q) >= 0 || String(u.email||'').toLowerCase().indexOf(q) >= 0;
+        });
+        return (
+        <div className="sr-modal" onClick={function(){setShowPickUser(false)}}>
+          <div className="sr-modal-sheet" style={{maxWidth:520}} onClick={function(e){e.stopPropagation()}}>
+            <div className="sr-card-title" style={{marginBottom:4}}>Add Portal User to Time Clock</div>
+            <div className="sr-meta" style={{marginBottom:14}}>Anyone with a portal account can be put on a project's clock and punched in or out by an admin without the GPS lock.</div>
+            <input value={pickQ} onChange={function(e){setPickQ(e.target.value)}} placeholder="Search name or email…" className="sr-input" style={{marginBottom:10}}/>
+            <select className="sr-select" value={pickProject} onChange={function(e){setPickProject(e.target.value)}} style={{marginBottom:14,width:'100%'}}>
+              <option value="">No project (roster only)</option>
+              {allProjects.map(function(p){return <option key={p.id+p.source} value={p.id}>{p.name} ({p.source})</option>})}
+            </select>
+            <div style={{maxHeight:'42vh',overflowY:'auto'}}>
+              {list.length === 0 && <div className="sr-meta" style={{padding:'12px 0'}}>{(pickUsers||[]).length ? 'No portal users match.' : 'Loading portal users…'}</div>}
+              {list.map(function(u){
+                var w = workerForEmail(u.email);
+                var onProj = !!(w && proj && (w.projects||[]).some(function(p){ return p.id === proj.id }));
+                var label = !w ? 'Add' : (proj && !onProj ? 'Assign' : null);
+                return <div key={u.id || u.email} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,padding:'8px 12px',marginBottom:4,background:'rgba(255,255,255,.04)',borderRadius:6}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{...NB,fontSize:14,fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{u.name || u.email}</div>
+                    <div style={{...NB,fontSize:11,color:TK_MID,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{u.email} · {u.role || 'member'}{w ? ' · on roster' : ''}</div>
+                  </div>
+                  {label ? <button onClick={function(){ensureWorkerForUser(u, proj)}} style={{...NB,fontSize:12,padding:'8px 14px',background:A,color:'#120a04',border:'none',borderRadius:4,cursor:'pointer',minHeight:36,flexShrink:0}}>{label}</button>
+                    : <span style={{...NB,fontSize:12,color:'#4fe3a1',flexShrink:0}}>{proj ? 'On clock ✓' : 'On roster ✓'}</span>}
+                </div>;
+              })}
+            </div>
+            <button onClick={function(){setShowPickUser(false)}} style={{...btnSecondary,marginTop:16,width:'100%'}}>Close</button>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 }
@@ -5153,7 +5257,7 @@ export default function App(){
   const[accessReqs,setAccessReqs]=useState([])
   const[siteSettings,setSiteSettings]=useState({heroTitle:'WE DOMINATE SOLAR',heroSub:'The technical powerhouse delivering dominance, precision, and efficiency for the nation\'s largest utility-scale projects.',contactEmail:'Kaleb.LeBaron@sunriseconstructionco.com',contactPhone:'+1 (619) 870-4491',contactAddr:'12856 N Hwy 183 Ste B PMB 2011 Austin TX 78750',portalTitle:'EMPLOYEE PORTAL'})
   const[adminTab,setAdminTab2]=useState('invite')
-  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+  const[invForm,setInvForm]=useState({name:'',email:'',role:'member',tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
   const[invMsg,setInvMsg]=useState(null)
   const[assignUser,setAssignUser]=useState(null)
   const[assignForm,setAssignForm]=useState({assignedProjects:[],taskScope:{}})
@@ -5178,7 +5282,7 @@ export default function App(){
 
   useEffect(function(){sGet('portal_users').then(function(u){
     if(!u||u.length===0){
-      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
+      var admin={id:uid(),name:'Dustin Hanson',email:'dustin.hanson@sunriseconstructionco.com',role:'admin',updatedAt:Date.now(),tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads','admin'],passwordHash:pHash('admin123'),createdAt:new Date().toISOString()}
       setPortalUsers([admin]);sSet('portal_users',[admin])
     }else{setPortalUsers(u)}
   });sGet('portal_invites').then(function(i){setInvites(i||[])});sGet('portal_requests').then(function(r){setAccessReqs(r||[])});
@@ -5333,7 +5437,7 @@ export default function App(){
     // can be sent by other means.
     if(!w)setInvMsg({k:'err',t:'Invite saved, but the Gmail window was blocked by your browser. Copy the link below and send it yourself.',link:link})
     else setInvMsg({k:'ok',t:'Invite created for '+iem+' — a Gmail compose window has opened.',link:link})
-    setInvForm({name:'',email:'',role:'member',tools:['field','equipment','hr','precon','compliance','hse','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
+    setInvForm({name:'',email:'',role:'member',tools:['equipment','precon','compliance','stakeholders','timekeeping','crm','pileplan','documents','projecttracker','loads'],assignedProjects:[],taskScope:{}})
   }
 
   function sendOnboardingInvite(applicant){
@@ -5418,7 +5522,8 @@ export default function App(){
   var userTools=user&&user.tools?user.tools:[]
   function hasTool(t){return isPortalAdmin||userTools.indexOf(t)>=0}
 
-  var TOOL_LABELS={field:'Field Manager',equipment:'Equipment Manager',hr:'Screening Solutions',precon:'PreCon Controls',compliance:'Compliance Center',hse:'HS&E',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',loads:'Loads Admin'}
+  // `precon` is the historical grant key; it now opens the Bid Estimator (PreCon Controls is retired from the app).
+  var TOOL_LABELS={equipment:'Equipment Manager',precon:'Bid Estimator',compliance:'Compliance Center',stakeholders:'Stakeholder Reports',timekeeping:'Timekeeping',crm:'CRM',pileplan:'Task Tracker',documents:'Document Portal',projecttracker:'Project Tracker',loads:'Loads Admin'}
 
   const boxRef=useRef()
 
@@ -5462,12 +5567,9 @@ export default function App(){
   // grid and the mobile tab bar's "More" sheet.
   var dashTiles=[
     {key:'mytimecard',label:'My Time Card',        icon:'⏱', desc:'Your weekly hours, calendar view & retroactive weeks', always:true},
-    {key:'field',    label:'Field Manager',       icon:'F', desc:'Daily logs, crew tracking & site progress'},
     {key:'equipment',label:'Equipment Manager',    icon:'E', desc:'Asset tracking, maintenance & utilization'},
-    {key:'hr',       label:'Screening Solutions',  icon:'S', desc:'Drug screening & compliance management'},
-    {key:'precon',   label:'PreCon Controls',      icon:'P', desc:'Estimating, takeoffs & bid management'},
+    {key:'precon',   label:'Bid Estimator',        icon:'B', desc:'Scenario bid estimating: cost build-up, schedule, SOV & weekly cash flow'},
     {key:'compliance',label:'Compliance Center',   icon:'C', desc:'ISNet, licensing & regulatory docs'},
-    {key:'hse',      label:'HS&E',                 icon:'S', desc:'Safety incidents, training & audits'},
     {key:'stakeholders',label:'Stakeholder Reports',icon:'R', desc:'Owner updates, financials & milestones'},
     {key:'timekeeping',label:'Timekeeping',         icon:'T', desc:'Clock in/out, GPS tracking & crew assignments'},
     {key:'crm',       label:'CRM',                  icon:'C', desc:'Applicant & partner inquiry tracking'},
@@ -5478,7 +5580,7 @@ export default function App(){
   ].filter(function(tile){return tile.always||hasTool(tile.key)})
   const toolStartRef=useRef(null)
   useEffect(function(){
-    var TOOLS={field:1,equipment:1,hr:1,precon:1,compliance:1,hse:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
+    var TOOLS={equipment:1,precon:1,compliance:1,stakeholders:1,timekeeping:1,crm:1,pileplan:1,client:1}
     var prev=toolStartRef.current
     if(prev&&prev.tool!==page){logAudit({type:'tool_exit',tool:prev.tool,label:TOOL_LABELS[prev.tool]||prev.tool,detail:'Left '+(TOOL_LABELS[prev.tool]||prev.tool),durMs:Date.now()-prev.ts});toolStartRef.current=null}
     if(user&&TOOLS[page]&&!toolStartRef.current){toolStartRef.current={tool:page,ts:Date.now()};logAudit({type:'tool_enter',tool:page,label:TOOL_LABELS[page]||page,detail:'Opened '+(TOOL_LABELS[page]||page)})}
@@ -5509,11 +5611,6 @@ export default function App(){
     return()=>window.removeEventListener('resize',onResize)
   },[])
 
-  useEffect(()=>{
-    function onMsg(e){ if(e.data && e.data.type==='FR_EXIT') setPage('dashboard'); if(e.data && e.data.type==='FR_AUDIT') logAudit({type:'change',tool:'field',detail:(e.data.detail||'Field Manager update')}); }
-    window.addEventListener('message', onMsg);
-    return ()=> window.removeEventListener('message', onMsg);
-  },[])
 
   useEffect(()=>{
     const ts=[setTimeout(()=>setPhase(1),320),setTimeout(()=>setPhase(2),1050),setTimeout(()=>setPhase(3),1850),setTimeout(()=>setPhase(4),3100),setTimeout(()=>setPhase(5),3550),setTimeout(()=>setLoading(false),4500)]
@@ -5669,7 +5766,7 @@ export default function App(){
               )}
           </>
         )})()}
-        {page==='dashboard'&&m&&<HomeScreen user={user} tiles={dashTiles} hideKeys={showTabBar?['mytimecard','pileplan','documents']:[]} isAdmin={isPortalAdmin}
+        {page==='dashboard'&&m&&<HomeScreen user={user} tiles={dashTiles} hideKeys={showTabBar?['mytimecard','pileplan']:[]} isAdmin={isPortalAdmin}
           onOpen={function(tile){if(tile.key==='loads'&&isNative){setPage('loads')}else if(tile.href){openExternal(tile.href,'_blank')}else{setPage(tile.key)}}}
           onOpenPage={setPage} onChangePassword={openChangePw} onSignOut={function(){setUser(null);setPage(isNative?'login':'landing')}}/>}
         {page==='dashboard'&&!m&&(
@@ -5961,20 +6058,11 @@ export default function App(){
         {/* ══════════════════════════════════════════════
             MODULE PLACEHOLDER PAGES
             ══════════════════════════════════════════════ */}
-        {page==='precon'&&<PreConControls onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
+        {page==='precon'&&<EstimatorFrame mob={mob} onExit={function(){setPage('dashboard')}} cloudGet={function(){return sGet('estimator_projects')}} cloudSet={function(v){return sSet('estimator_projects',v)}}/>}
         {page==='equipment'&&<EquipmentManager onExit={function(){setPage('dashboard')}} portalUser={user&&user.name?user.name:user}/>}
-        {page==='field'&&(function(){
-          var em=(user&&user.email)||(user&&user.name)||user||'';
-          var nm=(user&&user.name)||(user&&user.email)||user||'';
-          var src='/field-reporting.html?u='+encodeURIComponent(em)+'&n='+encodeURIComponent(nm);
-          return <div style={{position:'fixed',inset:0,zIndex:2000,background:'#0F4C81'}}>
-            <iframe src={src} style={{width:'100%',height:'100%',border:'none'}} allow="camera;microphone;fullscreen" title="Field Reporting"/>
-          </div>;
-        })()}
-        {page==='hr'&&<div className="sunrise-admin" style={{position:'fixed',top:m?'calc(64px + var(--sat, 0px))':60,left:0,right:0,bottom:0,zIndex:2000,overflow:'auto'}}><ScreeningSolutions onExit={function(){setPage('dashboard')}} portalUser={user||null}/></div>}
         {page==='stakeholders'&&<StakeholderReports onExit={function(){setPage('dashboard')}}/>}
         {page==='compliance'&&<ComplianceCenter onExit={function(){setPage('dashboard')}}/>}
-        {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null}/>}
+        {page==='timekeeping'&&<TimekeepingModule onExit={function(){setPage('dashboard')}} portalUser={user||null} allUsers={portalUsers}/>}
         {page==='crm'&&<CRMModule onExit={function(){setPage('dashboard')}} portalUser={user} sendOnboardingInvite={sendOnboardingInvite}/>}
         {page==='documents'&&user&&<DocumentPortal user={user} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
         {page==='projecttracker'&&<ProjectTracker portalUser={user||null} allUsers={portalUsers} onExit={function(){setPage('dashboard')}}/>}
@@ -5986,19 +6074,6 @@ export default function App(){
         {showTabBar&&<MobileTabBar page={page} setPage={setPage} tiles={dashTiles} onOpenTile={function(t){if(t.key==='loads'&&isNative){setPage('loads')}else if(t.href){openExternal(t.href,'_blank')}else{setPage(t.key)}}}/>}
         {page==='employeeform'&&<EmployeeForm lang={lang} onExit={function(){setPage('landing')}}/>}
         {page==='employeeadmin'&&<EmployeeFormAdmin lang={lang} onExit={function(){setPage('landing')}}/>}
-        {['hse'].includes(page)&&(
-          <div className="sunrise-admin" style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'calc(76px + var(--sat, 0px)) 14px calc(32px + var(--tabbar-h, 0px))':'120px 48px 80px'}}>
-            <div style={{maxWidth:1200,margin:'0 auto'}}>
-              <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28,transition:'opacity .2s'}} onClick={()=>setPage('dashboard')} onMouseEnter={e=>e.currentTarget.style.opacity='.7'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-                ← Back to Dashboard
-              </div>
-              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#f6f3ec',textShadow:'none',marginBottom:16}}>
-                HS&E
-              </div>
-              <div style={{...NB,fontSize:14,color:'#aab3c0',letterSpacing:'1.5px'}}>Module content coming soon.</div>
-            </div>
-          </div>
-        )}
 
         {/* ── APPLY FOR WORK PAGE ── */}
         {page==='apply'&&(

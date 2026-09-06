@@ -32,6 +32,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Local plugins must be registered before the bridge is built.
+        registerPlugin(PrintPlugin.class);
         super.onCreate(savedInstanceState);
 
         final View web = getBridge().getWebView();
