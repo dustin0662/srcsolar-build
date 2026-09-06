@@ -8,7 +8,7 @@ import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
 import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, TriangleAlert, OctagonAlert, FileText, Box, History, Cylinder, Cable, LayoutGrid, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
-import { GlyphDefs, Glyph, glyphHref, glyphCode } from './tt_glyphs.jsx';
+import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -1305,13 +1305,12 @@ export default function PilePlan({ onExit, portalUser }) {
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- dots ---- */
-  const dotEls = useMemo(() => points.map((d, i) => {
-    const dim = selSection != null && sections && sections[i] !== selSection;
-    const del = delSel.has(i);
-    const code = del ? 'del' : glyphCode(stage[i], qc[i]);
-    const sz = code === 'q1' || code === 'q2' ? 13 : 10;
-    return <use key={i} data-i={i} href={glyphHref(code)} x={d[0] + PAD - sz / 2} y={d[1] + PAD - sz / 2} width={sz} height={sz} opacity={dim && !del ? 0.16 : 1} />;
-  }), [points, stage, qc, selSection, sections, delSel]);
+  /* which point comes next down each tracker row — tubes and modules join up along these */
+  const rowLinks = useMemo(() => computeRowLinks(points), [points]);
+  const dotEls = useMemo(() => (
+    <StackSvg points={points} stage={stage} qc={qc} rowNext={rowLinks.next} pad={PAD} unit={4.6} marked={delSel}
+      isDim={selSection != null && sections ? (i) => sections[i] !== selSection : null} />
+  ), [points, stage, qc, selSection, sections, delSel, rowLinks]);
 
   /* outline around the selected block, so you can see which one you picked */
   const selHull = useMemo(() => {
@@ -1712,6 +1711,7 @@ export default function PilePlan({ onExit, portalUser }) {
               active={notePt}
               mode={mode}
               marked={delSel}
+              rowNext={rowLinks.next}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}
@@ -1735,6 +1735,7 @@ export default function PilePlan({ onExit, portalUser }) {
               onModelBuffer={(b) => { modelBufRef.current = b; }}
               dispColor={dispColor}
               marked={delSel}
+              rowNext={rowLinks.next}
               onPickPoint={overlayPick}
               onBrushStart={overlayBrushStart}
               onBrushPoint={overlayBrushPoint}

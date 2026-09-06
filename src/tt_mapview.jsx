@@ -14,27 +14,51 @@ const OSM_ATTR = '&copy; OpenStreetMap contributors';
 const ORANGE = '#F97316';
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
-import { drawGlyph, glyphCode, radiusForZoom, glyphScale } from './tt_glyphs.jsx';
+import { paintStack, radiusForZoom } from './tt_glyphs.jsx';
 
-/* Canvas renderer that draws the install-state glyphs (pile, post cap,
-   torque tube, module, flags) instead of plain circles. Radius follows the
-   zoom level so the icons grow as you get closer, and hit-testing keeps
-   using CircleMarker's own radius. */
-const GlyphRenderer = L.Canvas.extend({
-  _updateGlyph(layer) {
-    if (!this._drawing || layer._empty()) return;
-    const p = layer._point; const o = layer.options;
-    drawGlyph(this._ctx, p.x, p.y, layer._radius, o.glyph || 's0', { dimmed: o.dimmed, hot: o.hot });
-  },
-});
+/* One marker per point for hit-testing / clicks, but drawing happens in a
+   single multi-pass painter so the stacks layer correctly: piles, then the
+   tubes that join points down a row, then modules on the tubes, then post
+   caps on top, then flags. Sizes follow the zoom level. */
 const GlyphMarker = L.CircleMarker.extend({
   _project() {
-    const z = this._map ? this._map.getZoom() : 18;
-    this._radius = radiusForZoom(z) * glyphScale(this.options.glyph, this.options.hot);
-    this.options.radius = this._radius;
-    L.CircleMarker.prototype._project.call(this);
+    const map = this._map; const z = map.getZoom(); const r = radiusForZoom(z);
+    this._radius = r * 1.1; this.options.radius = this._radius;
+    this._point = map.latLngToLayerPoint(this._latlng);
+    this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
+    const pad = r * 2.6 + 4;   // cube above, flags, module width, joint to the next point
+    const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
+    if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
+    this._pxBounds = b;
   },
-  _updatePath() { this._renderer._updateGlyph(this); },
+  _updatePath() { /* drawn by GlyphRenderer._draw */ },
+  _item() {
+    const o = this.options;
+    return { x: this._point.x, y: this._point.y, nx: this._nextPoint ? this._nextPoint.x : null, ny: this._nextPoint ? this._nextPoint.y : null, s: o.stage || 0, q: o.qc || 0, ns: o.nextStage == null ? -1 : o.nextStage, dim: !!o.dimmed, hot: !!o.hot, del: !!o.del };
+  },
+});
+const GlyphRenderer = L.Canvas.extend({
+  _draw() {
+    const bounds = this._redrawBounds; const ctx = this._ctx;
+    ctx.save();
+    if (bounds) { const size = bounds.getSize(); ctx.beginPath(); ctx.rect(bounds.min.x, bounds.min.y, size.x, size.y); ctx.clip(); }
+    this._drawing = true;
+    const glyphs = [], others = [];
+    for (let order = this._drawFirst; order; order = order.next) {
+      const layer = order.layer;
+      if (bounds && !(layer._pxBounds && layer._pxBounds.intersects(bounds))) continue;
+      if (layer instanceof GlyphMarker) glyphs.push(layer); else others.push(layer);
+    }
+    if (glyphs.length) {
+      const r = radiusForZoom(this._map.getZoom());
+      let dir = [0, 1];
+      for (const g of glyphs) if (g._nextPoint) { const dx = g._nextPoint.x - g._point.x, dy = g._nextPoint.y - g._point.y, L2 = Math.hypot(dx, dy) || 1; dir = [dx / L2, dy / L2]; break; }
+      paintStack(ctx, glyphs.map((g) => g._item()), r, dir);
+    }
+    for (const layer of others) layer._updatePath();
+    this._drawing = false;
+    ctx.restore();
+  },
 });
 
 function colorFor(stage, qc) {
@@ -50,7 +74,7 @@ function colorFor(stage, qc) {
 export default function TTMapView({
   geo, stage, qc, sections, sectionNames, selSection,
   onPickPoint, onBrushStart, onBrushPoint, onBrushEnd, onRegionPoints,
-  active, layerMode, onLayerMode, mode, marked,
+  active, layerMode, onLayerMode, mode, marked, rowNext,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -97,7 +121,9 @@ export default function TTMapView({
     geo.lonLat.forEach(([lon, lat], i) => {
       const ll = L.latLng(lat, lon);
       bounds.extend(ll);
-      const m = new GlyphMarker(ll, { radius: 5, glyph: glyphCode(stageRef.current[i], qcRef.current[i]), interactive: true });
+      const j = rowNext ? rowNext[i] : -1;
+      const nll = j >= 0 && geo.lonLat[j] ? L.latLng(geo.lonLat[j][1], geo.lonLat[j][0]) : null;
+      const m = new GlyphMarker(ll, { radius: 5, stage: stageRef.current[i] || 0, qc: qcRef.current[i] || 0, nextStage: j >= 0 ? (stageRef.current[j] || 0) : -1, nextLatLng: nll, interactive: true });
       m.on('click', () => { if (modeRef.current === 'pan' && cb.current.onPickPoint) cb.current.onPickPoint(i); });
       m.addTo(map);
       markersRef.current.push(m);
@@ -112,17 +138,16 @@ export default function TTMapView({
     map.options.maxBoundsViscosity = 1.0;
     /* don't let them zoom out past the whole site either */
     map.setMinZoom(Math.max(1, map.getBoundsZoom(bounds, false) - 2));
-  }, [geo, ready]);
+  }, [geo, ready, rowNext]);
 
   useEffect(() => {
     markersRef.current.forEach((m, i) => {
       const dim = selSection != null && sections && sections[i] !== selSection;
       const del = marked && marked.has(i);   // queued for deletion
-      m.setStyle({ glyph: del ? 'del' : glyphCode(stage[i], qc[i]), hot: active === i, dimmed: !!(dim && !del) });
-      /* radius depends on glyph + hot, so re-project for hit-testing */
-      if (m._map) m._project();
+      const j = rowNext ? rowNext[i] : -1;
+      m.setStyle({ stage: stage[i] || 0, qc: qc[i] || 0, nextStage: j >= 0 ? (stage[j] || 0) : -1, del: !!del, hot: active === i, dimmed: !!(dim && !del) });
     });
-  }, [stage, qc, active, selSection, sections, marked]);
+  }, [stage, qc, active, selSection, sections, marked, rowNext]);
 
   /* silhouette outline around the selected block */
   useEffect(() => {

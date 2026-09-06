@@ -95,14 +95,11 @@ function Callout({ left, right, y, icon: Icon, label, desc, onClick, accent }) {
   const col = accent || A
   const anchor = right != null ? { right: `calc(${right}% - 8px)` } : { left: `calc(${left}% - 8px)` }
   return (
-    <div onClick={onClick} role="button" aria-label={label} style={{ position: 'absolute', ...anchor, top: `calc(${y}% - 8px)`, width: 'calc(40% + 16px)', padding: '8px 8px 30px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+    <div onClick={onClick} role="button" aria-label={label} title={desc} style={{ position: 'absolute', ...anchor, top: `calc(${y}% - 8px)`, width: 'calc(36% + 16px)', padding: '8px 8px 30px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
       <div style={{ position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(3,4,10,.92)', border: '1px solid ' + col, borderRadius: 6, padding: '5px 7px', minHeight: 40, boxShadow: '0 6px 16px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.7)' }}>
-          <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, flexShrink: 0 }}><Icon size={19} strokeWidth={2.1} /></div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ ...NB, fontWeight: 700, fontSize: 10, letterSpacing: .2, textTransform: 'uppercase', color: CREAM, lineHeight: 1.05, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{label}</div>
-            <div style={{ ...NB, fontSize: 8.5, color: '#bab5ad', lineHeight: 1.15, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(3,4,10,.92)', border: '1px solid ' + col, borderRadius: 6, padding: '4px 7px', minHeight: 32, boxShadow: '0 6px 16px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.7)' }}>
+          <div style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, flexShrink: 0 }}><Icon size={18} strokeWidth={2.1} /></div>
+          <div style={{ ...NB, fontWeight: 700, fontSize: 10.5, letterSpacing: .4, textTransform: 'uppercase', color: CREAM, lineHeight: 1.05, minWidth: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{label}</div>
         </div>
         <div style={{ position: 'absolute', left: '50%', top: '100%', width: 2, height: 13, background: col, marginLeft: -1 }} />
         <div style={{ position: 'absolute', left: '50%', top: 'calc(100% + 11px)', width: 9, height: 9, borderRadius: 5, marginLeft: -4.5, background: '#fff4e8', boxShadow: `0 0 0 2.5px ${col}, 0 0 12px 4px ${col}` }} />
