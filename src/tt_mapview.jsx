@@ -11,7 +11,8 @@ const ESRI_SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Ima
 const ESRI_ATTR = 'Imagery &copy; Esri, Maxar, Earthstar Geographics';
 const OSM_STREETS = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTR = '&copy; OpenStreetMap contributors';
-const ORANGE = '#F97316';
+import { TT, SEG_WRAP, seg as segStyle, PANEL_SHADOW } from './tt_theme.js';
+const ORANGE = TT.orange;
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
 import { paintStack, radiusForZoom } from './tt_glyphs.jsx';
@@ -290,17 +291,21 @@ export default function TTMapView({
 
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
-      <style>{`.tt-block-label{background:rgba(10,14,26,.9);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px}.tt-block-label::before{display:none}`}</style>
-      <div ref={containerRef} style={{ position: 'absolute', inset: 0, background: '#0b1020' }} />
-      <div style={{ position: 'absolute', top: 10, left: 52, zIndex: 500, display: 'flex', gap: 4, background: 'rgba(10,14,26,.88)', border: '1px solid rgba(255,255,255,.15)', padding: 3 }}>
+      <style>{`
+        .tt-block-label{background:rgba(6,21,37,.92);border:1px solid ${ORANGE};color:${ORANGE};font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;box-shadow:none;padding:2px 8px;border-radius:6px}.tt-block-label::before{display:none}
+        /* skin pack: navy wash so overlays read on bright imagery; translucent navy zoom control */
+        .tt-map .leaflet-tile-pane{filter:brightness(.9) saturate(.92)}
+        .tt-map .leaflet-bar{border:1px solid ${TT.border};border-radius:10px;box-shadow:0 5px 14px rgba(0,0,0,.56);overflow:hidden}
+        .tt-map .leaflet-bar a{background:rgba(6,21,37,.9);color:${TT.text};border-bottom:1px solid ${TT.divider};width:44px;height:44px;line-height:44px;font-size:22px}
+        .tt-map .leaflet-bar a:last-child{border-bottom:none}
+        .tt-map .leaflet-bar a.leaflet-disabled{color:${TT.muted};background:rgba(6,21,37,.7)}
+        .tt-map .leaflet-control-attribution{background:rgba(6,21,37,.75);color:${TT.text2};font-size:10px}
+        .tt-map .leaflet-control-attribution a{color:${TT.text2}}
+      `}</style>
+      <div ref={containerRef} className="tt-map" style={{ position: 'absolute', inset: 0, background: TT.canvas }} />
+      <div style={{ position: 'absolute', top: 10, left: 62, zIndex: 500, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
         {['satellite', 'streets'].map((k) => (
-          <button key={k} onClick={() => onLayerMode(k)} style={{
-            background: layerMode === k ? ORANGE : 'transparent',
-            color: layerMode === k ? '#1a1206' : '#F5F0EB',
-            border: 'none', padding: '5px 10px', minHeight: 36,
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700, fontSize: 12,
-            letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer',
-          }}>{k}</button>
+          <button key={k} onClick={() => onLayerMode(k)} aria-selected={layerMode === k} style={{ ...segStyle(layerMode === k), padding: '0 12px', minHeight: 42 }}>{k}</button>
         ))}
       </div>
     </div>

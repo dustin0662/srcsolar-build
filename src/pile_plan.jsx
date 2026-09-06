@@ -9,6 +9,7 @@ import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
 import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, TriangleAlert, OctagonAlert, FileText, Box, History, Cylinder, Cable, LayoutGrid, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
+import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_SHADOW, PANEL_STYLE, FLOAT, SEG_WRAP, seg as segStyle, tool as toolStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -19,16 +20,17 @@ const storage = window.storage || {
 };
 
 /* brand tokens */
-const ORANGE = '#F97316', GOLD = '#EAB308', CREAM = '#F5F0EB';
-const INK = '#0a0a14', INK2 = '#06060f', MUTE = '#9a958d';
-const LINE = 'rgba(249,115,22,.20)', PANEL = 'rgba(12,12,22,.92)';
+/* skin pack tokens (src/tt_theme.js) */
+const ORANGE = TT.orange, GOLD = TT.amber, CREAM = TT.text;
+const INK = TT.canvas, INK2 = '#020910', MUTE = TT.text2;
+const LINE = TT.border, PANEL = TT.panel;
 const BBF = "'Bebas Neue', sans-serif", NBF = "'Barlow Condensed', sans-serif";
 const CLIP = 'polygon(9px 0%,100% 0%,calc(100% - 9px) 100%,0% 100%)';
 const LOGO_URL = '/logo.webp';
 /* new skin: deep-navy panels with orange rules, rounded corners */
-const NAVY = '#0a0f1e', NAVY2 = '#0f1630';
-const PBOX = 'rgba(9,13,27,.94)', PBORDER = 'rgba(249,115,22,.38)';
-const GREEN = '#22c55e';
+const NAVY = TT.panel, NAVY2 = TT.elevated;
+const PBOX = GRAD_PANEL, PBORDER = TT.border;
+const GREEN = TT.success;
 function hexA(hex, a) { const h = String(hex).replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
 
 const REG_KEY = 'tt-projects';
@@ -44,12 +46,12 @@ function blobToB64(blob) { return new Promise((res, rej) => { const fr = new Fil
 /* fixed staged statuses (sequence) — a point at stage k implies stages 1..k done */
 const STAGES = [
   { name: 'No Progress', color: '#ffffff', mapColor: '#e8e8ea' },
-  { name: 'Piles Installed', color: '#b9c0cc', mapColor: '#b9c0cc' },
-  { name: 'Post Caps Installed', color: '#3b82f6', mapColor: '#3b82f6' },
-  { name: 'Torque Tube Installed', color: '#a855f7', mapColor: '#a855f7' },
-  { name: 'Modules Installed', color: '#22c55e', mapColor: '#22c55e' },
+  { name: 'Piles Installed', color: '#D6DCE4', mapColor: '#D6DCE4' },
+  { name: 'Post Caps Installed', color: '#008CFF', mapColor: '#008CFF' },
+  { name: 'Torque Tube Installed', color: '#B834F5', mapColor: '#B834F5' },
+  { name: 'Modules Installed', color: '#1ED6A3', mapColor: '#1ED6A3' },
 ];
-const QC_YELLOW = '#facc15', QC_ORANGE = '#ef4444';
+const QC_YELLOW = '#FFB020', QC_ORANGE = '#FF4F4F';
 const QC = [{ name: 'Clear Flag', color: 'transparent' }, { name: 'Requires Attention', color: QC_YELLOW }, { name: 'Flagged Issue', color: QC_ORANGE }];
 
 /* assignable tasks within a project (for employee scoping) */
@@ -1349,7 +1351,7 @@ export default function PilePlan({ onExit, portalUser }) {
   const canEditQC = isAllowed('q2');
   const health = stats.orange > 0 ? { label: 'Action Required', color: ORANGE } : stats.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW } : { label: 'On Track', color: GREEN };
   const PHASE_ICON = [null, Cylinder, Box, Cable, LayoutGrid];
-  const toolBtn = (on, red) => ({ flex: 1, minHeight: 58, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, background: on ? (red ? 'rgba(220,38,38,.18)' : 'rgba(249,115,22,.16)') : 'rgba(255,255,255,.03)', border: '1px solid ' + (on ? (red ? '#dc2626' : ORANGE) : 'rgba(255,255,255,.08)'), borderRadius: 10, color: on ? (red ? '#f87171' : ORANGE) : CREAM, fontFamily: NBF, fontWeight: 700, fontSize: 10.5, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', padding: '6px 2px' });
+  const toolBtn = (on) => ({ flex: 1, ...toolStyle(on), minHeight: 64, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase' });
   const panelHead = (Icon, txt, right) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
       <Icon size={18} color={ORANGE} strokeWidth={2.2} /><span style={kicker}>{txt}</span>
@@ -1610,11 +1612,11 @@ export default function PilePlan({ onExit, portalUser }) {
   /* ---- projects dashboard view ---- */
   if (view === 'dashboard') {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #151d3a 0%, ${NAVY} 50%, #05081a 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 4px' : '12px 22px', background: 'rgba(5,8,18,.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + PBORDER, position: 'sticky', top: 0, zIndex: 5 }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 4px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)', position: 'sticky', top: 0, zIndex: 5 }}>
           {onExit && <button onClick={onExit} style={backBtn} aria-label="Back"><ArrowLeft size={22} /></button>}
           <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 32 : 38, height: mob ? 32 : 38, objectFit: 'contain', borderRadius: 4 }} />
-          <div style={{ fontFamily: BBF, fontSize: mob ? 20 : 27, letterSpacing: 1.5, color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>TASK TRACKER <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,.2)' }} /><span style={{ color: ORANGE }}>PROJECTS</span></div>
+          <div style={{ fontFamily: BBF, fontSize: mob ? 18 : 27, letterSpacing: 1.2, color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>TASK TRACKER <span style={{ width: 1, height: 20, background: TT.borderStrong }} /><span style={{ color: ORANGE }}>PROJECTS</span></div>
         </div>
         <div style={{ padding: mob ? 14 : 28, paddingBottom: mob ? 'calc(24px + var(--sab, 0px))' : 40, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
           {sectionLabel('Select a Project')}
@@ -1668,9 +1670,9 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- tracker view ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #151d3a 0%, ${NAVY} 50%, #05081a 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
       <GlyphDefs />
-      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 2px' : '12px 22px', background: 'rgba(5,8,18,.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + PBORDER }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 2px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)' }}>
         <button onClick={() => setView('dashboard')} style={backBtn} title="Back to projects" aria-label="Back to projects"><ArrowLeft size={22} /></button>
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 36, height: mob ? 30 : 36, objectFit: 'contain', borderRadius: 4 }} />
         <div style={{ minWidth: 0 }}>
@@ -1755,11 +1757,11 @@ export default function PilePlan({ onExit, portalUser }) {
             </svg>
           )}
           {/* on phones this drops to a second row so it clears the satellite/streets toggle */}
-          <div style={{ position: 'absolute', top: mob ? 58 : 10, right: 14, zIndex: 600, display: 'flex', background: 'rgba(10,14,26,.88)', border: '1px solid ' + LINE, padding: 3, backdropFilter: 'blur(6px)' }}>
+          <div style={{ position: 'absolute', top: mob ? 64 : 10, right: 12, zIndex: 600, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
               v.need === false ? null : (
                 <button key={v.k} onClick={() => chooseView(v.k)} title={v.k === 'sat' && !hasGeo ? 'Import a KMZ to enable satellite view' : ''}
-                  style={{ background: viewMode === v.k ? ORANGE : 'transparent', color: viewMode === v.k ? '#1a1206' : CREAM, border: 'none', padding: mob ? '10px 11px' : '6px 12px', minHeight: mob ? 40 : undefined, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }}>{mob && v.k === 'model' ? '3D' : v.l}</button>
+                  style={{ ...segStyle(viewMode === v.k), padding: '0 12px', minHeight: mob ? 42 : 36 }}>{mob && v.k === 'model' ? '3D' : v.l}</button>
               )
             ))}
           </div>
@@ -1772,14 +1774,14 @@ export default function PilePlan({ onExit, portalUser }) {
             </div>
           )}
           {mob && (
-            <div onClick={() => setLegendOpen((v) => !v)} style={{ position: 'absolute', left: 12, bottom: `calc(${selSection != null ? 62 : 12}px + var(--sab, 0px))`, zIndex: 600, background: 'rgba(6,9,20,.9)', border: '1px solid ' + PBORDER, borderRadius: 10, padding: legendOpen ? '8px 10px' : '7px 10px', backdropFilter: 'blur(6px)', maxWidth: 222, cursor: 'pointer' }}>
+            <div onClick={() => setLegendOpen((v) => !v)} style={{ position: 'absolute', left: 12, bottom: `calc(${selSection != null ? 62 : 12}px + var(--sab, 0px))`, zIndex: 600, ...FLOAT, padding: legendOpen ? '8px 10px' : '7px 10px', maxWidth: 236, cursor: 'pointer' }}>
               {legendOpen ? (<>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px' }}>
                   {STAGES.slice(1).map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontWeight: 700, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: CREAM, whiteSpace: 'nowrap' }}><Glyph code={'s' + (i + 1)} size={15} />{s.name.replace(' Installed', '')}</div>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: CREAM, whiteSpace: 'nowrap' }}><Glyph code={'s' + (i + 1)} size={19} />{s.name.replace(' Installed', '')}</div>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', fontFamily: NBF, fontWeight: 700, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: CREAM }}>
+                <div style={{ display: 'flex', gap: 10, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', fontFamily: NBF, fontWeight: 700, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: CREAM }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q1" size={13} />Attention <b style={{ color: QC_YELLOW }}>{stats.yellow}</b></span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q2" size={13} />Flagged <b style={{ color: QC_ORANGE }}>{stats.orange}</b></span>
                 </div>
@@ -1798,7 +1800,7 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       {mob && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: 'rgba(5,8,18,.96)', borderTop: '1px solid ' + PBORDER }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', paddingBottom: 'calc(8px + var(--sab, 0px))', background: GRAD_PANEL, borderTop: '1px solid rgba(255,107,0,.55)' }}>
           {mode === 'delete' ? (
             /* delete mode: what's queued + the two actions */
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1823,10 +1825,10 @@ export default function PilePlan({ onExit, portalUser }) {
               const on = mode === t.k; const red = t.k === 'delete';
               return (
                 <button key={t.k} onClick={() => { if (mode === 'delete' && t.k !== 'delete') clearDel(); setMode(t.k); }}
-                  style={{ minHeight: 60, padding: '6px 4px', borderRadius: 10, border: '1px solid ' + (on ? (red ? '#dc2626' : ORANGE) : 'rgba(255,255,255,.09)'), background: on ? (red ? 'rgba(220,38,38,.18)' : 'rgba(249,115,22,.16)') : 'rgba(255,255,255,.03)', color: on ? (red ? '#f87171' : ORANGE) : CREAM, fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                  <t.I size={20} />
+                  aria-pressed={on} style={{ ...toolStyle(on), fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  <t.I size={22} />
                   <span>{t.l}</span>
-                  <span style={{ fontSize: 9, letterSpacing: .3, textTransform: 'none', fontWeight: 500, opacity: .75, color: CREAM }}>{t.hint}</span>
+                  <span style={{ fontSize: 10.5, letterSpacing: 0, textTransform: 'none', fontWeight: 500, color: on ? '#ffb27a' : TT.text2 }}>{t.hint}</span>
                 </button>
               );
             })}
@@ -2185,20 +2187,20 @@ function ImportModal({ mob, onClose, onCreate }) {
 }
 
 /* styles */
-const kicker = { fontFamily: NBF, fontSize: 12.5, fontWeight: 700, letterSpacing: '2.5px', textTransform: 'uppercase', color: CREAM };
+const kicker = { fontFamily: NBF, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: CREAM };
 const bar = { height: 8, background: 'rgba(255,255,255,.08)', marginTop: 8, overflow: 'hidden', borderRadius: 4 };
 const headTitle = { fontFamily: BBF, fontSize: 24, letterSpacing: 1.5, color: CREAM };
-const selectStyle = { width: '100%', background: NAVY2, color: CREAM, border: '1px solid ' + PBORDER, borderRadius: 8, padding: '10px', fontFamily: NBF, fontSize: 15, outline: 'none' };
-function card() { return { background: PBOX, border: '1px solid ' + PBORDER, borderRadius: 12, padding: 12 }; }
-function statusRow(active) { return { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', cursor: 'pointer', borderRadius: 8, border: '1px solid ' + (active ? ORANGE : 'rgba(255,255,255,.07)'), background: active ? 'rgba(249,115,22,.14)' : 'rgba(255,255,255,.03)' }; }
-function segBtn(active) { return { flex: 1, background: active ? 'rgba(249,115,22,.16)' : 'rgba(255,255,255,.03)', color: active ? ORANGE : CREAM, border: '1px solid ' + (active ? ORANGE : 'rgba(255,255,255,.10)'), borderRadius: 8, padding: '9px 0', fontFamily: NBF, fontWeight: 700, fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' }; }
-const ctaBtn = { background: ORANGE, color: '#1a1206', border: 'none', borderRadius: 8, padding: '13px 18px', fontFamily: NBF, fontWeight: 700, fontSize: 14, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 6px 18px rgba(249,115,22,.28)' };
-const ghostBtn = { background: 'rgba(249,115,22,.06)', color: ORANGE, border: '1px solid ' + ORANGE, borderRadius: 8, padding: '11px 16px', fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap' };
-const backBtn = { background: 'transparent', color: CREAM, border: 'none', width: 40, height: 40, fontSize: 22, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 };
+const selectStyle = { width: '100%', background: TT.control, color: CREAM, border: '1px solid ' + TT.borderStrong, borderRadius: TT.radiusControl, padding: '11px 10px', fontFamily: NBF, fontSize: 15, outline: 'none', minHeight: 48 };
+function card() { return { ...PANEL_STYLE, padding: 12 }; }
+function statusRow(active) { return { display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', minHeight: 48, cursor: 'pointer', borderRadius: TT.radiusControl, border: (active ? '1px solid ' + ORANGE : '1px solid ' + TT.divider), background: active ? 'rgba(255,107,0,.12)' : TT.control, boxShadow: active ? GLOW : 'none' }; }
+function segBtn(active) { return { flex: 1, ...segStyle(active), minHeight: 44 }; }
+const ctaBtn = { ...BTN_PRIMARY };
+const ghostBtn = { ...BTN_OUTLINE };
+const backBtn = { background: 'transparent', color: CREAM, border: 'none', width: 48, height: 48, fontSize: 22, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 };
 /* small ↺ that clears a task straight from its legend row */
-function resetX(active) { return { background: 'transparent', border: 'none', color: active ? ORANGE : 'rgba(255,255,255,.22)', width: 30, height: 30, fontSize: 16, lineHeight: 1, cursor: 'pointer', flexShrink: 0, borderRadius: 15, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }; }
-const miniBtn = { background: 'transparent', border: 'none', borderBottom: '2px solid', borderColor: 'rgba(255,255,255,.22)', padding: '4px 8px', fontFamily: NBF, fontWeight: 700, fontSize: 12.5, letterSpacing: 1.5, textTransform: 'uppercase', cursor: 'pointer' };
-const zbtn = { width: 44, height: 44, background: 'rgba(6,9,20,.88)', color: CREAM, border: '1px solid ' + PBORDER, borderRadius: 8, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(6px)' };
+function resetX(active) { return { background: 'transparent', border: 'none', color: active ? ORANGE : 'rgba(255,255,255,.25)', width: 34, height: 34, fontSize: 16, lineHeight: 1, cursor: 'pointer', flexShrink: 0, borderRadius: 17, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }; }
+const miniBtn = { background: 'transparent', border: 'none', borderBottom: '2px solid', borderColor: TT.borderStrong, padding: '6px 8px', minHeight: 36, fontFamily: NBF, fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' };
+const zbtn = { ...FLOAT, width: 46, height: 46, color: CREAM, fontSize: 22, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const xBtn = { background: 'transparent', border: 'none', color: ORANGE, fontSize: 30, lineHeight: 1, cursor: 'pointer' };
-function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,.62)', display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
-function modalCard(mob, w) { return { background: `linear-gradient(180deg,${NAVY2}, ${NAVY})`, border: '1px solid ' + ORANGE, borderRadius: mob ? '18px 18px 0 0' : 14, padding: 18, width: mob ? '100%' : w, maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, boxShadow: '0 0 60px rgba(0,0,0,.6)' }; }
+function overlay(mob) { return { position: 'fixed', inset: 0, zIndex: 2200, background: TT.scrim, display: 'flex', alignItems: mob ? 'flex-end' : 'center', justifyContent: 'center' }; }
+function modalCard(mob, w) { return { background: GRAD_PANEL, border: '1px solid ' + ORANGE, borderRadius: mob ? '18px 18px 0 0' : TT.radiusPanel, padding: 18, width: mob ? '100%' : w, maxHeight: '86vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9, boxShadow: '0 0 60px rgba(0,0,0,.6)' }; }

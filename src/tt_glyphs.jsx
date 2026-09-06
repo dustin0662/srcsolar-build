@@ -13,21 +13,22 @@ import React from 'react';
 
 export const GLYPH = {
   s0: { name: 'No Progress', color: '#e8e8ea' },
-  s1: { name: 'Piles', color: '#b9c0cc' },
-  s2: { name: 'Post Caps', color: '#3b82f6' },
-  s3: { name: 'Torque Tube', color: '#a855f7' },
-  s4: { name: 'Modules', color: '#22c55e' },
-  q1: { name: 'Requires Attention', color: '#facc15' },
-  q2: { name: 'Flagged Issue', color: '#ef4444' },
-  del: { name: 'Delete', color: '#dc2626' },
+  s1: { name: 'Piles', color: '#D6DCE4' },
+  s2: { name: 'Post Caps', color: '#008CFF' },
+  s3: { name: 'Torque Tube', color: '#B834F5' },
+  s4: { name: 'Modules', color: '#1ED6A3' },
+  q1: { name: 'Requires Attention', color: '#FFB020' },
+  q2: { name: 'Flagged Issue', color: '#FF4F4F' },
+  del: { name: 'Delete', color: '#FF4F4F' },
 };
-export const ORANGE = '#F97316';
-const INK = 'rgba(2,3,10,.6)';
+export const ORANGE = '#FF6B00';
+const INK = 'rgba(2,8,16,.7)';
+/* phase palette from the skin pack (design-tokens.json → color.phase) */
 const C = {
-  pile: '#aab2c0', pileHi: '#e6eaf0', pileLo: '#7a8290', pileTop: '#f3f5f9', pileBot: '#646c79',
-  cubeTop: '#8fbcff', cubeL: '#2f6fe0', cubeR: '#1b4aa8',
-  tube: '#7c3aed', tubeHi: 'rgba(255,255,255,.55)',
-  mod: '#16a34a', modHi: '#a7f3c4', modLo: '#0f7a37',
+  pile: '#B9C3CF', pileHi: '#F5F8FC', pileLo: '#667280', pileTop: '#E9EEF4', pileBot: '#4F5A67',
+  cubeTop: '#52C6FF', cubeL: '#008CFF', cubeR: '#005EB8',
+  tube: '#B834F5', tubeHi: 'rgba(240,161,255,.85)', tubeLo: '#69129D',
+  mod: '#147C65', modHi: '#7BFFE0', modLo: '#0B5C4A', modLite: '#1ED6A3',
 };
 
 export function glyphCode(stage, qc) { return qc === 2 ? 'q2' : qc === 1 ? 'q1' : 's' + (stage || 0); }
@@ -144,12 +145,14 @@ function drawTube(ctx, x0, y0, x1, y1, r, lw) {
   const w = 0.7 * r; const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1; const px = -dy / L, py = dx / L;
   seg(ctx, x0, y0, x1, y1, w + 2 * lw, INK);
   seg(ctx, x0, y0, x1, y1, w, C.tube);
-  seg(ctx, x0 + px * w * 0.22, y0 + py * w * 0.22, x1 + px * w * 0.22, y1 + py * w * 0.22, w * 0.28, C.tubeHi);
+  seg(ctx, x0 - px * w * 0.3, y0 - py * w * 0.3, x1 - px * w * 0.3, y1 - py * w * 0.3, w * 0.3, C.tubeLo);
+  seg(ctx, x0 + px * w * 0.22, y0 + py * w * 0.22, x1 + px * w * 0.22, y1 + py * w * 0.22, w * 0.24, C.tubeHi);
 }
 function drawModule(ctx, x0, y0, x1, y1, r, lw) {
   const w = 1.75 * r; const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1; const ux = dx / L, uy = dy / L, px = -uy, py = ux;
   seg(ctx, x0, y0, x1, y1, w + 2 * lw, INK, 'butt');
   seg(ctx, x0, y0, x1, y1, w, C.mod, 'butt');
+  seg(ctx, x0 - px * w * 0.3, y0 - py * w * 0.3, x1 - px * w * 0.3, y1 - py * w * 0.3, w * 0.3, C.modLite, 'butt');
   seg(ctx, x0 + px * w * 0.36, y0 + py * w * 0.36, x1 + px * w * 0.36, y1 + py * w * 0.36, w * 0.14, C.modLo, 'butt');
   /* grid: centre line + cross ticks */
   seg(ctx, x0, y0, x1, y1, Math.max(0.6, w * 0.07), C.modHi, 'butt');
@@ -223,10 +226,37 @@ export function paintStack(ctx, items, r, dir) {
 
 /* ---------- SVG ---------- */
 function Bang({ color }) { return <><rect x={-1.3} y={-4.5} width={2.6} height={6} fill={color} /><circle cx={0} cy={4.4} r={1.5} fill={color} /></>; }
+/* Phase icons from the skin pack (assets/icons/*.svg, 96×96 boxes) plus the
+   stack pieces used on the plan (pile / cap) and the flags. */
+const PACK_BOX = { s1: '0 0 96 96', s2: '0 0 96 96', s3: '0 0 96 96', s4: '0 0 96 96' };
+export function glyphBox(code) { return PACK_BOX[code] || '-11 -11 22 22'; }
 export function GlyphShape({ code }) {
   switch (code) {
     case 'del': return <circle r={7.5} fill={GLYPH.del.color} stroke="#fff" strokeWidth={2} />;
     case 's1': return (<>
+      <defs><linearGradient id="ttg-pile" x1="0" x2="1"><stop stopColor="#697582" /><stop offset=".48" stopColor="#F5F8FC" /><stop offset="1" stopColor="#8E99A6" /></linearGradient></defs>
+      <path d="M30 76V27L48 16L66 27V76L48 86Z" fill="url(#ttg-pile)" stroke="#243343" strokeWidth={4} strokeLinejoin="round" />
+      <path d="M48 17V85M30 27L48 38L66 27" fill="none" stroke="#FFFFFF" strokeOpacity=".72" strokeWidth={3} />
+    </>);
+    case 's2': return (<>
+      <defs><linearGradient id="ttg-cap" x1="0" x2="1"><stop stopColor="#005EB8" /><stop offset=".5" stopColor="#38B8FF" /><stop offset="1" stopColor="#0078E8" /></linearGradient></defs>
+      <path d="M31 76V35L48 26L65 35V76L48 86Z" fill="url(#ttg-cap)" stroke="#002B5B" strokeWidth={4} strokeLinejoin="round" />
+      <path d="M22 29L48 14L74 29L48 44Z" fill="#008CFF" stroke="#002B5B" strokeWidth={4} strokeLinejoin="round" />
+      <path d="M29 29L48 19L67 29L48 39Z" fill="#52C6FF" />
+      <path d="M48 45V84" stroke="#93DDFF" strokeWidth={3} />
+    </>);
+    case 's3': return (<>
+      <defs><linearGradient id="ttg-tube" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#E05BFF" /><stop offset=".5" stopColor="#B834F5" /><stop offset="1" stopColor="#69129D" /></linearGradient></defs>
+      <path d="M18 68L73 25" stroke="#321044" strokeWidth={24} strokeLinecap="round" />
+      <path d="M18 65L73 22" stroke="url(#ttg-tube)" strokeWidth={17} strokeLinecap="round" />
+      <path d="M22 60L69 24" stroke="#F0A1FF" strokeWidth={4} strokeLinecap="round" opacity=".8" />
+    </>);
+    case 's4': return (<>
+      <path d="M17 77L30 19L80 25L67 83Z" fill="#147C65" stroke="#7BFFE0" strokeWidth={4} strokeLinejoin="round" />
+      <path d="M26 41L75 47M22 59L71 65M47 21L34 79M64 23L51 81" fill="none" stroke="#7BFFE0" strokeWidth={3} />
+      <path d="M31 23L47 25L43 39L28 37Z" fill="#1ED6A3" opacity=".6" />
+    </>);
+    case 'pile': return (<>
       <ellipse cx={0} cy={9} rx={3.6} ry={1.6} fill={C.pileBot} />
       <rect x={-3.6} y={-9} width={7.2} height={18} fill={C.pile} />
       <rect x={-3.6} y={-9} width={2.2} height={18} fill={C.pileHi} />
@@ -234,20 +264,11 @@ export function GlyphShape({ code }) {
       <path d="M-3.6 -9 V9 M3.6 -9 V9" stroke={INK} strokeWidth={0.8} fill="none" />
       <ellipse cx={0} cy={-9} rx={3.6} ry={1.6} fill={C.pileTop} stroke={INK} strokeWidth={0.8} />
     </>);
-    case 's2': return (<>
+    case 'cap': return (<>
       <polygon points="0,-8.5 7.5,-4.2 0,0.2 -7.5,-4.2" fill={C.cubeTop} />
       <polygon points="-7.5,-4.2 0,0.2 0,8.8 -7.5,4.4" fill={C.cubeL} />
       <polygon points="0,0.2 7.5,-4.2 7.5,4.4 0,8.8" fill={C.cubeR} />
       <polygon points="0,-8.5 7.5,-4.2 7.5,4.4 0,8.8 -7.5,4.4 -7.5,-4.2" fill="none" stroke={INK} strokeWidth={0.8} strokeLinejoin="round" />
-    </>);
-    case 's3': return (<>
-      <rect x={-3.4} y={-10} width={6.8} height={20} rx={3.4} fill={C.tube} stroke={INK} strokeWidth={0.8} />
-      <rect x={-2.2} y={-9} width={1.6} height={18} rx={0.8} fill={C.tubeHi} />
-    </>);
-    case 's4': return (<>
-      <rect x={-6.5} y={-10} width={13} height={20} fill={C.mod} stroke={INK} strokeWidth={0.8} />
-      <rect x={3.2} y={-10} width={1.6} height={20} fill={C.modLo} />
-      <path d="M0 -10 V10 M-6.5 -5 H6.5 M-6.5 0 H6.5 M-6.5 5 H6.5" stroke={C.modHi} strokeWidth={0.8} fill="none" />
     </>);
     case 'q1': return (<>
       <polygon points="0,-9 9.5,7.5 -9.5,7.5" fill={GLYPH.q1.color} stroke="#3b2a00" strokeWidth={1} strokeLinejoin="round" />
@@ -261,24 +282,24 @@ export function GlyphShape({ code }) {
   }
 }
 
-const CODES = ['s0', 's1', 's2', 's3', 's4', 'q1', 'q2', 'del'];
+const CODES = ['s0', 's1', 's2', 's3', 's4', 'q1', 'q2', 'del', 'pile', 'cap'];
 /* Mount once per document; then <use href="#tt-g-s2"/> anywhere. */
 export function GlyphDefs() {
   return (
     <svg width={0} height={0} style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
       <defs>
-        {CODES.map((c) => <symbol key={c} id={'tt-g-' + c} viewBox="-11 -11 22 22" overflow="visible"><GlyphShape code={c} /></symbol>)}
+        {CODES.map((c) => <symbol key={c} id={'tt-g-' + c} viewBox={glyphBox(c)} overflow="visible"><GlyphShape code={c} /></symbol>)}
         <symbol id="tt-g-hot" viewBox="-14 -14 28 28" overflow="visible"><circle r={12.5} fill="none" stroke={ORANGE} strokeWidth={2.2} /></symbol>
       </defs>
     </svg>
   );
 }
-export function glyphHref(code) { return '#tt-g-' + (GLYPH[code] ? code : 's0'); }
+export function glyphHref(code) { return '#tt-g-' + (GLYPH[code] || code === 'pile' || code === 'cap' ? code : 's0'); }
 
 /* standalone icon for legends / cards */
 export function Glyph({ code, size = 20, style }) {
   return (
-    <svg width={size} height={size} viewBox="-11 -11 22 22" style={{ flexShrink: 0, overflow: 'visible', ...style }} aria-hidden="true">
+    <svg width={size} height={size} viewBox={glyphBox(code)} style={{ flexShrink: 0, overflow: 'visible', ...style }} aria-hidden="true">
       <GlyphShape code={code} />
     </svg>
   );
@@ -298,7 +319,7 @@ export function StackSvg({ points, stage, qc, rowNext, pad, isDim, marked, unit 
     const del = marked && marked.has(i); const dim = !del && isDim && isDim(i);
     const op = dim ? 0.16 : 1;
     if (del) { flags.push(<use key={'d' + i} data-i={i} href="#tt-g-del" x={x - 1.1 * r} y={y - 1.1 * r} width={2.2 * r} height={2.2 * r} />); continue; }
-    if (s >= 1) piles.push(<use key={'p' + i} data-i={i} href="#tt-g-s1" x={x - 1.1 * r} y={y - 1.1 * r} width={2.2 * r} height={2.2 * r} opacity={op} />);
+    if (s >= 1) piles.push(<use key={'p' + i} data-i={i} href="#tt-g-pile" x={x - 1.1 * r} y={y - 1.1 * r} width={2.2 * r} height={2.2 * r} opacity={op} />);
     else piles.push(<use key={'p' + i} data-i={i} href="#tt-g-s0" x={x - 1.1 * r} y={y - 1.1 * r} width={2.2 * r} height={2.2 * r} opacity={op} />);
     const j = rowNext ? rowNext[i] : -1; const ns = j >= 0 ? (stage[j] || 0) : -1;
     const ty = y - 0.95 * r;
@@ -316,7 +337,7 @@ export function StackSvg({ points, stage, qc, rowNext, pad, isDim, marked, unit 
       } else d = `M${x} ${ty - 0.8 * r}L${x} ${ty + 0.8 * r}`;
       if (d) { (dim ? modDim : mod).push(d); if (!dim) modGrid.push(d); }
     }
-    if (s >= 2) cubes.push(<use key={'c' + i} data-i={i} href="#tt-g-s2" x={x - 0.78 * r} y={y - 0.95 * r - 0.78 * r} width={1.56 * r} height={1.56 * r} opacity={op} />);
+    if (s >= 2) cubes.push(<use key={'c' + i} data-i={i} href="#tt-g-cap" x={x - 0.78 * r} y={y - 0.95 * r - 0.78 * r} width={1.56 * r} height={1.56 * r} opacity={op} />);
     if (q === 1 || q === 2) flags.push(
       <g key={'f' + i} opacity={dim ? 0.4 : 1}>
         <line x1={x} y1={y - 0.4 * r} x2={x} y2={y - 1.9 * r} stroke={ORANGE} strokeWidth={0.32 * r} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
