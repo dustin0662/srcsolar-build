@@ -10,6 +10,8 @@ import LoadsFrame from "./native/LoadsFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
 import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
 import HomeScreen from "./HomeScreen.jsx"
+import { SrTabs, SrCard, SrField, SrChip, SrBtn, SrDot, SrSkeleton } from "./admin_skin.jsx"
+import "./admin-skin.css"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
@@ -17,7 +19,7 @@ import BidExportButtons, { exportBidProposal, exportExecutionPlan } from "./bid_
 import DocumentPortal, { PublicSignPage } from "./document_portal.jsx"
 import ProjectTracker from "./project_tracker.jsx"
 import { EmployeeForm, EmployeeFormAdmin } from "./employee_form.jsx"
-import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Trash2, Edit, Download, Upload, X, Check, ChevronLeft, ChevronRight, Menu, User, Users, Shield, Calendar as CalIcon, FileText, Settings as SettingsIcon, BarChart3, ClipboardList, FlaskConical, History as HistoryIcon, Home, Scale, ChevronDown, AlertTriangle, Info, MessageCircle, Send, Loader2, Eye, EyeOff, UserCheck } from "lucide-react"
 import * as XLSX from "xlsx"
 import { jsPDF } from "jspdf"
 
@@ -5392,33 +5394,33 @@ export default function App(){
   }
   function renderAssignEditor(val,onChange){
     var ap=val.assignedProjects||[];var ts=val.taskScope||{}
-    if(!projOpts.length){return <div style={{...NB,fontSize:12,color:'#999'}}>No projects yet. Create one in the Task Tracker first.</div>}
+    if(!projOpts.length){return <div className="sr-note">No projects yet. Create one in the Task Tracker first.</div>}
     return projOpts.map(function(p){
       var on=ap.indexOf(p.id)>=0
       var scope=ts[p.id]!==undefined?ts[p.id]:TASK_DEFS.map(function(t){return t.id})
       return (
-        <div key={p.id} style={{border:'1px solid '+(on?'rgba(249,115,22,.4)':'rgba(0,0,0,.12)'),padding:'10px 12px',marginBottom:8,background:on?'rgba(249,115,22,.05)':'transparent'}}>
+        <div key={p.id} className={'sr-check-card'+(on?' sr-check-card--on':'')}>
           <div onClick={function(){
             var nap=on?ap.filter(function(x){return x!==p.id}):ap.concat([p.id])
             var nts=Object.assign({},ts)
             if(on){delete nts[p.id]}else if(nts[p.id]===undefined){nts[p.id]=TASK_DEFS.map(function(t){return t.id})}
             onChange({assignedProjects:nap,taskScope:nts})
-          }} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-            <span style={{width:16,height:16,border:'1px solid '+(on?A:'rgba(0,0,0,.3)'),background:on?A:'transparent',display:'inline-block',flexShrink:0}}/>
-            <span style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{p.name||'Project'}</span>
+          }} className="sr-check-row" role="checkbox" aria-checked={on} tabIndex={0}>
+            <span className={'sr-check'+(on?' sr-check--on':'')} aria-hidden="true">{on&&<Check size={14} strokeWidth={3}/>}</span>
+            <span className="sr-check-label">{p.name||'Project'}</span>
           </div>
-          {on&&<div style={{marginTop:8,paddingLeft:24}}>
-            <div style={{...NB,fontSize:9,letterSpacing:'2px',textTransform:'uppercase',color:'#999',marginBottom:5}}>Tasks they can update</div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          {on&&<div className="sr-check-body">
+            <div className="sr-label" style={{fontSize:'.7rem',marginBottom:6}}>Tasks they can update</div>
+            <div className="sr-chip-row sr-chip-row--tight">
               {TASK_DEFS.map(function(t){
                 var to=scope.indexOf(t.id)>=0
-                return <div key={t.id} onClick={function(){
+                return <SrChip key={t.id} meta on={to} onClick={function(){
                   var ns=to?scope.filter(function(x){return x!==t.id}):scope.concat([t.id])
                   var nts=Object.assign({},ts);nts[p.id]=ns;onChange({assignedProjects:ap,taskScope:nts})
-                }} style={{padding:'4px 10px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:to?'rgba(249,115,22,.15)':'transparent',color:to?A:'#666',border:'1px solid '+(to?A:'rgba(0,0,0,.15)')}}>{t.label}</div>
+                }}>{t.label}</SrChip>
               })}
             </div>
-            {scope.length===0&&<div style={{...NB,fontSize:11,color:'#dc2626',marginTop:5}}>No tasks selected — view only on this project.</div>}
+            {scope.length===0&&<div className="sr-note sr-note--danger" style={{marginTop:6}}>No tasks selected — view only on this project.</div>}
           </div>}
         </div>
       )
@@ -5793,115 +5795,98 @@ export default function App(){
 
         {/* ══ ADMIN DASHBOARD ══ */}
         {page==='admin'&&isPortalAdmin&&(
-          <div style={{minHeight:'100vh',position:'relative',zIndex:10,padding:m?'76px 14px 32px':'120px 48px 80px',background:'#f5f2ee'}}>
-            <div style={{maxWidth:1200,margin:'0 auto'}}>
-              <div style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',color:A,marginBottom:28}} onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</div>
-              <div style={{...BB,fontSize:m?'clamp(32px,8vw,48px)':'clamp(40px,5vw,64px)',letterSpacing:2,color:'#1a1a2e',textShadow:'none',marginBottom:24}}>ADMIN DASHBOARD</div>
-              <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-                {['invite','users','requests','activity','editor'].map(function(t){return (
-                  <div key={t} onClick={function(){setAdminTab2(t)}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:adminTab===t?A:'#ffffff',color:adminTab===t?'#fff':'#666',border:'1px solid '+(adminTab===t?A:'rgba(0,0,0,.1)'),transition:'all .2s'}}>{t==='editor'?'Site Editor':t==='activity'?'Activity & Time':t}</div>
-                )})}
-              </div>
-              {adminTab==='invite'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?24:32}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:20}}>INVITE USER</div>
-                <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>NAME</div><input value={invForm.name} onChange={function(e){setInvForm(Object.assign({},invForm,{name:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="Full name"/></div>
-                <div style={{marginBottom:12}}><div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>EMAIL</div><input value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} style={{...IST}} onFocus={fIn} onBlur={fOut} placeholder="name@sunriseconstructionco.com"/></div>
-                <div style={{marginBottom:12}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>ROLE</div>
-                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'member'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='member'?A:'transparent',color:invForm.role==='member'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='member'?A:'rgba(0,0,0,.15)')}}>Member</div>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'admin'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='admin'?A:'transparent',color:invForm.role==='admin'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='admin'?A:'rgba(0,0,0,.15)')}}>Admin</div>
-                    <div onClick={function(){setInvForm(Object.assign({},invForm,{role:'client'}))}} style={{padding:'8px 18px',...NB,fontSize:12,letterSpacing:'2px',cursor:'pointer',background:invForm.role==='client'?A:'transparent',color:invForm.role==='client'?'#1a1206':'#888',border:'1px solid '+(invForm.role==='client'?A:'rgba(0,0,0,.15)')}}>Client</div>
+          <div className="sunrise-admin" style={{position:'relative',zIndex:10,paddingTop:m?76:120,paddingBottom:'calc(32px + var(--tabbar-h, 0px))'}}>
+            <div className="sr-content">
+              <button type="button" className="sr-kicker sr-back" onClick={function(){setPage('dashboard')}}>&#8592; Back to Dashboard</button>
+              <h1 className="sr-display">Admin Dashboard</h1>
+              <SrTabs items={[['invite','Invite'],['users','Users'],['requests','Requests'],['activity','Activity & Time'],['editor','Site Editor']]} value={adminTab} onChange={setAdminTab2}/>
+              {adminTab==='invite'&&<SrCard title="Invite User">
+                <SrField label="Name"><input className="sr-input" value={invForm.name} onChange={function(e){setInvForm(Object.assign({},invForm,{name:e.target.value}))}} placeholder="Full name"/></SrField>
+                <SrField label="Email"><input className="sr-input" value={invForm.email} onChange={function(e){setInvForm(Object.assign({},invForm,{email:e.target.value}))}} placeholder="name@sunriseconstructionco.com"/></SrField>
+                <SrField label="Role" note={invForm.role==='client'?'Clients get a read-only portal for their assigned projects only — any email domain is allowed.':null}>
+                  <div className="sr-chip-row">
+                    {[['member','Member'],['admin','Admin'],['client','Client']].map(function(r){return <SrChip key={r[0]} on={invForm.role===r[0]} onClick={function(){setInvForm(Object.assign({},invForm,{role:r[0]}))}}>{r[1]}</SrChip>})}
                   </div>
-                  {invForm.role==='client'&&<div style={{...NB,fontSize:11,color:'#777',letterSpacing:'1px',marginTop:8}}>Clients get a read-only portal for their assigned projects only — any email domain is allowed.</div>}
-                </div>
+                </SrField>
                 {invForm.role==='client'?(
-                <div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>ASSIGNED PROJECTS</div>
-                  {projOpts.length===0?<div style={{...NB,fontSize:12,color:'#999'}}>No projects found. Create one in the Task Tracker first.</div>:
-                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                <SrField label="Assigned projects">
+                  {projOpts.length===0?<div className="sr-note">No projects found. Create one in the Task Tracker first.</div>:
+                  <div className="sr-chip-row sr-chip-row--tight">
                     {projOpts.map(function(p){var on=(invForm.assignedProjects||[]).indexOf(p.id)>=0;return (
-                      <div key={p.id} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{p.name||'Project'}</div>
+                      <SrChip key={p.id} on={on} onClick={function(){var cur=invForm.assignedProjects||[];var na=on?cur.filter(function(x){return x!==p.id}):cur.concat([p.id]);setInvForm(Object.assign({},invForm,{assignedProjects:na}))}}>{p.name||'Project'}</SrChip>
                     )})}
                   </div>}
-                </div>
+                </SrField>
                 ):(<>
-                <div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TOOL ACCESS</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                <SrField label="Tool access">
+                  <div className="sr-chip-row sr-chip-row--tight">
                     {Object.keys(TOOL_LABELS).map(function(tk){var on=invForm.tools.indexOf(tk)>=0;return (
-                      <div key={tk} onClick={function(){var nt=on?invForm.tools.filter(function(x){return x!==tk}):invForm.tools.concat([tk]);setInvForm(Object.assign({},invForm,{tools:nt}))}} style={{padding:'6px 14px',...NB,fontSize:11,letterSpacing:'1px',cursor:'pointer',background:on?'rgba(249,115,22,.15)':'transparent',color:on?A:'#666',border:'1px solid '+(on?A:'rgba(0,0,0,.15)'),transition:'all .2s'}}>{TOOL_LABELS[tk]}</div>
+                      <SrChip key={tk} on={on} onClick={function(){var nt=on?invForm.tools.filter(function(x){return x!==tk}):invForm.tools.concat([tk]);setInvForm(Object.assign({},invForm,{tools:nt}))}}>{TOOL_LABELS[tk]}</SrChip>
                     )})}
                   </div>
-                </div>
-                {invForm.tools.indexOf('pileplan')>=0&&<div style={{marginBottom:16}}>
-                  <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:6}}>TASK TRACKER — PROJECTS & TASKS</div>
-                  {renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}
-                  <div style={{...NB,fontSize:11,color:'#888',letterSpacing:'.5px',marginTop:4}}>Employees see and edit only the projects you select here.</div>
-                </div>}
+                </SrField>
+                {invForm.tools.indexOf('pileplan')>=0&&<SrField label="Task Tracker — Projects & Tasks" note="Employees see and edit only the projects you select here.">
+                  <div>{renderAssignEditor({assignedProjects:invForm.assignedProjects,taskScope:invForm.taskScope},function(v){setInvForm(Object.assign({},invForm,v))})}</div>
+                </SrField>}
                 </>)}
-                <div style={{cursor:'pointer',background:A,color:'#1a1206',textAlign:'center',...NB,fontSize:14,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',padding:'14px 0'}} onClick={sendInvite}>SEND INVITE VIA GMAIL</div>
-                {invMsg&&<div style={{marginTop:12,padding:'10px 12px',border:'1px solid '+(invMsg.k==='ok'?'rgba(22,163,74,.45)':'rgba(239,68,68,.45)'),background:invMsg.k==='ok'?'rgba(22,163,74,.08)':'rgba(239,68,68,.07)'}}>
-                  <div style={{...NB,fontSize:13,color:invMsg.k==='ok'?'#15803d':'#b91c1c',lineHeight:1.5}}>{invMsg.t}</div>
-                  {invMsg.link&&<div style={{marginTop:8,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                    <input readOnly value={invMsg.link} onFocus={function(e){e.target.select()}} style={{flex:1,minWidth:200,...NB,fontSize:12,padding:'7px 9px',border:'1px solid rgba(0,0,0,.15)',background:'#fff',color:'#333'}}/>
-                    <div onClick={function(){try{navigator.clipboard.writeText(invMsg.link);setInvMsg(Object.assign({},invMsg,{t:'Invite link copied to your clipboard.'}))}catch(e){}}} style={{cursor:'pointer',...NB,fontSize:11,fontWeight:700,letterSpacing:'1.5px',textTransform:'uppercase',padding:'7px 14px',background:A,color:'#1a1206'}}>Copy Link</div>
+                <SrBtn variant="primary" block onClick={sendInvite} style={{marginTop:24,minHeight:52}}>Send invite via Gmail</SrBtn>
+                {invMsg&&<div className={'sr-banner '+(invMsg.k==='ok'?'sr-banner--ok':'sr-banner--err')}>
+                  <div>{invMsg.t}</div>
+                  {invMsg.link&&<div className="sr-linkrow">
+                    <input readOnly className="sr-input" value={invMsg.link} onFocus={function(e){e.target.select()}}/>
+                    <SrBtn variant="primary" onClick={function(){try{navigator.clipboard.writeText(invMsg.link);setInvMsg(Object.assign({},invMsg,{t:'Invite link copied to your clipboard.'}))}catch(e){}}}>Copy link</SrBtn>
                   </div>}
                 </div>}
-              </div>}
-              {adminTab==='users'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>USERS ({portalUsers.length})</div>
+              </SrCard>}
+              {adminTab==='users'&&<SrCard title={'Users ('+portalUsers.length+')'}>
+                <div className="sr-stack">
                 {portalUsers.map(function(u2){return (
-                  <div key={u2.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid rgba(0,0,0,.06)',flexWrap:'wrap',gap:8}}>
-                    <div>
-                      <div style={{...NB,fontSize:14,color:'#1a1a2e',fontWeight:600}}>{u2.name}</div>
-                      <div style={{...NB,fontSize:11,color:'#888'}}>{u2.email} · {u2.role}</div>
-                      <div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Tools: {(u2.tools||[]).join(', ')||'—'}</div>
-                      {u2.role!=='admin'&&<div style={{...NB,fontSize:10,color:'#555',marginTop:2}}>Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
-                    </div>
-                    <div style={{display:'flex',gap:6}}>
-                      {u2.role!=='admin'&&<div onClick={function(){openAssign(u2)}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(249,115,22,.15)',color:A}}>Assign</div>}
-                      <div onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?touchUser(Object.assign({},x,{role:nr})):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:u2.role==='admin'?'rgba(59,130,246,.15)':'rgba(234,179,8,.15)',color:u2.role==='admin'?'#60a5fa':'#eab308'}}>{u2.role==='admin'?'Demote':'Promote'}</div>
-                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<div onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}),[u2.id,u2.email]);logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}} style={{padding:'4px 12px',...NB,fontSize:10,letterSpacing:'1px',cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Remove</div>}
+                  <div key={u2.id} className="sr-user">
+                    <div className="sr-user-name">{u2.name}</div>
+                    <div className="sr-meta">{u2.email} · {u2.role}</div>
+                    <div className="sr-meta sr-meta--dim">Tools: {(u2.tools||[]).join(', ')||'—'}</div>
+                    {u2.role!=='admin'&&<div className="sr-meta sr-meta--dim">Projects: {(u2.assignedProjects||[]).length?(u2.assignedProjects||[]).map(function(pid){var pp=projOpts.find(function(x){return x.id===pid});return pp?pp.name:pid}).join(', '):(u2.role==='member'?'all (unassigned)':'none')}</div>}
+                    <div className="sr-actions">
+                      {u2.role!=='admin'&&<SrBtn variant="assign" onClick={function(){openAssign(u2)}}>Assign</SrBtn>}
+                      <SrBtn variant={u2.role==='admin'?'secondary':'gold'} onClick={function(){var nr=u2.role==='admin'?'member':'admin';var nu=portalUsers.map(function(x){return x.id===u2.id?touchUser(Object.assign({},x,{role:nr})):x});svPU(nu);logAudit({type:'action',tool:'admin',detail:(nr==='admin'?'Promoted ':'Demoted ')+u2.name+' to '+nr})}}>{u2.role==='admin'?'Demote':'Promote'}</SrBtn>
+                      {u2.email!=='dustin.hanson@sunriseconstructionco.com'&&<SrBtn variant="danger" onClick={function(){svPU(portalUsers.filter(function(x){return x.id!==u2.id}),[u2.id,u2.email]);logAudit({type:'action',tool:'admin',detail:'Removed user '+u2.name+' ('+u2.email+')'})}}>Remove</SrBtn>}
                     </div>
                   </div>
                 )})}
-              </div>}
+                </div>
+              </SrCard>}
               {assignUser&&(
-                <div style={{position:'fixed',inset:0,zIndex:3000,background:'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={function(){setAssignUser(null)}}>
-                  <div onClick={function(e){e.stopPropagation()}} style={{background:'#fff',width:'100%',maxWidth:460,maxHeight:'86vh',overflowY:'auto',padding:m?22:28,boxShadow:'0 10px 40px rgba(0,0,0,.3)'}}>
-                    <div style={{...BB,fontSize:24,letterSpacing:2,color:'#1a1a2e'}}>Assign Projects</div>
-                    <div style={{...NB,fontSize:12,color:'#777',letterSpacing:'1px',marginTop:2,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
+                <div className="sr-modal" onClick={function(){setAssignUser(null)}}>
+                  <div className="sr-modal-sheet" onClick={function(e){e.stopPropagation()}}>
+                    <h2 className="sr-card-title">Assign Projects</h2>
+                    <div className="sr-meta" style={{marginTop:4,marginBottom:18}}>{assignUser.name} · {assignUser.email}</div>
                     {renderAssignEditor(assignForm,function(v){setAssignForm(v)})}
-                    {assignUser.role==='client'&&<div style={{...NB,fontSize:11,color:'#888',marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
-                    <div style={{display:'flex',gap:10,marginTop:20}}>
-                      <button onClick={saveAssign} style={{flex:1,background:A,color:'#1a1206',border:'none',padding:'12px 0',...NB,fontWeight:700,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Save</button>
-                      <button onClick={function(){setAssignUser(null)}} style={{flex:1,background:'transparent',color:'#777',border:'1px solid rgba(0,0,0,.18)',padding:'12px 0',...NB,fontSize:13,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer'}}>Cancel</button>
+                    {assignUser.role==='client'&&<div className="sr-note" style={{marginTop:4}}>Clients are read-only; task selections are ignored for client accounts.</div>}
+                    <div className="sr-actions" style={{marginTop:20,flexWrap:'nowrap'}}>
+                      <SrBtn variant="primary" onClick={saveAssign} style={{flex:1}}>Save</SrBtn>
+                      <SrBtn variant="outline" onClick={function(){setAssignUser(null)}} style={{flex:1}}>Cancel</SrBtn>
                     </div>
                   </div>
                 </div>
               )}
-              {adminTab==='requests'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>ACCESS REQUESTS</div>
-                {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div style={{...NB,fontSize:13,color:'#888'}}>No pending requests</div>}
+              {adminTab==='requests'&&<SrCard title="Access Requests" right={<UserCheck size={30} color="#ff7a21" strokeWidth={1.6} aria-hidden="true"/>}>
+                {accessReqs.filter(function(r){return r.status==='pending'}).length===0&&<div className="sr-meta">No pending requests</div>}
                 {accessReqs.slice().reverse().map(function(r){return (
-                  <div key={r.id} style={{padding:'12px 0',borderBottom:'1px solid rgba(0,0,0,.06)'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
-                      <div>
-                        <div style={{...NB,fontSize:14,color:'#1a1a2e'}}>{r.userName} requests <span style={{color:A}}>{TOOL_LABELS[r.tool]||r.tool}</span></div>
-                        <div style={{...NB,fontSize:11,color:'#888'}}>{r.reason}</div>
-                        <div style={{...NB,fontSize:10,color:'#555'}}>{new Date(r.createdAt).toLocaleDateString()}</div>
-                      </div>
-                      {r.status==='pending'&&<div style={{display:'flex',gap:6}}>
-                        <div onClick={function(){approveReq(r.id)}} style={{padding:'4px 14px',...NB,fontSize:11,cursor:'pointer',background:'rgba(34,197,94,.15)',color:'#22c55e'}}>Approve</div>
-                        <div onClick={function(){denyReq(r.id)}} style={{padding:'4px 14px',...NB,fontSize:11,cursor:'pointer',background:'rgba(239,68,68,.12)',color:'#ef4444'}}>Deny</div>
-                      </div>}
-                      {r.status!=='pending'&&<div style={{...NB,fontSize:11,color:r.status==='approved'?'#22c55e':'#ef4444'}}>{r.status.toUpperCase()}</div>}
+                  <div key={r.id} className="sr-list-row sr-list-row--stack" style={{borderBottom:'1px solid var(--sr-line)'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div className="sr-row-title">{r.userName} requests <span className="sr-person">{TOOL_LABELS[r.tool]||r.tool}</span></div>
+                      <div className="sr-meta">{r.reason}</div>
+                      <div className="sr-meta sr-meta--dim">{new Date(r.createdAt).toLocaleDateString()}</div>
                     </div>
+                    {r.status==='pending'&&<div className="sr-actions">
+                      <SrBtn variant="success" onClick={function(){approveReq(r.id)}}>Approve</SrBtn>
+                      <SrBtn variant="danger" onClick={function(){denyReq(r.id)}}>Deny</SrBtn>
+                    </div>}
+                    {r.status!=='pending'&&<div className={'sr-status '+(r.status==='approved'?'sr-status--ok':'sr-status--bad')}>{r.status.toUpperCase()}</div>}
                   </div>
                 )})}
-              </div>}
-              {adminTab==='activity'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
+              </SrCard>}
+              {adminTab==='activity'&&<SrCard>
                 {(function(){
                   function fmtDur(ms){ms=Math.max(0,ms||0);var s=Math.round(ms/1000);var h=Math.floor(s/3600);var mn=Math.floor((s%3600)/60);if(h)return h+'h '+mn+'m';if(mn)return mn+'m';return s+'s'}
                   function evLabel(e){return e.label||TOOL_LABELS[e.tool]||(e.tool||'—')}
@@ -5909,68 +5894,62 @@ export default function App(){
                   var users={},tools={};actEvents.forEach(function(e){if(e.user)users[e.user]=1;if(e.tool)tools[e.tool]=1})
                   var userList=Object.keys(users).sort(),toolList=Object.keys(tools).sort()
                   var filtered=actEvents.filter(function(e){return (!actUserFilter||e.user===actUserFilter)&&(!actToolFilter||e.tool===actToolFilter)})
-                  var typeColor={login:'#16a34a',logout:'#888',tool_enter:'#2563eb',tool_exit:'#7c3aed',change:'#ea580c',action:A}
                   // time aggregation from tool_exit durations
                   var exits=actEvents.filter(function(e){return e.type==='tool_exit'&&(!actUserFilter||e.user===actUserFilter)})
                   var dayMap={}
                   exits.forEach(function(e){var d=new Date(e.ts);var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');var key=day+'|'+(e.user||'?');if(!dayMap[key])dayMap[key]={day:day,user:e.user,total:0,tools:{},sessions:0};dayMap[key].total+=e.durMs||0;dayMap[key].sessions++;var tl=evLabel(e);dayMap[key].tools[tl]=(dayMap[key].tools[tl]||0)+(e.durMs||0)})
                   var rows=Object.keys(dayMap).map(function(k){return dayMap[k]}).sort(function(a,b){return a.day<b.day?1:a.day>b.day?-1:(a.user<b.user?-1:1)})
                   return (<>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:16}}>
-                      <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e'}}>ACTIVITY & TIME</div>
-                      <div style={{display:'flex',gap:6}}>
-                        <div onClick={function(){setActView('log')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='log'?A:'transparent',color:actView==='log'?'#fff':'#666',border:'1px solid '+(actView==='log'?A:'rgba(0,0,0,.15)')}}>Activity Log</div>
-                        <div onClick={function(){setActView('time')}} style={{padding:'7px 16px',...NB,fontSize:12,letterSpacing:'2px',textTransform:'uppercase',cursor:'pointer',background:actView==='time'?A:'transparent',color:actView==='time'?'#fff':'#666',border:'1px solid '+(actView==='time'?A:'rgba(0,0,0,.15)')}}>Time Tracking</div>
-                      </div>
-                    </div>
-                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
-                      <select value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
-                      {actView==='log'&&<select value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}} style={{...IST,width:'auto',minWidth:160,padding:'8px 10px'}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
-                      {actLoading&&<span style={{...NB,fontSize:12,color:'#888',alignSelf:'center'}}>Loading…</span>}
+                    <div className="sr-card-head"><h2 className="sr-card-title sr-card-title--bar">Activity & Time</h2></div>
+                    <SrTabs small items={[['log','Activity Log'],['time','Time Tracking']]} value={actView} onChange={setActView}/>
+                    <div className="sr-filters">
+                      <select className="sr-select" value={actUserFilter} onChange={function(e){setActUserFilter(e.target.value)}}><option value="">All users</option>{userList.map(function(u){return <option key={u} value={u}>{u}</option>})}</select>
+                      {actView==='log'&&<select className="sr-select" value={actToolFilter} onChange={function(e){setActToolFilter(e.target.value)}}><option value="">All tools</option>{toolList.map(function(t){return <option key={t} value={t}>{TOOL_LABELS[t]||t}</option>})}</select>}
+                      {actLoading&&<span className="sr-meta">Loading…</span>}
                     </div>
                     {actView==='log'?(
-                      <div style={{maxHeight:520,overflowY:'auto',border:'1px solid rgba(0,0,0,.06)'}}>
-                        {filtered.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:16}}>{actLoading?'Loading activity…':'No activity recorded yet.'}</div>}
+                      <div className="sr-list sr-scroll">
+                        {filtered.length===0&&(actLoading
+                          ?<div className="sr-list-row" style={{flexDirection:'column',gap:4}}><div className="sr-meta">Loading activity…</div><SrSkeleton/></div>
+                          :<div className="sr-list-row"><div className="sr-meta">No activity recorded yet.</div></div>)}
                         {filtered.slice(0,500).map(function(e){return (
-                          <div key={e.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderBottom:'1px solid rgba(0,0,0,.05)'}}>
-                            <span style={{width:8,height:8,borderRadius:'50%',background:typeColor[e.type]||'#999',flexShrink:0}}/>
+                          <div key={e.id} className="sr-list-row">
+                            <SrDot type={e.type}/>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{...NB,fontSize:14,color:'#1a1a2e',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.detail||e.type}</div>
-                              <div style={{...NB,fontSize:11,color:'#888'}}><span style={{color:A}}>{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
+                              <div className="sr-row-title sr-ellipsis">{e.detail||e.type}</div>
+                              <div className="sr-meta"><span className="sr-person">{e.user||'—'}</span> · {evLabel(e)} · {e.type==='tool_exit'&&e.durMs?fmtDur(e.durMs)+' · ':''}{evWhen(e.ts)}</div>
                             </div>
                           </div>
                         )})}
                       </div>
                     ):(
-                      <div style={{maxHeight:520,overflowY:'auto'}}>
-                        {rows.length===0&&<div style={{...NB,fontSize:13,color:'#888',padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
+                      <div className="sr-scroll">
+                        {rows.length===0&&<div className="sr-meta" style={{padding:8}}>{actLoading?'Loading…':'No tool sessions recorded yet.'}</div>}
                         {rows.map(function(r,ri){return (
-                          <div key={ri} style={{border:'1px solid rgba(0,0,0,.08)',padding:'10px 12px',marginBottom:8}}>
-                            <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',flexWrap:'wrap',gap:6}}>
-                              <div style={{...NB,fontSize:15,color:'#1a1a2e',fontWeight:600}}><span style={{color:A}}>{r.user}</span> · {r.day}</div>
-                              <div style={{...BB,fontSize:20,color:'#1a1a2e'}}>{fmtDur(r.total)} <span style={{...NB,fontSize:11,color:'#888',letterSpacing:'1px'}}>· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
+                          <div key={ri} className="sr-time-card">
+                            <div className="sr-time-head">
+                              <div className="sr-row-title"><span className="sr-person">{r.user}</span> · {r.day}</div>
+                              <div className="sr-time-dur">{fmtDur(r.total).toUpperCase()} <span className="sr-time-sessions">· {r.sessions} session{r.sessions!==1?'s':''}</span></div>
                             </div>
-                            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
-                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} style={{...NB,fontSize:11,letterSpacing:'.5px',color:'#555',background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.18)',padding:'3px 9px'}}>{tl}: {fmtDur(r.tools[tl])}</span>})}
+                            <div className="sr-chip-row sr-chip-row--tight">
+                              {Object.keys(r.tools).sort(function(a,b){return r.tools[b]-r.tools[a]}).map(function(tl){return <span key={tl} className="sr-chip sr-chip--meta">{tl}: {fmtDur(r.tools[tl])}</span>})}
                             </div>
                           </div>
                         )})}
                       </div>
                     )}
-                    <div style={{...NB,fontSize:11,color:'#999',marginTop:12}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
+                    <div className="sr-note" style={{marginTop:14}}>Audit log is admin-only. Records logins, tool sessions (with duration), data changes across all tools, and account actions. Time totals are derived from tool session durations.</div>
                   </>)
                 })()}
-              </div>}
-              {adminTab==='editor'&&<div style={{background:'#ffffff',backdropFilter:'blur(12px)',border:'1px solid rgba(0,0,0,.08)',padding:m?16:24}}>
-                <div style={{...BB,fontSize:22,letterSpacing:2,color:'#1a1a2e',marginBottom:16}}>SITE EDITOR</div>
-                <div style={{...NB,fontSize:11,color:'#888',marginBottom:16}}>Changes save automatically. Refresh to see updates on landing page.</div>
-                {[{k:'heroTitle',l:'HERO TITLE'},{k:'heroSub',l:'HERO SUBTITLE'},{k:'contactEmail',l:'CONTACT EMAIL'},{k:'contactPhone',l:'CONTACT PHONE'},{k:'contactAddr',l:'CONTACT ADDRESS'},{k:'portalTitle',l:'PORTAL LOGIN TITLE'}].map(function(f){return (
-                  <div key={f.k} style={{marginBottom:14}}>
-                    <div style={{...NB,fontSize:10,letterSpacing:'3px',textTransform:'uppercase',color:A,marginBottom:4}}>{f.l}</div>
-                    {f.k==='heroSub'||f.k==='contactAddr'?<textarea value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} rows={2} style={{...IST,resize:'vertical'}}/>:<input value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} style={{...IST}} onFocus={fIn} onBlur={fOut}/>}
-                  </div>
+              </SrCard>}
+              {adminTab==='editor'&&<SrCard title="Site Editor">
+                <div className="sr-note" style={{marginBottom:4}}>Changes save automatically. Refresh to see updates on landing page.</div>
+                {[{k:'heroTitle',l:'Hero title'},{k:'heroSub',l:'Hero subtitle'},{k:'contactEmail',l:'Contact email'},{k:'contactPhone',l:'Contact phone'},{k:'contactAddr',l:'Contact address'},{k:'portalTitle',l:'Portal login title'}].map(function(f){return (
+                  <SrField key={f.k} label={f.l}>
+                    {f.k==='heroSub'||f.k==='contactAddr'?<textarea className="sr-textarea" value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}} rows={2}/>:<input className="sr-input" value={siteSettings[f.k]||''} onChange={function(e){var ns=Object.assign({},siteSettings);ns[f.k]=e.target.value;svSite(ns)}}/>}
+                  </SrField>
                 )})}
-              </div>}
+              </SrCard>}
             </div>
           </div>
         )}
