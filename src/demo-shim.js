@@ -31,7 +31,7 @@ function makeDemoDoc() {
   const N = points.length
   const qc = new Array(N).fill(0)
   /* site outline traced from the mock, in the same px → lon/lat mapping */
-  const outline = [[40, 150], [300, 152], [431, 194], [830, 232], [858, 700], [843, 1150], [600, 1165], [431, 1152], [300, 1125], [20, 1090], [22, 900], [25, 400]]
+  const outline = [[40, 150], [300, 152], [431, 194], [830, 232], [812, 350], [833, 450], [837, 550], [842, 650], [853, 750], [846, 850], [840, 950], [832, 1050], [843, 1160], [600, 1185], [431, 1172], [300, 1145], [62, 1110], [16, 950], [28, 850], [40, 750], [50, 650], [39, 550], [34, 450], [25, 400]]
   const boundary = outline.map(([x, y]) => [LON0 + (x - 95.5) * U, LAT0 - (y - 300) * V])
   const bits = (f) => { let s = ''; for (let i = 0; i < N; i++) s += f(i) ? '1' : '0'; return s }
   const now = Date.now()

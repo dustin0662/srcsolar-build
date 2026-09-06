@@ -10,7 +10,7 @@ import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFract
 import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
 import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_SHADOW, PANEL_STYLE, FLOAT, SEG_WRAP, seg as segStyle, tool as toolStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
-import { REF, REF_C, BG_GRAD, RULE, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
+import { REF, REF_C, BG_GRAD, RULE, RULE_SOFT, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -1705,7 +1705,7 @@ export default function PilePlan({ onExit, portalUser }) {
             {legendBody}
           </div>
         )}
-        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: REF ? RULE : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
+        <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, position: 'relative', minWidth: 0, borderBottom: REF ? RULE_SOFT : undefined, background: 'radial-gradient(110% 90% at 50% 0%, #0e1426 0%, #080b16 60%, #05060d 100%)' }}>
           {viewMode === 'sat' && hasGeo ? (
             <TTMapView
               geo={geo}
@@ -1766,7 +1766,7 @@ export default function PilePlan({ onExit, portalUser }) {
           )}
           {/* on phones this drops to a second row so it clears the satellite/streets toggle */}
           {REF ? (
-            <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[52, 64, 50.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
+            <RefSeg items={[['plan', 'Plan'], ['sat', 'Satellite', hasGeo], ['model', '3D']]} segWidths={[47.5, 64, 45.5]} value={viewMode} onChange={chooseView} style={{ right: 14, top: 12, width: 166.5, boxSizing: 'border-box' }} />
           ) : (
           <div style={{ position: 'absolute', top: mob ? 64 : 10, right: 12, zIndex: 600, ...SEG_WRAP, background: 'rgba(6,21,37,.92)', boxShadow: PANEL_SHADOW }}>
             {[{ k: 'plan', l: 'Plan' }, { k: 'sat', l: 'Satellite', need: hasGeo }, { k: 'model', l: '3D Model' }].map((v) => (
@@ -1812,8 +1812,11 @@ export default function PilePlan({ onExit, portalUser }) {
       </div>
 
       {REF ? (
-        <div style={{ position: 'relative', flexShrink: 0, height: 109, background: BG_GRAD }}>
-          <div style={{ position: 'absolute', left: '50%', top: -7, marginLeft: -29.75, width: 59.5, height: 4, borderRadius: 2, background: REF_C.orange, zIndex: 3 }} />
+        <div style={{ position: 'relative', flexShrink: 0, height: 110, background: BG_GRAD, zIndex: 700 }}>
+          {/* raised tab on the drawer rule with the small grab handle */}
+          <div style={{ position: 'absolute', left: '50%', top: -7.5, marginLeft: -31, width: 62, height: 7.5, background: '#E0701A', clipPath: 'polygon(6.5px 0,55.5px 0,62px 100%,0 100%)' }} />
+          <div style={{ position: 'absolute', left: '50%', top: -6.5, marginLeft: -30, width: 60, height: 7, background: BG_GRAD, clipPath: 'polygon(6px 0,54px 0,60px 100%,0 100%)' }} />
+          <div style={{ position: 'absolute', left: '50%', top: -3, marginLeft: -12, width: 24, height: 3, borderRadius: 2, background: '#F06B0C' }} />
           {mode === 'delete' ? (
             <div style={{ position: 'absolute', left: 11, right: 11, top: 5, height: 27.5, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Trash2 size={16} color="#f87171" />
@@ -1824,9 +1827,9 @@ export default function PilePlan({ onExit, portalUser }) {
           ) : (
             <>
               <RefStatusChip onClick={() => setSheetOpen(true)} style={{ left: 11, top: 6.5 }} />
-              <div style={{ position: 'absolute', left: 115, top: 13, width: 3, height: 15, background: REF_C.slash, transform: 'skewX(-23deg)' }} />
-              <div style={{ position: 'absolute', left: 130.5, top: 13, width: 16, height: 15, background: mode === 'pan' ? REF_C.swatch : paintColor, clipPath: 'polygon(3.5px 0,100% 0,calc(100% - 3.5px) 100%,0 100%)' }} />
-              <div onClick={() => setSheetOpen(true)} style={{ position: 'absolute', left: 156, right: 60, top: 12.5, fontFamily: NBF, fontWeight: 700, fontSize: 13.5, letterSpacing: 1, textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'pointer' }}>{mode === 'pan' ? 'All install phases' : paintLabel}</div>
+              <div style={{ position: 'absolute', left: 115.5, top: 12.5, width: 1.5, height: 16, background: REF_C.slash, transform: 'skewX(-23deg)' }} />
+              <div style={{ position: 'absolute', left: 130.5, top: 12.5, width: 17, height: 15, background: mode === 'pan' ? REF_C.swatch : paintColor, clipPath: 'polygon(7.5px 0,100% 0,calc(100% - 7.5px) 100%,0 100%)' }} />
+              <div onClick={() => setSheetOpen(true)} style={{ position: 'absolute', left: 156, right: 60, top: 12.5, fontFamily: NBF, fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase', color: '#EEEFF4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2, cursor: 'pointer' }}>{mode === 'pan' ? 'All install phases' : paintLabel}</div>
               <RefUndo onClick={undo} disabled={!canUndo} style={{ right: 12.5, top: 4.5 }} />
             </>
           )}

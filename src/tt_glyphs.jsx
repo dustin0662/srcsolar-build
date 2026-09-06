@@ -310,42 +310,75 @@ export function paintRefStack(ctx, items, k, dir, m, pitch) {
   const rot = Math.round(refRotation(Math.atan2(uy, ux)) * 180 / Math.PI);
   const rotRad = rot * Math.PI / 180;
   const lw = Math.max(0.6, 1.2 * k);
+  const SZ = (c) => REF_SPRITES[c] ? [REF_SPRITES[c].w, REF_SPRITES[c].h] : [14, 27];
+  const [pw, ph] = SZ('s1'), [cw, chh] = SZ('s2'), [tw, th] = SZ('s3'), [mw, mh] = SZ('s4');
   const disc = (x, y, r, col) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); };
+  const shadowOn = () => { ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 3 * dpr * k; ctx.shadowOffsetX = 1.5 * dpr * k; ctx.shadowOffsetY = 2 * dpr * k; };
+  const shadowOff = () => { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; };
   const blit = (code, x, y, w, h) => {
     const c = refRaster(code, w * dpr, h * dpr, rot); if (!c) return false;
-    const cw = c.width / dpr, ch = c.height / dpr; ctx.drawImage(c, x - cw / 2, y - ch / 2, cw, ch); return true;
+    const cwv = c.width / dpr, chv = c.height / dpr; ctx.drawImage(c, x - cwv / 2, y - chv / 2, cwv, chv); return true;
+  };
+  const tube = refSprite('s3'), panel = refSprite('s4');
+  /* tube from (x0,y0) to (x1,y1): ends unstretched (3-slice) so the shading reads like the mock */
+  const drawTube = (x0, y0, x1, y1) => {
+    const L = Math.hypot(x1 - x0, y1 - y0); if (L < 1.5 * k) return;
+    const w = tw * k;
+    if (!(tube && tube.ready)) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineWidth = 8 * k; ctx.strokeStyle = GLYPH.s3.color; ctx.lineCap = 'round'; ctx.stroke(); return; }
+    ctx.save(); ctx.translate(x0, y0); ctx.rotate(Math.atan2(y1 - y0, x1 - x0) - Math.PI / 2);
+    const img = tube.img, sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+    const capSrc = Math.round(sh * 6 / th), capDst = 6 * k;
+    if (L > 2 * capDst + k) {
+      ctx.drawImage(img, 0, 0, sw, capSrc, -w / 2, 0, w, capDst);
+      ctx.drawImage(img, 0, capSrc, sw, sh - 2 * capSrc, -w / 2, capDst, w, L - 2 * capDst);
+      ctx.drawImage(img, 0, sh - capSrc, sw, capSrc, -w / 2, L - capDst, w, capDst);
+    } else ctx.drawImage(img, -w / 2, 0, w, L);
+    ctx.restore();
   };
   const alpha = (it) => { ctx.globalAlpha = it.dim ? 0.2 : 1; };
   ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   const order = items.filter((it) => !it.del).sort((a, b) => a.y - b.y);
+  /* chain lookups for module runs */
+  const byPos = new Map(); for (const it of order) byPos.set(it.x + ',' + it.y, it);
+  const nextOf = (it) => (it.nx != null ? byPos.get(it.nx + ',' + it.ny) || null : null);
+  const hasPrev = new Set();
+  for (const it of order) if (it.s >= 4) { const n = nextOf(it); if (n && n.s >= 4) hasPrev.add(n); }
+  const runs = [];
+  for (const it of order) if (it.s >= 4 && !hasPrev.has(it)) {
+    const pts = [it]; let cur = it;
+    for (let guard = 0; guard < 4096; guard++) { const n = nextOf(cur); if (!n || n.s < 4) break; pts.push(n); cur = n; }
+    runs.push(pts);
+  }
   /* 1. no progress */
   for (const it of order) if (it.s < 1) { alpha(it); disc(it.x, it.y, 2.5 * k, 'rgba(255,255,255,.9)'); ctx.strokeStyle = INK; ctx.lineWidth = lw; ctx.stroke(); }
+  shadowOn();
   /* 2. piles (a cap carries its own post) */
-  const SZ = (c) => REF_SPRITES[c] ? [REF_SPRITES[c].w, REF_SPRITES[c].h] : [14, 27];
-  const [pw, ph] = SZ('s1'), [cw, chh] = SZ('s2'), [tw] = SZ('s3'), [mw] = SZ('s4');
   for (const it of order) if (it.s === 1) { alpha(it); if (!blit('s1', it.x, it.y, pw * k, ph * k)) disc(it.x, it.y, 3 * k, GLYPH.s1.color); }
-  /* 3. post caps (hidden under panels once modules are on) */
-  for (const it of order) if (it.s === 2 || it.s === 3) { alpha(it); if (!blit('s2', it.x, it.y, cw * k, chh * k)) disc(it.x, it.y, 3 * k, GLYPH.s2.color); }
-  /* 4. torque tube: from this cap's post to the next cube's top */
-  const tube = refSprite('s3');
-  for (const it of order) if (it.s >= 3) {
+  /* 3. torque tubes — under the caps so each cube overlaps the tube end */
+  for (const it of order) if (it.s === 3) {
     alpha(it);
     const jx = it.nx != null ? it.nx : it.x + ux * P, jy = it.ny != null ? it.ny : it.y + uy * P;
     const dx = jx - it.x, dy = jy - it.y, L0 = Math.hypot(dx, dy) || 1; const ex = dx / L0, ey = dy / L0;
-    const x0 = it.x + ex * 3 * k, y0 = it.y + ey * 3 * k, x1 = jx - ex * 13 * k, y1 = jy - ey * 13 * k;
-    const L = Math.hypot(x1 - x0, y1 - y0); if (L < 2 * k) continue;
-    if (tube && tube.ready) { ctx.save(); ctx.translate(x0, y0); ctx.rotate(Math.atan2(y1 - y0, x1 - x0) - Math.PI / 2); ctx.drawImage(tube.img, -tw * k / 2, 0, tw * k, L); ctx.restore(); }
-    else { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineWidth = 8 * k; ctx.strokeStyle = GLYPH.s3.color; ctx.stroke(); }
+    drawTube(it.x + ex * 3 * k, it.y + ey * 3 * k, jx - ex * 9 * k, jy - ey * 9 * k);
   }
-  /* 5. module panels, in front, leaving a purple sliver before the next one */
-  const panel = refSprite('s4');
-  for (const it of order) if (it.s >= 4) {
-    alpha(it);
-    const p = it.nx != null ? Math.hypot(it.nx - it.x, it.ny - it.y) : P;
-    const h = Math.max(8 * k, p - 6 * k), w = mw * k;
-    if (panel && panel.ready) { ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(rotRad); ctx.drawImage(panel.img, -w / 2, -2 * k, w, h); ctx.restore(); }
-    else disc(it.x, it.y, 3 * k, GLYPH.s4.color);
+  for (const pts of runs) {
+    const A = pts[0], Z = pts[pts.length - 1]; alpha(A);
+    let ex = ux, ey = uy; if (pts.length > 1) { const dx = Z.x - A.x, dy = Z.y - A.y, L0 = Math.hypot(dx, dy) || 1; ex = dx / L0; ey = dy / L0; }
+    drawTube(A.x - ex * 11 * k, A.y - ey * 11 * k, Z.x + ex * 17 * k, Z.y + ey * 17 * k);
   }
+  /* 4. post caps */
+  for (const it of order) if (it.s === 2 || it.s === 3) { alpha(it); if (!blit('s2', it.x, it.y, cw * k, chh * k)) disc(it.x, it.y, 3 * k, GLYPH.s2.color); }
+  /* 5. module panels, in front, tiled down each run at the mock's own 47 px pitch */
+  for (const pts of runs) {
+    const A = pts[0], Z = pts[pts.length - 1]; alpha(A);
+    let ex = ux, ey = uy; if (pts.length > 1) { const dx = Z.x - A.x, dy = Z.y - A.y, L0 = Math.hypot(dx, dy) || 1; ex = dx / L0; ey = dy / L0; }
+    const Lr = Math.hypot(Z.x - A.x, Z.y - A.y);
+    if (!(panel && panel.ready)) { for (const it of pts) disc(it.x, it.y, 3 * k, GLYPH.s4.color); continue; }
+    ctx.save(); ctx.translate(A.x, A.y); ctx.rotate(Math.atan2(ey, ex) - Math.PI / 2);
+    for (let t = 9 * k, first = true; first || t + 39 * k <= Lr + 27 * k; t += 47 * k, first = false) ctx.drawImage(panel.img, -mw * k / 2, t - k, mw * k, mh * k);
+    ctx.restore();
+  }
+  shadowOff();
   /* 6. deletion queue, selection ring, flags */
   for (const it of items) {
     ctx.globalAlpha = 1;
@@ -471,34 +504,51 @@ function RefStackSvg({ points, stage, qc, rowNext, rowDir, pad, isDim, marked, u
   const PAD = pad || 0; const S = REF_SPRITES;
   const dir = rowDir || [0, 1]; const ux = dir[0], uy = dir[1];
   const rot = +(refRotation(Math.atan2(uy, ux)) * 180 / Math.PI).toFixed(1);
+  const N = points.length;
   const ds = [];
-  for (let i = 0; i < points.length; i++) { const j = rowNext ? rowNext[i] : -1; if (j >= 0) ds.push(Math.hypot(points[j][0] - points[i][0], points[j][1] - points[i][1])); }
+  for (let i = 0; i < N; i++) { const j = rowNext ? rowNext[i] : -1; if (j >= 0) ds.push(Math.hypot(points[j][0] - points[i][0], points[j][1] - points[i][1])); }
   ds.sort((a, b) => a - b);
   const P = ds.length ? ds[ds.length >> 1] : 36 * (unit || 5) / 9;
   const k = clampK(P / 36);
   const dots = [], piles = [], caps = [], tubes = [], panels = [], flags = [];
   const noHit = { pointerEvents: 'none' };
-  for (let i = 0; i < points.length; i++) {
-    const x = points[i][0] + PAD, y = points[i][1] + PAD;
-    const s = stage[i] || 0, q = qc ? (qc[i] || 0) : 0;
-    const del = marked && marked.has(i); const dim = !del && isDim && isDim(i);
-    const op = dim ? 0.16 : 1;
+  const px = (i) => points[i][0] + PAD, py = (i) => points[i][1] + PAD;
+  const st = (i) => (marked && marked.has(i)) ? -1 : (stage[i] || 0);
+  const tubeEl = (key, x0, y0, x1, y1, op) => {
+    const L = Math.hypot(x1 - x0, y1 - y0); if (L < 1.5 * k) return null;
+    const deg = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI - 90;
+    return <image key={key} href={S.s3.uri} x={x0 - S.s3.w * k / 2} y={y0} width={S.s3.w * k} height={L} preserveAspectRatio="none" opacity={op} transform={`rotate(${deg.toFixed(1)} ${x0} ${y0})`} style={noHit} />;
+  };
+  const hasPrev = new Set();
+  for (let i = 0; i < N; i++) if (st(i) >= 4) { const j = rowNext ? rowNext[i] : -1; if (j >= 0 && st(j) >= 4) hasPrev.add(j); }
+  for (let i = 0; i < N; i++) {
+    const x = px(i), y = py(i); const s = st(i), q = qc ? (qc[i] || 0) : 0;
+    const del = s < 0; const dim = !del && isDim && isDim(i); const op = dim ? 0.16 : 1;
     const tr = rot ? `rotate(${rot} ${x} ${y})` : undefined;
     if (del) { flags.push(<use key={'d' + i} data-i={i} href="#tt-g-del" x={x - 9 * k} y={y - 9 * k} width={18 * k} height={18 * k} />); continue; }
     if (s < 1) dots.push(<use key={'p' + i} data-i={i} href="#tt-g-s0" x={x - 2.75 * k} y={y - 2.75 * k} width={5.5 * k} height={5.5 * k} opacity={op} />);
     else if (s === 1) piles.push(<image key={'p' + i} data-i={i} href={S.s1.uri} x={x - S.s1.w * k / 2} y={y - S.s1.h * k / 2} width={S.s1.w * k} height={S.s1.h * k} opacity={op} transform={tr} />);
     else if (s === 2 || s === 3) caps.push(<image key={'p' + i} data-i={i} href={S.s2.uri} x={x - S.s2.w * k / 2} y={y - S.s2.h * k / 2} width={S.s2.w * k} height={S.s2.h * k} opacity={op} transform={tr} />);
     const j = rowNext ? rowNext[i] : -1;
-    const jx = j >= 0 ? points[j][0] + PAD : x + ux * P, jy = j >= 0 ? points[j][1] + PAD : y + uy * P;
-    if (s >= 3) {
+    if (s === 3) {
+      const jx = j >= 0 ? px(j) : x + ux * P, jy = j >= 0 ? py(j) : y + uy * P;
       const dx = jx - x, dy = jy - y, L0 = Math.hypot(dx, dy) || 1; const ex = dx / L0, ey = dy / L0;
-      const x0 = x + ex * 3 * k, y0 = y + ey * 3 * k, x1 = jx - ex * 13 * k, y1 = jy - ey * 13 * k;
-      const L = Math.hypot(x1 - x0, y1 - y0);
-      if (L >= 2 * k) { const deg = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI - 90; tubes.push(<image key={'t' + i} href={S.s3.uri} x={x0 - S.s3.w * k / 2} y={y0} width={S.s3.w * k} height={L} preserveAspectRatio="none" opacity={op} transform={`rotate(${deg.toFixed(1)} ${x0} ${y0})`} style={noHit} />); }
+      const el = tubeEl('t' + i, x + ex * 3 * k, y + ey * 3 * k, jx - ex * 9 * k, jy - ey * 9 * k, op); if (el) tubes.push(el);
     }
-    if (s >= 4) {
-      const p = j >= 0 ? Math.hypot(jx - x, jy - y) : P; const h = Math.max(8 * k, p - 6 * k);
-      panels.push(<image key={'m' + i} data-i={i} href={S.s4.uri} x={x - S.s4.w * k / 2} y={y - 2 * k} width={S.s4.w * k} height={h} preserveAspectRatio="none" opacity={op} transform={tr} />);
+    if (s >= 4 && !hasPrev.has(i)) {
+      /* a run of modules: one tube underneath, panels tiled at the mock pitch */
+      const run = [i]; let cur = i;
+      for (let g = 0; g < 4096; g++) { const n = rowNext ? rowNext[cur] : -1; if (n < 0 || st(n) < 4) break; run.push(n); cur = n; }
+      const A = run[0], Z = run[run.length - 1];
+      let ex = ux, ey = uy; if (run.length > 1) { const dx = px(Z) - px(A), dy = py(Z) - py(A), L0 = Math.hypot(dx, dy) || 1; ex = dx / L0; ey = dy / L0; }
+      const Lr = Math.hypot(px(Z) - px(A), py(Z) - py(A));
+      const el = tubeEl('tr' + i, px(A) - ex * 11 * k, py(A) - ey * 11 * k, px(Z) + ex * 17 * k, py(Z) + ey * 17 * k, op); if (el) tubes.push(el);
+      const deg = Math.atan2(ey, ex) * 180 / Math.PI - 90; const ax = px(A), ay = py(A);
+      let idx = 0;
+      for (let t = 9 * k, first = true; first || t + 39 * k <= Lr + 27 * k; t += 47 * k, first = false, idx++) {
+        const owner = run[Math.min(run.length - 1, Math.round(t / Math.max(P, 1e-6)))];
+        panels.push(<image key={'m' + i + '_' + idx} data-i={owner} href={S.s4.uri} x={ax - S.s4.w * k / 2} y={ay + t - k} width={S.s4.w * k} height={S.s4.h * k} opacity={op} transform={`rotate(${deg.toFixed(1)} ${ax} ${ay})`} />);
+      }
     }
     if (q === 1 || q === 2) flags.push(
       <g key={'f' + i} opacity={dim ? 0.4 : 1}>
@@ -508,5 +558,5 @@ function RefStackSvg({ points, stage, qc, rowNext, rowDir, pad, isDim, marked, u
       </g>
     );
   }
-  return <>{dots}{piles}{caps}{tubes}{panels}{flags}</>;
+  return <>{dots}{piles}{tubes}{caps}{panels}{flags}</>;
 }

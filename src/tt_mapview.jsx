@@ -182,19 +182,46 @@ export default function TTMapView({
       const cx = hull.reduce((a, p) => a + p[0], 0) / hull.length, cy = hull.reduce((a, p) => a + p[1], 0) / hull.length;
       ring = hull.map(([x, y]) => { const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1; return [y + dy / d * 1.2 * sp, (x + dx / d * 1.2 * sp) / cs]; });
     }
+    /* faint graticule like the mock's imagery grid: one div per 88 px cell, in the tile pane so it darkens with the tiles */
+    const Grat = L.GridLayer.extend({ createTile() { const d = document.createElement('div'); d.style.boxSizing = 'border-box'; d.style.borderLeft = '1px solid rgba(255,255,255,.09)'; d.style.borderTop = '1px solid rgba(255,255,255,.09)'; return d; } });
+    const grat = new Grat({ tileSize: 88, pane: 'tilePane', zIndex: 5, updateWhenZooming: false, keepBuffer: 1 }).addTo(map);
     const opts = { pane: 'tt-site', renderer: siteRendererRef.current, interactive: false };
     const world = [[-89.9, -179.9], [89.9, -179.9], [89.9, 179.9], [-89.9, 179.9]];
-    const cy = ring.reduce((a, p) => a + p[0], 0) / ring.length, cx = ring.reduce((a, p) => a + p[1], 0) / ring.length;
-    const scaled = (f) => ring.map(([la, lo]) => [cy + (la - cy) * f, cx + (lo - cx) * f]);
-    const layers = [
+    const base = [
       L.polygon([world, ring], { ...opts, stroke: false, fillColor: '#020A14', fillOpacity: 0.45 }),
-      L.polygon(scaled(0.955), { ...opts, color: '#F97316', weight: 1, opacity: 0.55, dashArray: '5 6', fill: false }),
-      L.polygon(scaled(1.045), { ...opts, color: '#F97316', weight: 1, opacity: 0.55, dashArray: '5 6', fill: false }),
-      L.polygon(scaled(1.11), { ...opts, color: '#F97316', weight: 1, opacity: 0.35, dashArray: '4 7', fill: false }),
-      L.polygon(ring, { ...opts, color: '#F97316', weight: 1.5, opacity: 0.95, fill: false }),
+      L.polygon(ring, { ...opts, color: '#F97316', weight: 6, opacity: 0.18, fill: false }),
+      L.polygon(ring, { ...opts, color: '#F97316', weight: 2, opacity: 0.95, fill: false }),
     ];
-    layers.forEach((l) => l.addTo(map)); siteRef.current = layers;
-    return () => { layers.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); };
+    base.forEach((l) => l.addTo(map));
+    /* dashed contour echoes at fixed pixel offsets from the outline, with a
+       gentle wobble so they read as topo lines; rebuilt on zoom */
+    let echoes = [];
+    const rebuildEchoes = () => {
+      echoes.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); echoes = [];
+      const pts = ring.map((ll) => map.latLngToLayerPoint(L.latLng(ll[0], ll[1])));
+      const n = pts.length; if (n < 3) return;
+      const dense = [];
+      for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; const L2 = a.distanceTo(b); const steps = Math.max(1, Math.round(L2 / 4)); for (let t = 0; t < steps; t++) dense.push([a.x + (b.x - a.x) * t / steps, a.y + (b.y - a.y) * t / steps]); }
+      let cx = 0, cy = 0; dense.forEach((p) => { cx += p[0]; cy += p[1]; }); cx /= dense.length; cy /= dense.length;
+      const offsets = [[-26, 0.34, 0.4], [-17, 0.4, 1.3], [-8, 0.44, 2.1], [8, 0.48, 0.7], [17, 0.46, 1.9], [27, 0.42, 2.6], [39, 0.36, 0.3], [53, 0.3, 1.1]];
+      offsets.forEach(([off, op, seed], ri) => {
+        const out = []; const m = dense.length;
+        for (let i = 0; i < m; i++) {
+          const p = dense[i], pa = dense[(i - 1 + m) % m], pb = dense[(i + 1) % m];
+          let nx = -(pb[1] - pa[1]), ny = pb[0] - pa[0]; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          /* outward normal: point it away from the centroid */
+          if ((p[0] - cx) * nx + (p[1] - cy) * ny < 0) { nx = -nx; ny = -ny; }
+          const w = 3 * (Math.sin(i * 0.07 + seed) * 0.6 + Math.sin(i * 0.023 + seed * 2.3) * 0.4);
+          const d = off + w;
+          out.push(map.layerPointToLatLng(L.point(p[0] + nx * d, p[1] + ny * d)));
+        }
+        echoes.push(L.polyline(out.concat([out[0]]), { ...opts, color: '#F97316', weight: 0.75, opacity: op, dashArray: '3 2.5' }).addTo(map));
+      });
+    };
+    rebuildEchoes();
+    map.on('zoomend', rebuildEchoes);
+    siteRef.current = base.concat([grat]);
+    return () => { map.off('zoomend', rebuildEchoes); grat.remove(); base.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); echoes.forEach((l) => { try { l.remove(); } catch (e) { /* ignore */ } }); };
   }, [geo, ready, rowNext]);
 
   useEffect(() => {
@@ -362,7 +389,7 @@ export default function TTMapView({
       {REF ? (
         <>
           <RefZoom onIn={() => mapRef.current && mapRef.current.zoomIn()} onOut={() => mapRef.current && mapRef.current.zoomOut()} style={{ left: 14, top: 12 }} />
-          <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 68]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
+          <RefSeg items={[['satellite', 'Satellite'], ['streets', 'Streets']]} segWidths={[70, 64]} value={layerMode} onChange={onLayerMode} style={{ left: 50.5, top: 12, width: 143, boxSizing: 'border-box' }} />
           <RefCompass style={{ right: 10, top: 55.5 }} />
         </>
       ) : (

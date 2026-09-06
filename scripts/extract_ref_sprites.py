@@ -29,6 +29,8 @@ SPEC = {
     's2': dict(box=(300, 611, 317, 636), ring='all',  scale=4, hue=('blue',),        t=(1.0, 2.6)),
     's3': dict(box=(474, 627, 485, 647), ring='sides', scale=4, hue=('purple',),     t=(1.0, 2.6)),
     's4': dict(box=(615, 448, 635, 486), ring='sides', scale=4, hue=('teal',),       t=(1.0, 2.6)),
+    'ltube': dict(box=(29, 1134, 62, 1157), ring='all', scale=4, hue=('purple',), t=(1.0, 2.6)),
+    'lmod': dict(box=(157, 1132, 189, 1157), ring='all', scale=4, hue=('teal',), t=(1.0, 2.6)),
     'logo': dict(box=(88, 44, 181, 129), ring='all',  scale=2, hue=('yellow', 'blue'), t=(1.2, 3.0)),
     'compass': dict(box=(766, 254, 844, 332), ring=None, scale=2, hue=(), t=None),
 }
@@ -99,7 +101,7 @@ def upscale(bgr, a, f):
     prem = bgr * a[..., None]
     big = cv2.resize(prem, None, fx=f, fy=f, interpolation=cv2.INTER_LANCZOS4)
     A = cv2.resize(a, None, fx=f, fy=f, interpolation=cv2.INTER_LANCZOS4)
-    A = np.clip(cv2.GaussianBlur(A, (0, 0), 0.8), 0, 1)
+    A = np.clip(cv2.GaussianBlur(A, (0, 0), 0.5), 0, 1)
     rgb = np.clip(big / np.maximum(A[..., None], 1e-3), 0, 255)
     blur = cv2.GaussianBlur(rgb, (0, 0), 1.0)
     rgb = np.clip(rgb + 0.35 * (rgb - blur), 0, 255)
@@ -135,7 +137,7 @@ for code, sp in SPEC.items():
         bgr = decontaminate(crop, a, bg)
     big, A = upscale(bgr, a, sp['scale'])
     # trim to the alpha bbox (keep the point sprites' full native box so sizes stay honest)
-    b64, raw, rgba = to_png_b64(big, A, 128 if code in ('s1', 's2', 's3', 's4') else 96)
+    b64, raw, rgba = to_png_b64(big, A, 128 if code in ('s1', 's2', 's3', 's4', 'ltube', 'lmod') else 96)
     h, w = crop.shape[:2]
     results[code] = dict(uri='data:image/png;base64,' + b64, w=w, h=h, scale=sp['scale'], bytes=len(raw))
     # contact sheet cells: orig x8 | keyed on checker | on grass | on dark
