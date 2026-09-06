@@ -16,6 +16,8 @@ function b64ToBytes(b64) { const bin = atob(b64 || ''); const n = bin.length; co
 
 const DEFAULT_OV = { on: true, locked: true, x: 0, y: 0, scale: 1, opacity: 0.9 };
 
+import { glyphHref, glyphCode } from './tt_glyphs.jsx';
+
 export default function TTModelView({
   projectId, points, planW, planH, stage, qc, sections, selSection,
   overlay3d, onSaveOverlay, mode, canAlign, onModelBuffer,
@@ -170,8 +172,9 @@ export default function TTModelView({
             <g transform={`translate(${ov.x} ${ov.y}) scale(${ov.scale})`}>
               {points.map((pt, i) => {
                 const dim = selSection != null && sections && sections[i] !== selSection;
-                if (marked && marked.has(i)) return <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={5.4} fill="#dc2626" stroke="#fff" strokeWidth={1.2} />;
-                return <circle key={i} cx={pt[0] + PAD} cy={pt[1] + PAD} r={4.3} fill={dispColor(stage[i] || 0, qc[i] || 0)} stroke="rgba(2,3,10,.6)" strokeWidth={0.6} opacity={dim ? 0.16 : 1} />;
+                const code = (marked && marked.has(i)) ? 'del' : glyphCode(stage[i] || 0, qc[i] || 0);
+                const sz = code === 'q1' || code === 'q2' ? 13 : 10;
+                return <use key={i} href={glyphHref(code)} x={pt[0] + PAD - sz / 2} y={pt[1] + PAD - sz / 2} width={sz} height={sz} opacity={dim && code !== 'del' ? 0.16 : 1} />;
               })}
               {selHull && <polygon points={selHull} fill="rgba(249,115,22,.10)" stroke={ORANGE} strokeWidth={2} strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(249,115,22,.7))' }} />}
               {marq && (() => { const r = normRect(marq.a, marq.b); return <rect x={r.x0} y={r.y0} width={r.x1 - r.x0} height={r.y1 - r.y0} fill="rgba(249,115,22,.14)" stroke={ORANGE} strokeWidth={1.6} strokeDasharray="6 4" />; })()}

@@ -14,6 +14,29 @@ const OSM_ATTR = '&copy; OpenStreetMap contributors';
 const ORANGE = '#F97316';
 
 /*  Fill colors mirror the SVG dot palette in pile_plan.jsx / pile_data.js  */
+import { drawGlyph, glyphCode, radiusForZoom, glyphScale } from './tt_glyphs.jsx';
+
+/* Canvas renderer that draws the install-state glyphs (pile, post cap,
+   torque tube, module, flags) instead of plain circles. Radius follows the
+   zoom level so the icons grow as you get closer, and hit-testing keeps
+   using CircleMarker's own radius. */
+const GlyphRenderer = L.Canvas.extend({
+  _updateGlyph(layer) {
+    if (!this._drawing || layer._empty()) return;
+    const p = layer._point; const o = layer.options;
+    drawGlyph(this._ctx, p.x, p.y, layer._radius, o.glyph || 's0', { dimmed: o.dimmed, hot: o.hot });
+  },
+});
+const GlyphMarker = L.CircleMarker.extend({
+  _project() {
+    const z = this._map ? this._map.getZoom() : 18;
+    this._radius = radiusForZoom(z) * glyphScale(this.options.glyph, this.options.hot);
+    this.options.radius = this._radius;
+    L.CircleMarker.prototype._project.call(this);
+  },
+  _updatePath() { this._renderer._updateGlyph(this); },
+});
+
 function colorFor(stage, qc) {
   if (qc === 2) return '#ea580c';
   if (qc === 1) return '#eab308';
@@ -46,7 +69,7 @@ export default function TTMapView({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, preferCanvas: true });
+    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true, renderer: new GlyphRenderer({ padding: 0.5 }) });
     mapRef.current = map;
     baseLayerRef.current = L.tileLayer(
       layerMode === 'streets' ? OSM_STREETS : ESRI_SAT,
@@ -74,7 +97,7 @@ export default function TTMapView({
     geo.lonLat.forEach(([lon, lat], i) => {
       const ll = L.latLng(lat, lon);
       bounds.extend(ll);
-      const m = L.circleMarker(ll, { radius: 5, color: 'rgba(2,3,10,.6)', weight: 0.8, fillColor: colorFor(stageRef.current[i], qcRef.current[i]), fillOpacity: 0.95 });
+      const m = new GlyphMarker(ll, { radius: 5, glyph: glyphCode(stageRef.current[i], qcRef.current[i]), interactive: true });
       m.on('click', () => { if (modeRef.current === 'pan' && cb.current.onPickPoint) cb.current.onPickPoint(i); });
       m.addTo(map);
       markersRef.current.push(m);
@@ -95,14 +118,9 @@ export default function TTMapView({
     markersRef.current.forEach((m, i) => {
       const dim = selSection != null && sections && sections[i] !== selSection;
       const del = marked && marked.has(i);   // queued for deletion
-      m.setStyle({
-        fillColor: del ? '#dc2626' : colorFor(stage[i], qc[i]),
-        radius: del ? 7 : active === i ? 8 : 5,
-        color: del ? '#fff' : active === i ? ORANGE : 'rgba(2,3,10,.6)',
-        weight: del ? 2 : active === i ? 2 : 0.8,
-        fillOpacity: dim && !del ? 0.18 : 0.95,
-        opacity: dim && !del ? 0.18 : 1,
-      });
+      m.setStyle({ glyph: del ? 'del' : glyphCode(stage[i], qc[i]), hot: active === i, dimmed: !!(dim && !del) });
+      /* radius depends on glyph + hot, so re-project for hit-testing */
+      if (m._map) m._project();
     });
   }, [stage, qc, active, selSection, sections, marked]);
 

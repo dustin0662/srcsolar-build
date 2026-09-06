@@ -23,22 +23,26 @@ const ICONS = {
    mirroring the concept art: offices top-left, laydown yard top-right,
    blueprints right, gate and loads at the bottom. Two columns, no overlaps
    down to 340px-wide phones. */
+/* Percent positions measured off the concept image (941×1198): each callout
+   sits on the part of the site it belongs to — offices top-left, laydown
+   yard top-right, blueprints, safety gate, loads at the road. Right-column
+   cards anchor to their right edge so they never spill off screen. */
 const POS = {
-  hr:             { x: 2,  y: 3 },
-  equipment:      { x: 51, y: 0 },
-  precon:         { x: 51, y: 13 },
-  field:          { x: 2,  y: 16 },
-  compliance:     { x: 51, y: 26 },
-  stakeholders:   { x: 2,  y: 29 },
-  hse:            { x: 51, y: 39 },
-  timekeeping:    { x: 2,  y: 42 },
-  loads:          { x: 51, y: 52 },
-  crm:            { x: 2,  y: 55 },
-  projecttracker: { x: 51, y: 65 },
-  admin:          { x: 2,  y: 68 },
+  hr:             { left: 3.8,  y: 3.8 },
+  equipment:      { right: 25,  y: 1.9 },
+  precon:         { right: 2.2, y: 12 },
+  field:          { left: 3,    y: 21.1 },
+  compliance:     { right: 9.2, y: 27.9 },
+  hse:            { right: 1.2, y: 40 },
+  stakeholders:   { left: 2.8,  y: 45.3 },
+  loads:          { right: 2.2, y: 57 },
+  timekeeping:    { left: 14,   y: 58.7 },
+  crm:            { left: 2.8,  y: 69 },
+  projecttracker: { right: 2.2, y: 76.6 },
+  admin:          { left: 38,   y: 87 },
 }
-/* art box is taller than the picture (cover-cropped) so the callouts breathe */
-const ART_ASPECT = '1 / 1.7'
+/* the picture is shown whole so the percentages above land where they should */
+const ART_ASPECT = '941 / 1198'
 
 function fmtWhen(ts) {
   if (!ts) return '—'
@@ -84,19 +88,25 @@ function Stat({ icon: Icon, value, label, dot, note }) {
   )
 }
 
-function Callout({ x, y, icon: Icon, label, desc, onClick, accent }) {
+/* Compact callout like the concept art: icon, name, one-line hint. The tap
+   target is the whole outer box — the card, its leader line and the dot,
+   plus a margin — so the "section" is the button, not just the label. */
+function Callout({ left, right, y, icon: Icon, label, desc, onClick, accent }) {
   const col = accent || A
+  const anchor = right != null ? { right: `calc(${right}% - 8px)` } : { left: `calc(${left}% - 8px)` }
   return (
-    <div onClick={onClick} role="button" style={{ position: 'absolute', left: x + '%', top: y + '%', width: '47%', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(4,5,12,.94)', border: '1px solid ' + col, borderRadius: 8, padding: '6px 8px', minHeight: 50, boxShadow: '0 8px 20px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.7)' }}>
-        <div style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, flexShrink: 0 }}><Icon size={22} strokeWidth={2.1} /></div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ ...NB, fontWeight: 700, fontSize: 11.5, letterSpacing: .4, textTransform: 'uppercase', color: CREAM, lineHeight: 1.1 }}>{label}</div>
-          <div style={{ ...NB, fontSize: 10, color: '#bab5ad', lineHeight: 1.2, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</div>
+    <div onClick={onClick} role="button" aria-label={label} style={{ position: 'absolute', ...anchor, top: `calc(${y}% - 8px)`, width: 'calc(40% + 16px)', padding: '8px 8px 30px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(3,4,10,.92)', border: '1px solid ' + col, borderRadius: 6, padding: '5px 7px', minHeight: 40, boxShadow: '0 6px 16px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.7)' }}>
+          <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', color: col, flexShrink: 0 }}><Icon size={19} strokeWidth={2.1} /></div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...NB, fontWeight: 700, fontSize: 10, letterSpacing: .2, textTransform: 'uppercase', color: CREAM, lineHeight: 1.05, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{label}</div>
+            <div style={{ ...NB, fontSize: 8.5, color: '#bab5ad', lineHeight: 1.15, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</div>
+          </div>
         </div>
+        <div style={{ position: 'absolute', left: '50%', top: '100%', width: 2, height: 13, background: col, marginLeft: -1 }} />
+        <div style={{ position: 'absolute', left: '50%', top: 'calc(100% + 11px)', width: 9, height: 9, borderRadius: 5, marginLeft: -4.5, background: '#fff4e8', boxShadow: `0 0 0 2.5px ${col}, 0 0 12px 4px ${col}` }} />
       </div>
-      <div style={{ position: 'absolute', left: '50%', top: '100%', width: 2, height: 14, background: col, marginLeft: -1 }} />
-      <div style={{ position: 'absolute', left: '50%', top: 'calc(100% + 11px)', width: 10, height: 10, borderRadius: 5, marginLeft: -5, background: '#fff4e8', boxShadow: `0 0 0 3px ${col}, 0 0 14px 4px ${col}` }} />
     </div>
   )
 }

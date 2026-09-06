@@ -8,6 +8,7 @@ import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
 import { Paintbrush, SquareDashed, Move, Trash2, Undo2, MapPin, ChevronRight, TriangleAlert, OctagonAlert, FileText, Box, History, Cylinder, Cable, LayoutGrid, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
+import { GlyphDefs, Glyph, glyphHref, glyphCode } from './tt_glyphs.jsx';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -1307,8 +1308,9 @@ export default function PilePlan({ onExit, portalUser }) {
   const dotEls = useMemo(() => points.map((d, i) => {
     const dim = selSection != null && sections && sections[i] !== selSection;
     const del = delSel.has(i);
-    if (del) return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={5.2} fill="#dc2626" stroke="#fff" strokeWidth={1.2} opacity={1} />;
-    return <circle key={i} data-i={i} cx={d[0] + PAD} cy={d[1] + PAD} r={4.1} fill={dispColor(stage[i], qc[i])} stroke={stage[i] === 0 && !qc[i] ? 'rgba(180,185,200,.45)' : 'rgba(2,3,10,.55)'} strokeWidth={0.45} opacity={dim ? 0.16 : 1} />;
+    const code = del ? 'del' : glyphCode(stage[i], qc[i]);
+    const sz = code === 'q1' || code === 'q2' ? 13 : 10;
+    return <use key={i} data-i={i} href={glyphHref(code)} x={d[0] + PAD - sz / 2} y={d[1] + PAD - sz / 2} width={sz} height={sz} opacity={dim && !del ? 0.16 : 1} />;
   }), [points, stage, qc, selSection, sections, delSel]);
 
   /* outline around the selected block, so you can see which one you picked */
@@ -1431,7 +1433,7 @@ export default function PilePlan({ onExit, portalUser }) {
           {STAGES.slice(1).map((s, i) => { const tok = 's' + (i + 1); const k = i + 1; const cnt = stats.cum[k]; const p = TOTAL ? cnt / TOTAL * 100 : 0; const lock = !isAllowed(tok); const on = paint === tok && !lock; const I = PHASE_ICON[k]; return (
             <div key={i} onClick={() => { if (!lock) setPaint(tok); }} style={{ minWidth: 0, borderRadius: 10, padding: '9px 9px 8px', border: '1px solid ' + (on ? s.color : hexA(s.color, .35)), background: on ? hexA(s.color, .16) : hexA(s.color, .05), boxShadow: on ? `0 0 0 1px ${s.color}, 0 0 18px ${hexA(s.color, .3)}` : 'none', opacity: lock ? .5 : 1, cursor: lock ? 'default' : 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <I size={24} color={s.color} strokeWidth={1.9} style={{ flexShrink: 0, filter: 'drop-shadow(0 0 6px ' + hexA(s.color, .6) + ')' }} />
+                <Glyph code={tok} size={28} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(s.color, .6) + ')' }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontFamily: NBF, fontSize: 12, color: CREAM, fontWeight: 600, lineHeight: 1.1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.name}</div>
                   <div style={{ fontFamily: BBF, fontSize: 21, color: CREAM, lineHeight: 1, marginTop: 3 }}>{cnt.toLocaleString()}</div>
@@ -1453,7 +1455,7 @@ export default function PilePlan({ onExit, portalUser }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[{ q: 1, tok: 'q1', I: TriangleAlert, col: QC_YELLOW, l: 'Requires Attention', n: stats.yellow }, { q: 2, tok: 'q2', I: OctagonAlert, col: QC_ORANGE, l: 'Flagged Issue', n: stats.orange }].map((r) => (
             <div key={r.q} style={{ ...statusRow(paint === r.tok && isAllowed(r.tok)), cursor: isAllowed(r.tok) ? 'pointer' : 'default', opacity: isAllowed(r.tok) ? 1 : .5 }} onClick={() => { if (isAllowed(r.tok)) setPaint(r.tok); }}>
-              <r.I size={22} color={r.col} style={{ flexShrink: 0, filter: 'drop-shadow(0 0 6px ' + hexA(r.col, .6) + ')' }} />
+              <Glyph code={r.tok} size={24} style={{ filter: 'drop-shadow(0 0 6px ' + hexA(r.col, .6) + ')' }} />
               <span style={{ fontFamily: NBF, fontSize: 15, color: CREAM, flex: 1 }}>{r.l}</span>
               <span style={{ fontFamily: BBF, fontSize: 20, color: r.col }}>{r.n}</span>
               {isAllowed(r.tok) && <button title={'Clear these flags in ' + scopeLabel()} onClick={(e) => { e.stopPropagation(); resetQc(r.q); }} style={resetX(r.n > 0)}><RotateCcw size={14} /></button>}
@@ -1667,7 +1669,8 @@ export default function PilePlan({ onExit, portalUser }) {
 
   /* ---- tracker view ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #14182a 0%, ${INK} 55%, ${INK2} 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: `radial-gradient(120% 80% at 50% -10%, #151d3a 0%, ${NAVY} 50%, #05081a 100%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM }}>
+      <GlyphDefs />
       <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 2px' : '12px 22px', background: 'rgba(5,8,18,.92)', backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + PBORDER }}>
         <button onClick={() => setView('dashboard')} style={backBtn} title="Back to projects" aria-label="Back to projects"><ArrowLeft size={22} /></button>
         <img src={LOGO_URL} alt="SRC" style={{ width: mob ? 30 : 36, height: mob ? 30 : 36, objectFit: 'contain', borderRadius: 4 }} />
@@ -1772,12 +1775,12 @@ export default function PilePlan({ onExit, portalUser }) {
               {legendOpen ? (<>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px' }}>
                   {STAGES.slice(1).map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontWeight: 700, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: CREAM, whiteSpace: 'nowrap' }}><span style={{ width: 10, height: 10, borderRadius: 5, background: s.color, boxShadow: '0 0 6px ' + s.color, flexShrink: 0 }} />{s.name.replace(' Installed', '')}</div>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontWeight: 700, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: CREAM, whiteSpace: 'nowrap' }}><Glyph code={'s' + (i + 1)} size={15} />{s.name.replace(' Installed', '')}</div>
                   ))}
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,.08)', fontFamily: NBF, fontWeight: 700, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: CREAM }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><TriangleAlert size={12} color={QC_YELLOW} />Attention <b style={{ color: QC_YELLOW }}>{stats.yellow}</b></span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><OctagonAlert size={12} color={QC_ORANGE} />Flagged <b style={{ color: QC_ORANGE }}>{stats.orange}</b></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q1" size={13} />Attention <b style={{ color: QC_YELLOW }}>{stats.yellow}</b></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Glyph code="q2" size={13} />Flagged <b style={{ color: QC_ORANGE }}>{stats.orange}</b></span>
                 </div>
               </>) : (<div style={{ fontFamily: NBF, fontWeight: 700, fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: ORANGE }}>Legend &#9652;</div>)}
             </div>
