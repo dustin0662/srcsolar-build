@@ -9,7 +9,7 @@ const NB = { fontFamily: "'Barlow Condensed', sans-serif" }
 // Pages that get the bottom tab bar. Modules with their own bottom chrome
 // (Screening Solutions nav, the field-reporting iframe) and the public/sign-in
 // surfaces are excluded. The Task Tracker's drawer sits above the bar.
-export const TABBAR_PAGES = new Set(['dashboard', 'pileplan', 'mytimecard', 'documents', 'projecttracker', 'timekeeping', 'admin', 'request', 'hse', 'apply', 'equipment', 'precon', 'compliance', 'crm', 'stakeholders'])
+export const TABBAR_PAGES = new Set(['dashboard', 'pileplan', 'mytimecard', 'documents', 'projecttracker', 'timekeeping', 'admin', 'request', 'hse', 'apply', 'equipment', 'precon', 'compliance', 'crm', 'stakeholders', 'loads'])
 
 const PRIMARY = [
   { key: 'dashboard',  label: 'Home',  Icon: Home },
@@ -58,7 +58,8 @@ export default function MobileTabBar({ page, setPage, tiles, onOpenTile }) {
         {primary.map(({ key, label, Icon }) => (
           <RefTabButton key={key} on={page === key} label={label} Icon={Icon} onClick={() => go(key)} aria-current={page === key ? 'page' : undefined} />
         ))}
-        <RefTabButton on={more} label="More" Icon={LayoutGrid} onClick={() => setMore(v => !v)} aria-expanded={more} />
+        {/* MORE stays lit while a tool opened from its sheet is on screen (Loads Admin, Equipment, Admin…) */}
+        <RefTabButton on={more || !primaryKeys.has(page)} label="More" Icon={LayoutGrid} onClick={() => setMore(v => !v)} aria-expanded={more} />
       </nav>
     </>
   )
