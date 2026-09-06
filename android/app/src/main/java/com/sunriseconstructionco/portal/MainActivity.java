@@ -18,8 +18,13 @@ import com.getcapacitor.BridgeActivity;
  * lets a theme opt out, so the WebView ended up underneath the status bar
  * and the navigation bar. Instead of every screen padding itself, the
  * WebView is given margins equal to the system-bar insets here — the web
- * content then always starts below the clock and ends above the nav bar,
- * and the keyboard (IME inset) pushes it up the same way.
+ * content then always starts below the clock and ends above the nav bar.
+ *
+ * The keyboard is deliberately NOT handled here: Capacitor's built-in
+ * SystemBars plugin already pads the WebView's parent by the IME height
+ * (and drops the nav-bar inset while the keyboard is up). Applying the IME
+ * inset a second time as a margin shrank the page by twice the keyboard
+ * height, leaving a black screen whenever a text field was focused.
  */
 public class MainActivity extends BridgeActivity {
 
@@ -42,8 +47,11 @@ public class MainActivity extends BridgeActivity {
 
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
-            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int bottom = Math.max(bars.bottom, ime.bottom);
+            // While the keyboard is showing, Capacitor has already replaced the
+            // nav-bar inset with the IME height on the parent view, so no
+            // bottom margin is needed here at all.
+            boolean keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int bottom = keyboardVisible ? 0 : bars.bottom;
             ViewGroup.LayoutParams lp = v.getLayoutParams();
             if (lp instanceof ViewGroup.MarginLayoutParams) {
                 ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) lp;
