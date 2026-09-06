@@ -47,52 +47,78 @@ export function computeRowLinks(points) {
   for (const p of points) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; }
   const cell = Math.max(Math.sqrt(Math.max(1e-9, (maxX - minX) * (maxY - minY)) / N), 1e-6);
   const grid = new Map();
-  const ck = (x, y) => Math.floor(x / cell) + ':' + Math.floor(y / cell);
-  points.forEach((p, i) => { const k = ck(p[0], p[1]); const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]); });
+  points.forEach((p, i) => { const k = Math.floor(p[0] / cell) + ':' + Math.floor(p[1] / cell); const a = grid.get(k); if (a) a.push(i); else grid.set(k, [i]); });
   const around = (i, span) => {
     const p = points[i]; const cx = Math.floor(p[0] / cell), cy = Math.floor(p[1] / cell); const out = [];
     for (let dx = -span; dx <= span; dx++) for (let dy = -span; dy <= span; dy++) { const a = grid.get((cx + dx) + ':' + (cy + dy)); if (a) for (const j of a) if (j !== i) out.push(j); }
     return out;
   };
-  /* nearest-neighbour distance + direction, sampled */
-  const dists = [], bins = new Float64Array(36), vx = new Float64Array(36), vy = new Float64Array(36);
+  const median = (arr) => { if (!arr.length) return 0; arr.sort((a, b) => a - b); return arr[Math.floor(arr.length / 2)]; };
   const step = Math.max(1, Math.floor(N / 1500));
+
+  /* 1. typical nearest-neighbour distance, any direction */
+  const nn = [];
   for (let i = 0; i < N; i += step) {
-    let bd = Infinity, bj = -1;
-    for (const j of around(i, 2)) { const dx = points[j][0] - points[i][0], dy = points[j][1] - points[i][1]; const d = dx * dx + dy * dy; if (d < bd) { bd = d; bj = j; } }
-    if (bj < 0) continue;
-    const d = Math.sqrt(bd); dists.push(d);
-    let dx = (points[bj][0] - points[i][0]) / d, dy = (points[bj][1] - points[i][1]) / d;
-    if (dy < 0 || (dy === 0 && dx < 0)) { dx = -dx; dy = -dy; }          // fold to a half-turn
-    const ang = Math.atan2(dy, dx); const b = ((Math.round(ang / (Math.PI / 36)) % 36) + 36) % 36;
-    bins[b]++; vx[b] += dx; vy[b] += dy;
+    let bd = Infinity;
+    for (const j of around(i, 2)) { const dx = points[j][0] - points[i][0], dy = points[j][1] - points[i][1]; const d = dx * dx + dy * dy; if (d < bd) bd = d; }
+    if (bd < Infinity) nn.push(Math.sqrt(bd));
   }
-  if (!dists.length) return { next, dir: [0, 1], spacing: cell };
-  dists.sort((a, b) => a - b); const spacing = dists[Math.floor(dists.length / 2)] || cell;
-  /* Tracker rows run north–south, so among the well-populated neighbour
-     directions take the one closest to vertical (a square grid would
-     otherwise be a coin toss and join points across rows). */
-  let maxBin = 0; for (let b = 0; b < 36; b++) if (bins[b] > maxBin) maxBin = bins[b];
-  let best = -1, bestTilt = Infinity;
+  const d0 = median(nn) || cell;
+
+  /* 2. row direction. Tracker rows run north–south, so we look for the
+     best-populated neighbour direction within 25° of vertical (this
+     tolerates a rotated site) and never pick the across-row axis, even
+     when piles sit closer to their neighbours across than along. */
+  const bins = new Float64Array(36), vx = new Float64Array(36), vy = new Float64Array(36);
+  const span0 = Math.max(1, Math.ceil((2.6 * d0) / cell));
+  for (let i = 0; i < N; i += step) {
+    for (const j of around(i, span0)) {
+      let dx = points[j][0] - points[i][0], dy = points[j][1] - points[i][1]; const d = Math.hypot(dx, dy);
+      if (!d || d > 2.6 * d0) continue; dx /= d; dy /= d;
+      if (dy < 0 || (dy === 0 && dx < 0)) { dx = -dx; dy = -dy; }
+      const b = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 36)) % 36) + 36) % 36;
+      bins[b]++; vx[b] += dx; vy[b] += dy;
+    }
+  }
+  let best = -1;
   for (let b = 0; b < 36; b++) {
-    if (bins[b] < maxBin * 0.3) continue;
-    const bx = vx[b] / bins[b], by = vy[b] / bins[b]; const tilt = Math.abs(bx) / (Math.hypot(bx, by) || 1);
-    if (tilt < bestTilt) { bestTilt = tilt; best = b; }
+    if (!bins[b]) continue;
+    const mx = vx[b] / bins[b], my = vy[b] / bins[b];
+    const tilt = Math.abs(Math.atan2(mx, my));                 // angle away from vertical
+    if (tilt <= Math.PI / 180 * 25 && (best < 0 || bins[b] > bins[best])) best = b;
   }
-  if (best < 0) best = 0;
-  let dx = vx[best] / (bins[best] || 1), dy = vy[best] / (bins[best] || 1); const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
-  const span = Math.max(1, Math.ceil((spacing * 1.8) / cell));
+  let dx = 0, dy = 1;
+  if (best >= 0) { dx = vx[best] / bins[best]; dy = vy[best] / bins[best]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L; }
+
+  /* 3. spacing along the row: nearest neighbour inside a narrow cone */
+  const alongs = [];
+  const span1 = Math.max(1, Math.ceil((3.2 * d0) / cell));
+  for (let i = 0; i < N; i += step) {
+    let ba = Infinity;
+    for (const j of around(i, span1)) {
+      const ex = points[j][0] - points[i][0], ey = points[j][1] - points[i][1];
+      const along = ex * dx + ey * dy; if (along <= 0 || along > 3.2 * d0) continue;
+      const perp = Math.abs(ex * dy - ey * dx); if (perp > 0.3 * Math.max(along, d0)) continue;
+      if (along < ba) ba = along;
+    }
+    if (ba < Infinity) alongs.push(ba);
+  }
+  const rs = median(alongs) || d0;
+
+  /* 4. link every point to the next one down its row */
+  const perpTol = 0.35 * Math.min(d0, rs);
+  const span = Math.max(1, Math.ceil((1.7 * rs) / cell));
   for (let i = 0; i < N; i++) {
     let bestAlong = Infinity, bj = -1;
     for (const j of around(i, span)) {
       const ex = points[j][0] - points[i][0], ey = points[j][1] - points[i][1];
-      const along = ex * dx + ey * dy; if (along <= spacing * 0.3 || along > spacing * 1.7) continue;
-      const perp = Math.abs(ex * dy - ey * dx); if (perp > spacing * 0.35) continue;
+      const along = ex * dx + ey * dy; if (along <= 0.3 * rs || along > 1.6 * rs) continue;
+      const perp = Math.abs(ex * dy - ey * dx); if (perp > perpTol) continue;
       if (along < bestAlong) { bestAlong = along; bj = j; }
     }
     next[i] = bj;
   }
-  return { next, dir: [dx, dy], spacing };
+  return { next, dir: [dx, dy], spacing: rs };
 }
 
 /* ---------- canvas painter ---------- */
@@ -108,7 +134,7 @@ function drawPile(ctx, x, y, r, lw) {
   ctx.beginPath(); ctx.ellipse(x, y - h, w, w * 0.45, 0, 0, Math.PI * 2); ctx.fillStyle = C.pileTop; ctx.fill(); ctx.stroke();
 }
 function drawCube(ctx, x, y, r, lw) {
-  const w = 0.78 * r, cy = y - 0.95 * r;
+  const w = 0.66 * r, cy = y - 0.95 * r;
   poly(ctx, [[x, cy - 0.95 * w], [x + w, cy - 0.45 * w], [x, cy + 0.05 * w], [x - w, cy - 0.45 * w]]); ctx.fillStyle = C.cubeTop; ctx.fill();
   poly(ctx, [[x - w, cy - 0.45 * w], [x, cy + 0.05 * w], [x, cy + 1.05 * w], [x - w, cy + 0.55 * w]]); ctx.fillStyle = C.cubeL; ctx.fill();
   poly(ctx, [[x, cy + 0.05 * w], [x + w, cy - 0.45 * w], [x + w, cy + 0.55 * w], [x, cy + 1.05 * w]]); ctx.fillStyle = C.cubeR; ctx.fill();
@@ -184,7 +210,13 @@ export function paintStack(ctx, items, r, dir) {
     ctx.globalAlpha = 1;
     if (it.del) { ctx.beginPath(); ctx.arc(it.x, it.y, 0.8 * r, 0, Math.PI * 2); ctx.fillStyle = GLYPH.del.color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1.2, lw * 2); ctx.stroke(); continue; }
     if (it.hot) { ctx.beginPath(); ctx.arc(it.x, it.y - 0.4 * r, 1.7 * r, 0, Math.PI * 2); ctx.strokeStyle = ORANGE; ctx.lineWidth = Math.max(1.5, lw * 2); ctx.stroke(); }
-    if (it.q === 1 || it.q === 2) { if (it.dim) ctx.globalAlpha = 0.35; drawFlag(ctx, it.x, it.y - 0.5 * r, r, it.q === 1 ? 'q1' : 'q2', lw); }
+    if (it.q === 1 || it.q === 2) {
+      if (it.dim) ctx.globalAlpha = 0.35;
+      /* flag floats above the point on a short leader, like the concept art */
+      seg(ctx, it.x, it.y - 0.4 * r, it.x, it.y - 1.9 * r, Math.max(1, lw * 1.6), ORANGE);
+      ctx.beginPath(); ctx.arc(it.x, it.y - 0.4 * r, 0.32 * r + 0.5, 0, Math.PI * 2); ctx.fillStyle = '#ffd7a8'; ctx.fill(); ctx.strokeStyle = ORANGE; ctx.lineWidth = Math.max(1, lw * 1.6); ctx.stroke();
+      drawFlag(ctx, it.x, it.y - 3.1 * r, r, it.q === 1 ? 'q1' : 'q2', lw);
+    }
   }
   ctx.restore();
 }
@@ -284,8 +316,14 @@ export function StackSvg({ points, stage, qc, rowNext, pad, isDim, marked, unit 
       } else d = `M${x} ${ty - 0.8 * r}L${x} ${ty + 0.8 * r}`;
       if (d) { (dim ? modDim : mod).push(d); if (!dim) modGrid.push(d); }
     }
-    if (s >= 2) cubes.push(<use key={'c' + i} data-i={i} href="#tt-g-s2" x={x - 0.9 * r} y={y - 0.95 * r - 0.9 * r} width={1.8 * r} height={1.8 * r} opacity={op} />);
-    if (q === 1 || q === 2) flags.push(<use key={'f' + i} data-i={i} href={q === 1 ? '#tt-g-q1' : '#tt-g-q2'} x={x - 1.45 * r} y={y - 0.5 * r - 1.45 * r} width={2.9 * r} height={2.9 * r} opacity={dim ? 0.4 : 1} />);
+    if (s >= 2) cubes.push(<use key={'c' + i} data-i={i} href="#tt-g-s2" x={x - 0.78 * r} y={y - 0.95 * r - 0.78 * r} width={1.56 * r} height={1.56 * r} opacity={op} />);
+    if (q === 1 || q === 2) flags.push(
+      <g key={'f' + i} opacity={dim ? 0.4 : 1}>
+        <line x1={x} y1={y - 0.4 * r} x2={x} y2={y - 1.9 * r} stroke={ORANGE} strokeWidth={0.32 * r} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+        <circle cx={x} cy={y - 0.4 * r} r={0.36 * r} fill="#ffd7a8" stroke={ORANGE} strokeWidth={0.28 * r} style={{ pointerEvents: 'none' }} />
+        <use data-i={i} href={q === 1 ? '#tt-g-q1' : '#tt-g-q2'} x={x - 1.45 * r} y={y - 3.1 * r - 1.45 * r} width={2.9 * r} height={2.9 * r} />
+      </g>
+    );
   }
   const noHit = { pointerEvents: 'none' };
   const tubeW = 0.7 * r, modW = 1.75 * r;

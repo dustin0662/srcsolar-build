@@ -26,7 +26,7 @@ const GlyphMarker = L.CircleMarker.extend({
     this._radius = r * 1.1; this.options.radius = this._radius;
     this._point = map.latLngToLayerPoint(this._latlng);
     this._nextPoint = this.options.nextLatLng ? map.latLngToLayerPoint(this.options.nextLatLng) : null;
-    const pad = r * 2.6 + 4;   // cube above, flags, module width, joint to the next point
+    const pad = r * 4.8 + 4;   // cube above, flag on its leader, module width, joint to the next point
     const b = L.bounds(this._point.subtract([pad, pad]), this._point.add([pad, pad]));
     if (this._nextPoint) { b.extend(this._nextPoint.subtract([pad, pad])); b.extend(this._nextPoint.add([pad, pad])); }
     this._pxBounds = b;
