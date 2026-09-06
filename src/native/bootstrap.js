@@ -60,8 +60,16 @@ export function installNativeBootstrap() {
   installExportBridges()
   installCameraBridge()
 
-  // 6. Keep the splash up until React has painted its first frame.
-  window.addEventListener('load', () => {
-    requestAnimationFrame(() => setTimeout(() => SplashScreen.hide().catch(() => {}), 120))
-  })
+  // 6. The native splash (the intro clip's first frame) stays up until the
+  //    intro video is actually playing — IntroSplash calls hideSplash() then.
+  //    The timer is a backstop so a crash before React mounts can't leave
+  //    the splash on screen forever.
+  window.addEventListener('load', () => { setTimeout(hideSplash, 4000) })
+}
+
+let splashHidden = false
+export function hideSplash() {
+  if (splashHidden) return
+  splashHidden = true
+  SplashScreen.hide().catch(() => {})
 }

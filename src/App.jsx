@@ -8,6 +8,7 @@ import { getCurrentPosition as geoGetCurrentPosition, watchPosition as geoWatchP
 import MobileTabBar, { TABBAR_PAGES } from "./native/MobileTabBar.jsx"
 import LoadsFrame from "./native/LoadsFrame.jsx"
 import LockScreen from "./native/LockScreen.jsx"
+import IntroSplash, { introPending } from "./native/IntroSplash.jsx"
 import { biometricEnabled, setBiometricEnabled, biometricVerify, offerBiometricUnlock, RELOCK_AFTER_MS } from "./native/biometric.js"
 import ScreeningSolutions from "./ScreeningSolutions.jsx"
 import PilePlan, { getTaskTrackerKPI, ClientPortal, listProjects, TASK_DEFS } from "./pile_plan.jsx"
@@ -5463,6 +5464,8 @@ export default function App(){
   // fingerprint / face prompt when the user has opted in, and re-locks after
   // the app sits in the background for a while.
   const[locked,setLocked]=useState(function(){return isNative&&!!loadSession()&&biometricEnabled()})
+  // launch intro clip (app only, once per cold start); overlays whatever the app opens on
+  const[intro,setIntro]=useState(introPending)
   useEffect(function(){
     if(!isNative)return
     var hiddenAt=0
@@ -5573,11 +5576,13 @@ export default function App(){
   // A signing link is self-contained: no login, no language gate, nothing else.
   if(signToken) return <PublicSignPage token={signToken} onExit={function(){try{window.history.replaceState({},'',window.location.pathname)}catch(e){}setSignToken('')}}/>;
 
-  if(!lang) return <LangPicker onPick={setLang}/>;
-  if(locked&&user) return <LockScreen userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/>;
+  var introEl=intro?<IntroSplash onDone={function(){setIntro(false)}}/>:null;
+  if(!lang) return <>{introEl}<LangPicker onPick={setLang}/></>;
+  if(locked&&user) return <>{introEl}<LockScreen paused={intro} userName={user.name||user.email} onUnlocked={function(){setLocked(false)}} onUsePassword={function(){setLocked(false);setUser(null);setPage('login')}}/></>;
 
   return(
     <div style={{position:'fixed',inset:0,fontFamily:"'Barlow',sans-serif"}}>
+      {introEl}
       <style>{CSS}</style>
       {loading&&<Loader phase={phase} prog={prog}/>}
       <div ref={boxRef} style={{position:'absolute',inset:0,overflowY:'scroll',overflowX:'hidden'}}>

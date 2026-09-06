@@ -8,7 +8,7 @@ const NB = { fontFamily: "'Barlow Condensed', sans-serif" }
 /* Full-screen gate shown on launch when biometric unlock is enabled and a
    saved session exists. Prompts automatically, offers retry and a password
    fallback (which signs the saved session out). */
-export default function LockScreen({ userName, onUnlocked, onUsePassword }) {
+export default function LockScreen({ userName, onUnlocked, onUsePassword, paused }) {
   const [state, setState] = useState('checking') // checking | failed
   const once = useRef(false)
 
@@ -17,7 +17,8 @@ export default function LockScreen({ userName, onUnlocked, onUsePassword }) {
     const ok = await biometricVerify('Unlock Sunrise Portal')
     if (ok) onUnlocked(); else setState('failed')
   }
-  useEffect(() => { if (!once.current) { once.current = true; attempt() } }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  /* `paused` holds the prompt back while the launch intro is still playing */
+  useEffect(() => { if (!paused && !once.current) { once.current = true; attempt() } }, [paused]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'radial-gradient(120% 80% at 50% 0%, #131a2e 0%, #0a0a14 55%, #06060f 100%)', color: '#F5F0EB', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
