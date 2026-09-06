@@ -7,11 +7,12 @@ import TTMapView from './tt_mapview.jsx';
 import TTModelView from './tt_modelview.jsx';
 import { ModelViewer, renderOverheadPNG } from './glb_viewer.jsx';
 import { sectionHull, normRect, rectContains, DRAG_SLOP, subsForParent, subFraction, subComplete } from './tt_geom.js';
-import { Paintbrush, SquareDashed, Move, Trash2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon } from 'lucide-react';
+import { Paintbrush, SquareDashed, Move, Trash2, MapPin, ChevronRight, FileText, Box, History, ShieldCheck, Activity, ListChecks, Layers, RotateCcw, ArrowLeft, FileUp, Clock, BarChart3, Image as ImageIcon, Map as MapIcon, ChevronLeft, Calendar, AlertTriangle } from 'lucide-react';
 import { GlyphDefs, Glyph, StackSvg, computeRowLinks } from './tt_glyphs.jsx';
 import { TT, GRAD_PRIMARY, GRAD_PANEL, GRAD_CONTROL, GLOW, PANEL_STYLE, seg as segStyle, BTN_PRIMARY, BTN_OUTLINE } from './tt_theme.js';
 import { REF_C, REF_LOGO_URI, BG_GRAD, RULE_SOFT, RefHeader, RefZoom, RefSeg, RefLegend, RefStatusChip, RefUndo, RefToolCard, RefNav } from './tt_ref_chrome.jsx';
 import { useIsMobile } from './native/useIsMobile.js';
+import { PROJECT_ART } from './tt_projects_sprites.js';
 
 /* ------------------------------------------------------------------ */
 /*  Storage shim                                                       */
@@ -421,13 +422,13 @@ export function listProjects() {
 }
 
 /* circular progress used by the project cards */
-function RingPct({ pct, size = 64, color = ORANGE }) {
-  const r = (size - 9) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
+function RingPct({ pct, size = 64, color = ORANGE, font = BBF, weight = 400, track = 'rgba(255,255,255,.12)', stroke = 7 }) {
+  const r = (size - stroke - 2) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct || 0));
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.12)" strokeWidth={7} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={7} strokeLinecap="round" strokeDasharray={`${c * p / 100} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fill={CREAM} style={{ fontFamily: BBF, fontSize: size * 0.3 }}>{Math.round(p)}%</text>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${c * p / 100} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fill={CREAM} style={{ fontFamily: font, fontWeight: weight, fontSize: size * 0.3 }}>{Math.round(p)}%</text>
     </svg>
   );
 }
@@ -1618,39 +1619,47 @@ export default function PilePlan({ onExit, portalUser, demo }) {
 
   /* ---- projects dashboard view ---- */
   if (view === 'dashboard') {
+    /* Projects list — skin cut from the concept mock: SUNRISE wordmark in the
+       header, night-time site art on each card, thin orange keylines. */
+    const ART = PROJECT_ART.sites;
+    const CARD_BG = 'linear-gradient(180deg, rgba(8,20,34,.96) 0%, rgba(3,11,20,.98) 100%)';
+    const CANVAS = 'radial-gradient(120% 60% at 50% -10%, #0a1a2e 0%, rgba(2,8,17,0) 55%), repeating-linear-gradient(0deg, transparent 0 31px, rgba(50,115,171,.07) 32px), repeating-linear-gradient(90deg, transparent 0 31px, rgba(50,115,171,.07) 32px), #020811';
+    const statLine = { display: 'flex', alignItems: 'center', gap: 8, fontFamily: NBF, fontSize: mob ? 12.5 : 13.5, letterSpacing: '.1em', textTransform: 'uppercase', color: '#c9cfd8', whiteSpace: 'nowrap' };
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: `radial-gradient(120% 70% at 50% -10%, ${TT.elevated} 0%, ${TT.canvas} 60%)`, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 6 : 12, padding: mob ? '6px 10px 6px 4px' : '12px 22px', background: GRAD_PANEL, borderBottom: '1px solid rgba(255,107,0,.62)', position: 'sticky', top: 0, zIndex: 5 }}>
-          {onExit && <button onClick={onExit} style={backBtn} aria-label="Back"><ArrowLeft size={22} /></button>}
-          <img src={REF_LOGO_URI || LOGO_URL} alt="" style={{ width: mob ? 36 : 42, height: mob ? 33 : 38, objectFit: 'contain' }} />
-          <div style={{ fontFamily: BBF, fontSize: mob ? 18 : 27, letterSpacing: 1.2, color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>TASK TRACKER <span style={{ width: 1, height: 20, background: TT.borderStrong }} /><span style={{ color: ORANGE }}>PROJECTS</span></div>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'var(--tabbar-h, 0px)', zIndex: 2000, background: CANVAS, display: 'flex', flexDirection: 'column', fontFamily: NBF, color: CREAM, overflow: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 2 : 12, padding: mob ? '4px 12px 6px 2px' : '10px 22px', paddingTop: mob ? 'calc(4px + var(--sat, 0px))' : 10, background: 'rgba(1,7,14,.78)', borderBottom: '1px solid rgba(255,107,24,.75)', position: 'sticky', top: 0, zIndex: 5 }}>
+          {onExit && <button onClick={onExit} style={{ ...backBtn, width: 40 }} aria-label="Back"><ChevronLeft size={28} strokeWidth={2.2} /></button>}
+          <img src={PROJECT_ART.wordmark.uri} alt="Sunrise Construction" style={{ height: mob ? 42 : 52, width: 'auto', objectFit: 'contain', flexShrink: 1, minWidth: 0 }} />
+          <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 16 : 22, letterSpacing: '.08em', color: CREAM, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, whiteSpace: 'nowrap', textTransform: 'uppercase', flexShrink: 0 }}>Task Tracker <span style={{ width: 1, height: 22, background: 'rgba(255,255,255,.35)' }} /><span style={{ color: ORANGE }}>Projects</span></div>
         </div>
-        <div style={{ padding: mob ? 14 : 28, paddingBottom: mob ? 'calc(24px + var(--sab, 0px))' : 40, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+        <div style={{ padding: mob ? '10px 12px' : 28, paddingBottom: mob ? 'calc(24px + var(--sab, 0px))' : 40, maxWidth: 1100, margin: '0 auto', width: '100%' }}>
           {sectionLabel('Select a Project')}
           {visibleProjects.length === 0 && <div style={{ fontFamily: NBF, fontSize: 15, color: MUTE, marginTop: 16 }}>No projects have been assigned to you yet. Contact your administrator.</div>}
-          <div style={{ display: 'grid', gridTemplateColumns: mob ? 'minmax(0,1fr)' : 'repeat(auto-fill,minmax(400px,1fr))', gap: 14, marginTop: 14 }}>
-            {visibleProjects.map((pr) => {
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? 'minmax(0,1fr)' : 'repeat(auto-fill,minmax(440px,1fr))', gap: 12, marginTop: 12 }}>
+            {visibleProjects.map((pr, idx) => {
               const d = normalizeDoc(storage.get(projKey(pr.id))); const s = computeStats(d.stage, d.qc, d.subtasks, d.sub);
-              const hl = s.orange > 0 ? { label: 'Action Required', color: ORANGE } : s.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW } : { label: 'On Track', color: GREEN };
-              const thumb = mob ? 112 : 150;
+              const hl = s.orange > 0 ? { label: 'Action Required', color: ORANGE, warn: true } : s.yellow > 0 ? { label: 'Needs Review', color: QC_YELLOW, warn: true } : { label: 'On Track', color: '#19d47b', warn: false };
+              const art = ART[idx % ART.length];
               return (
-                <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', minWidth: 0, background: PBOX, border: '1px solid ' + PBORDER, borderRadius: 14, padding: 12, display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 10px 30px rgba(0,0,0,.45)', transition: 'border-color .15s, transform .15s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = ORANGE; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = PBORDER; e.currentTarget.style.transform = 'none'; }}>
-                  <div style={{ width: thumb, height: thumb, flexShrink: 0, borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(249,115,22,.5)', background: 'radial-gradient(90% 90% at 50% 40%, #16204a 0%, #0b1129 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ReadonlyMap points={d.points} w={d.w} h={d.h} stage={d.stage} qc={d.qc} height={thumb - 8} mob={mob} bg={d.bg} bgOn={!!(d.bg && d.bg.on)} />
+                <div key={pr.id} onClick={() => openProject(pr.id)} style={{ cursor: 'pointer', minWidth: 0, background: CARD_BG, border: '1px solid #e65e20', borderRadius: 14, display: 'flex', alignItems: 'stretch', overflow: 'hidden', minHeight: mob ? 148 : 172, boxShadow: '0 12px 30px rgba(0,0,0,.45)', transition: 'transform .15s, box-shadow .15s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 16px 36px rgba(0,0,0,.55), 0 0 0 1px #ff7a21'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,.45)'; }}>
+                  <div style={{ width: mob ? '40%' : '44%', flexShrink: 0, position: 'relative' }}>
+                    <img src={art} alt="" draggable={false} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', WebkitMaskImage: 'linear-gradient(90deg, #000 70%, transparent 100%)', maskImage: 'linear-gradient(90deg, #000 70%, transparent 100%)' }} />
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, padding: mob ? '12px 12px 12px 2px' : '16px 18px 16px 6px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: mob ? 8 : 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontFamily: BBF, fontSize: mob ? 21 : 24, color: CREAM, letterSpacing: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{(pr.name || 'Project').toUpperCase()}</span>
-                      <ChevronRight size={20} color={ORANGE} />
+                      <span style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 24, color: CREAM, letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{pr.name || 'Project'}</span>
+                      <ChevronRight size={22} color={ORANGE} strokeWidth={2.4} />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                      <RingPct pct={s.overall} size={mob ? 62 : 72} />
-                      <div style={{ borderLeft: '1px solid rgba(255,255,255,.1)', paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', color: MUTE, whiteSpace: 'nowrap' }}><BarChart3 size={14} color={MUTE} /><b style={{ fontFamily: BBF, fontSize: 17, color: CREAM, letterSpacing: .5 }}>{s.N.toLocaleString()}</b> points</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: NBF, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', color: MUTE, whiteSpace: 'nowrap' }}><Clock size={14} color={MUTE} />{d.lastModified ? new Date(d.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No edits yet'}</div>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start', border: '1px solid ' + hl.color, color: hl.color, borderRadius: 20, padding: '4px 10px', fontFamily: NBF, fontWeight: 700, fontSize: 10.5, letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}><span style={{ width: 7, height: 7, borderRadius: 4, background: hl.color, boxShadow: '0 0 6px ' + hl.color }} />{hl.label}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: mob ? 8 : 12 }}>
+                      <RingPct pct={s.overall} size={mob ? 78 : 96} font={NBF} weight={700} track="rgba(255,255,255,.16)" stroke={8} />
+                      <div style={{ borderLeft: '1px solid rgba(255,255,255,.2)', paddingLeft: mob ? 9 : 14, display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
+                        <div style={statLine}><BarChart3 size={16} color="#c9cfd8" /><b style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 21, color: CREAM, letterSpacing: 0 }}>{s.N.toLocaleString()}</b> points</div>
+                        <div style={statLine}><Calendar size={16} color="#c9cfd8" />{d.lastModified ? new Date(d.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No edits yet'}</div>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', border: '1.5px solid ' + hl.color, color: hl.warn ? hl.color : CREAM, borderRadius: 20, padding: mob ? '4px 10px' : '5px 12px', fontFamily: NBF, fontWeight: 700, fontSize: mob ? 11 : 12.5, letterSpacing: mob ? '.08em' : '.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', background: 'rgba(3,11,20,.6)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {hl.warn ? <AlertTriangle size={14} color={hl.color} /> : <span style={{ width: 9, height: 9, borderRadius: 5, background: hl.color, boxShadow: '0 0 8px ' + hl.color }} />}{hl.label}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1658,14 +1667,14 @@ export default function PilePlan({ onExit, portalUser, demo }) {
               );
             })}
             {isAdmin && (
-              <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1.5px dashed rgba(249,115,22,.6)', borderRadius: 14, padding: mob ? 14 : 18, display: 'flex', alignItems: 'center', gap: 14, minHeight: 110, background: 'rgba(249,115,22,.04)' }}>
-                <FileUp size={mob ? 40 : 48} color={ORANGE} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-                <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(249,115,22,.4)' }} />
+              <div onClick={() => setImportOpen(true)} style={{ cursor: 'pointer', border: '1.5px dashed #ff7a21', borderRadius: 14, padding: mob ? '16px 14px' : '22px 20px', display: 'flex', alignItems: 'center', gap: mob ? 14 : 18, minHeight: 130, background: 'rgba(8,20,34,.55)' }}>
+                <FileUp size={mob ? 60 : 72} color={ORANGE} strokeWidth={1.4} style={{ flexShrink: 0 }} />
+                <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,122,33,.6)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: BBF, fontSize: mob ? 20 : 24, letterSpacing: 1.5, color: ORANGE }}>+ NEW PROJECT (IMPORT)</div>
-                  <div style={{ fontFamily: NBF, fontSize: 12.5, color: MUTE, marginTop: 2 }}>Import a pile plan or KMZ to start tracking a new site</div>
+                  <div style={{ fontFamily: NBF, fontWeight: 700, fontSize: mob ? 19 : 26, letterSpacing: '.04em', color: ORANGE, textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>+ New Project (Import)</div>
+                  <div style={{ fontFamily: NBF, fontSize: mob ? 13.5 : 14.5, color: '#aab3c0', marginTop: 4 }}>Import a pile plan or KMZ to start tracking a new site</div>
                 </div>
-                <ChevronRight size={22} color={ORANGE} />
+                <ChevronRight size={24} color={ORANGE} strokeWidth={2.4} />
               </div>
             )}
           </div>
